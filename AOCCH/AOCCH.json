@@ -1,0 +1,11 @@
+{
+  "Author": "your name here",
+  "Name": "Another Occult Crescent Helper",
+  "Punchline": "Occult Crescent automation and tracking helper.",
+  "Description": "A Dalamud plugin for Occult Crescent automation and tracking. Use /aocch to open the main window.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "occult crescent",
+    "aocch"
+  ]
+}
