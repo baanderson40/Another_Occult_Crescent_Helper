@@ -11,11 +11,8 @@ namespace AOCCH;
 public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
-    [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
-    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
-    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
-    [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
@@ -33,9 +30,9 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
 
-        ConfigWindow = new ConfigWindow(this);
+        ConfigWindow = new ConfigWindow();
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(this);
+        MainWindow = new MainWindow();
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -43,7 +40,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open the Another Occult Crescent Helper window."
+            HelpMessage = "Open AOCCH. Args: main, config, log, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -77,8 +74,36 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        // In response to the slash command, toggle the display status of our main ui
-        MainWindow.Toggle();
+        switch (args.Trim().ToLowerInvariant())
+        {
+            case "":
+            case "main":
+                MainWindow.Toggle();
+                break;
+            case "config":
+                ConfigWindow.Toggle();
+                break;
+            case "log":
+                LogWindow.Toggle();
+                break;
+            case "help":
+                PrintCommandHelp();
+                break;
+            default:
+                Logger.Warning($"Unknown command argument: {args}");
+                PrintCommandHelp();
+                break;
+        }
+    }
+
+    private static void PrintCommandHelp()
+    {
+        ChatGui.Print("AOCCH commands:");
+        ChatGui.Print("/aocch - Toggle main window");
+        ChatGui.Print("/aocch main - Toggle main window");
+        ChatGui.Print("/aocch config - Toggle config window");
+        ChatGui.Print("/aocch log - Toggle log window");
+        ChatGui.Print("/aocch help - Show this help");
     }
     
     public void ToggleConfigUi() => ConfigWindow.Toggle();
