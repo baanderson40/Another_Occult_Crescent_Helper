@@ -39,6 +39,12 @@ public class MainWindow : Window, IDisposable
             plugin.ToggleConfigUi();
         }
 
+        ImGui.SameLine();
+        if (ImGui.Button("Show Log"))
+        {
+            plugin.ToggleLogUi();
+        }
+
         ImGui.Spacing();
 
         // Normally a BeginChild() would have to be followed by an unconditional EndChild(),

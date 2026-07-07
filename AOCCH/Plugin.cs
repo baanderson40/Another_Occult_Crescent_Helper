@@ -1,4 +1,5 @@
-﻿using Dalamud.Game.Command;
+﻿using AOCCH.Logging;
+using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
@@ -20,19 +21,24 @@ public sealed class Plugin : IDalamudPlugin
     private const string CommandName = "/aocch";
 
     public Configuration Configuration { get; init; }
+    public AocchLogger Logger { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
+    private LogWindow LogWindow { get; init; }
     private MainWindow MainWindow { get; init; }
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        Logger = new AocchLogger(Log);
 
         ConfigWindow = new ConfigWindow(this);
+        LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
+        WindowSystem.AddWindow(LogWindow);
         WindowSystem.AddWindow(MainWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -50,7 +56,7 @@ public sealed class Plugin : IDalamudPlugin
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
-        Log.Information($"{PluginInterface.Manifest.Name} loaded.");
+        Logger.Info($"{PluginInterface.Manifest.Name} loaded.");
     }
 
     public void Dispose()
@@ -63,6 +69,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.RemoveAllWindows();
 
         ConfigWindow.Dispose();
+        LogWindow.Dispose();
         MainWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
@@ -75,5 +82,6 @@ public sealed class Plugin : IDalamudPlugin
     }
     
     public void ToggleConfigUi() => ConfigWindow.Toggle();
+    public void ToggleLogUi() => LogWindow.Toggle();
     public void ToggleMainUi() => MainWindow.Toggle();
 }
