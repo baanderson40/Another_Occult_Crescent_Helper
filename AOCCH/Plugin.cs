@@ -1,5 +1,6 @@
 ﻿using AOCCH.Data;
 using AOCCH.Logging;
+using AOCCH.Scanning;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -15,12 +16,16 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
+    [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
     public Configuration Configuration { get; init; }
     public AocchLogger Logger { get; init; }
     public OccultCrescentData OccultCrescentData { get; init; }
+    public OccultCrescentScanner Scanner { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -32,10 +37,11 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
         OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
+        Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, OccultCrescentData, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow();
+        MainWindow = new MainWindow(Configuration, Scanner);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -71,6 +77,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        Scanner.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
     }

@@ -5,6 +5,7 @@
     <PackageProjectUrl>https://github.com/baanderson40/Another_Occult_Crescent_Helper</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
