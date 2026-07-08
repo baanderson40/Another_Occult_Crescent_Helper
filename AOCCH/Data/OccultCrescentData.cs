@@ -1,0 +1,73 @@
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace AOCCH.Data;
+
+public sealed class OccultCrescentData
+{
+    public uint TerritoryTypeId { get; init; }
+    public float AethernetInteractDistanceMin { get; init; }
+    public float AethernetInteractDistanceMax { get; init; }
+    public float MountedTravelSpeed { get; init; }
+    public List<AethernetData> Aethernets { get; init; } = [];
+    public List<CriticalEncounterData> CriticalEncounters { get; init; } = [];
+    public List<FateData> Fates { get; init; } = [];
+    public List<FateAethernetPreference> FateAethernetPreferences { get; init; } = [];
+    public List<DropData> Drops { get; init; } = [];
+}
+
+public sealed class AethernetData
+{
+    public string Name { get; init; } = string.Empty;
+    public uint PlaceNameId { get; init; }
+    public uint BaseId { get; init; }
+    public Vector3Data Position { get; init; } = new();
+    public Vector3Data Destination { get; init; } = new();
+    public float InteractDistanceMin { get; init; }
+    public float InteractDistanceMax { get; init; }
+}
+
+public sealed class CriticalEncounterData
+{
+    public uint Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public uint TerritoryTypeId { get; init; }
+    public string PreferredAethernet { get; init; } = string.Empty;
+    public int Priority { get; init; }
+    public float EngageRadius { get; init; }
+    public Vector3Data StagingPoint { get; init; } = new();
+}
+
+public sealed class FateData
+{
+    public uint Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string? Demiatma { get; init; }
+    public string? Note { get; init; }
+    public string? Aethernet { get; init; }
+    public Vector3Data StartPosition { get; init; } = new();
+}
+
+public sealed class FateAethernetPreference
+{
+    public uint FateId { get; init; }
+    public string Aethernet { get; init; } = string.Empty;
+}
+
+public sealed class DropData
+{
+    public string SourceType { get; init; } = string.Empty;
+    public uint SourceId { get; init; }
+    public string ItemName { get; init; } = string.Empty;
+    public uint? ItemId { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class Vector3Data
+{
+    public float X { get; init; }
+    public float Y { get; init; }
+    public float Z { get; init; }
+
+    public Vector3 ToVector3() => new(X, Y, Z);
+}

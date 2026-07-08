@@ -1,0 +1,89 @@
+{
+  "territoryTypeId": 1252,
+  "aethernetInteractDistanceMin": 3.15,
+  "aethernetInteractDistanceMax": 4.5,
+  "mountedTravelSpeed": 14.13,
+  "aethernets": [
+    {
+      "name": "BaseCamp",
+      "placeNameId": 4927,
+      "baseId": 2014664,
+      "position": { "x": 830.7468, "y": 72.98389, "z": -695.97925 },
+      "destination": { "x": 852.51874, "y": 73.22737, "z": -702.8938 },
+      "interactDistanceMin": 3.15,
+      "interactDistanceMax": 4.5
+    },
+    {
+      "name": "Eldergrowth",
+      "placeNameId": 4930,
+      "baseId": 2014667,
+      "position": { "x": 306.93518, "y": 105.18042, "z": 305.65344 },
+      "destination": { "x": 302.0557, "y": 103.03691, "z": 304.74838 },
+      "interactDistanceMin": 3.15,
+      "interactDistanceMax": 4.25
+    },
+    {
+      "name": "Stonemarsh",
+      "placeNameId": 4942,
+      "baseId": 2014744,
+      "position": { "x": -384.11542, "y": 99.19885, "z": 281.42212 },
+      "destination": { "x": -384.38, "y": 97.44333, "z": 276.6886 },
+      "interactDistanceMin": 3.15,
+      "interactDistanceMax": 4.25
+    },
+    {
+      "name": "CrystallizedCaverns",
+      "placeNameId": 4929,
+      "baseId": 2014666,
+      "position": { "x": -358.14453, "y": 101.97595, "z": -120.95831 },
+      "destination": { "x": -353.8978, "y": 99.99078, "z": -120.3132 },
+      "interactDistanceMin": 3.15,
+      "interactDistanceMax": 4.25
+    },
+    {
+      "name": "TheWanderersHaven",
+      "placeNameId": 4928,
+      "baseId": 2014665,
+      "position": { "x": -173.02203, "y": 8.194031, "z": -611.1391 },
+      "destination": { "x": -169.27321, "y": 6.5, "z": -609.5403 },
+      "interactDistanceMin": 3.15,
+      "interactDistanceMax": 4.25
+    }
+  ],
+  "criticalEncounters": [
+    { "id": 33, "name": "Scourge of the Mind", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 300.109, "y": 70.0, "z": 730.029 } },
+    { "id": 34, "name": "The Black Regiment", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 449.613, "y": 65.0, "z": 356.86 } },
+    { "id": 35, "name": "The Unbridled", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 619.864, "y": 79.0, "z": 799.882 } },
+    { "id": 36, "name": "Crawling Death", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 680.95, "y": 74.0, "z": 533.939 } },
+    { "id": 37, "name": "Calamity Bound", "territoryTypeId": 1252, "preferredAethernet": "Stonemarsh", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -340.067, "y": 75.0, "z": 800.32 } },
+    { "id": 38, "name": "Trial by Claw", "territoryTypeId": 1252, "preferredAethernet": "CrystallizedCaverns", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -413.775, "y": 92.0, "z": 74.884 } },
+    { "id": 39, "name": "From Times Bygone", "territoryTypeId": 1252, "preferredAethernet": "Stonemarsh", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -799.895, "y": 44.0, "z": 245.027 } },
+    { "id": 40, "name": "Company of Stone", "territoryTypeId": 1252, "preferredAethernet": "BaseCamp", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 679.954, "y": 96.0, "z": -279.855 } },
+    { "id": 41, "name": "Shark Attack", "territoryTypeId": 1252, "preferredAethernet": "TheWanderersHaven", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -117.227, "y": 1.0, "z": -849.941 } },
+    { "id": 42, "name": "On the Hunt", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 635.981, "y": 108.0, "z": -53.95 } },
+    { "id": 43, "name": "With Extreme Prejudice", "territoryTypeId": 1252, "preferredAethernet": "TheWanderersHaven", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -351.222, "y": 5.0, "z": -607.909 } },
+    { "id": 44, "name": "Noise Complaint", "territoryTypeId": 1252, "preferredAethernet": "BaseCamp", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 460.949, "y": 97.0, "z": -362.86 } },
+    { "id": 45, "name": "Cursed Concern", "territoryTypeId": 1252, "preferredAethernet": "TheWanderersHaven", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 71.964, "y": 20.0, "z": -544.904 } },
+    { "id": 46, "name": "Eternal Watch", "territoryTypeId": 1252, "preferredAethernet": "Eldergrowth", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 869.891, "y": 122.0, "z": 180.11 } },
+    { "id": 47, "name": "Flame of Dusk", "territoryTypeId": 1252, "preferredAethernet": "CrystallizedCaverns", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -570.087, "y": 97.0, "z": -160.04 } }
+  ],
+  "fates": [
+    { "id": 1962, "name": "Rough Waters", "demiatma": "Azurite", "startPosition": { "x": 162.0, "y": 56.0, "z": 676.0 } },
+    { "id": 1963, "name": "The Golden Guardian", "demiatma": "Azurite", "startPosition": { "x": 373.2, "y": 70.0, "z": 486.0 } },
+    { "id": 1964, "name": "King of the Crescent", "demiatma": "Orpiment", "startPosition": { "x": -226.1, "y": 116.38, "z": 254.0 } },
+    { "id": 1965, "name": "The Winged Terror", "demiatma": "Realgar", "aethernet": "TheWanderersHaven", "startPosition": { "x": -548.5, "y": 3.0, "z": -595.0 } },
+    { "id": 1966, "name": "An Unending Duty", "demiatma": "Malachite", "startPosition": { "x": -223.1, "y": 107.0, "z": 36.0 } },
+    { "id": 1967, "name": "Brain Drain", "demiatma": "Realgar", "aethernet": "CrystallizedCaverns", "startPosition": { "x": -48.1, "y": 111.76, "z": -320.0 } },
+    { "id": 1968, "name": "A Delicate Balance", "demiatma": "Verdigris", "startPosition": { "x": -370.0, "y": 75.0, "z": 650.0 } },
+    { "id": 1969, "name": "Sworn to Soil", "demiatma": "Verdigris", "startPosition": { "x": -589.1, "y": 96.5, "z": 333.0 } },
+    { "id": 1970, "name": "A Prying Eye", "demiatma": "Azurite", "startPosition": { "x": -71.0, "y": 71.31, "z": 557.0 } },
+    { "id": 1971, "name": "Fatal Allure", "demiatma": "Orpiment", "startPosition": { "x": 79.0, "y": 97.86, "z": 278.0 } },
+    { "id": 1972, "name": "Serving Darkness", "demiatma": "CaputMortuum", "startPosition": { "x": 413.0, "y": 96.0, "z": -13.0 } },
+    { "id": 1976, "name": "Persistent Pots", "demiatma": "Orpiment", "note": "PersistentPots", "startPosition": { "x": 200.0, "y": 111.73, "z": -215.0 } },
+    { "id": 1977, "name": "Pleading Pots", "demiatma": "Verdigris", "note": "PersistentPots", "startPosition": { "x": -481.0, "y": 75.0, "z": 528.0 } }
+  ],
+  "fateAethernetPreferences": [
+    { "fateId": 1967, "aethernet": "CrystallizedCaverns" }
+  ],
+  "drops": []
+}

@@ -1,4 +1,5 @@
-﻿using AOCCH.Logging;
+﻿using AOCCH.Data;
+using AOCCH.Logging;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -19,6 +20,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public Configuration Configuration { get; init; }
     public AocchLogger Logger { get; init; }
+    public OccultCrescentData OccultCrescentData { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -29,6 +31,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
+        OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
