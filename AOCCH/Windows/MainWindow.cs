@@ -15,6 +15,7 @@ public class MainWindow : Window, IDisposable
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly AutorotationController autorotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
 
     // We give this window a hidden ID using ##.
@@ -24,12 +25,14 @@ public class MainWindow : Window, IDisposable
         Configuration configuration,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        AutorotationController autorotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.autorotationController = autorotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
 
         SizeConstraints = new WindowSizeConstraints
@@ -55,6 +58,9 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawCriticalEngagementAutomation(snapshot);
+
+        ImGui.Separator();
+        DrawAutorotation();
 
         ImGui.Separator();
         DrawMovement(snapshot);
@@ -285,6 +291,27 @@ public class MainWindow : Window, IDisposable
         }
     }
 
+    private void DrawAutorotation()
+    {
+        ImGui.TextUnformatted("Autorotation");
+        ImGui.TextUnformatted($"BossMod: {(autorotationController.BossModAvailable ? "Available" : "Unavailable")}");
+        ImGui.TextWrapped($"Configured Preset: {FormatPreset(autorotationController.ConfiguredPreset)}");
+        ImGui.TextWrapped($"Active Preset: {FormatPreset(autorotationController.LastKnownActivePreset)}");
+        ImGui.TextWrapped($"Owned Preset: {FormatPreset(autorotationController.OwnedPreset)}");
+        ImGui.TextUnformatted($"Owns Active Preset: {(autorotationController.HasOwnership ? "Yes" : "No")}");
+
+        if (!string.IsNullOrEmpty(autorotationController.InitialPreset))
+        {
+            ImGui.TextWrapped($"Captured Initial Preset: {autorotationController.InitialPreset}");
+        }
+
+        ImGui.TextWrapped($"Status: {autorotationController.LastStatus}");
+        if (!string.IsNullOrEmpty(autorotationController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {autorotationController.LastError}");
+        }
+    }
+
     private void DrawMovement(ScannerSnapshot snapshot)
     {
         ImGui.TextUnformatted("Movement");
@@ -352,6 +379,9 @@ public class MainWindow : Window, IDisposable
 
     private static string FormatDistance(float distance)
         => float.IsFinite(distance) ? $"{distance:0.0}" : "Unknown";
+
+    private static string FormatPreset(string preset)
+        => string.IsNullOrEmpty(preset) ? "None" : preset;
 
     private static string GetCeTargetLabel(ScannerSnapshot snapshot, ActiveCriticalEncounter encounter)
     {

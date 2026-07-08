@@ -19,6 +19,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly AutorotationController autorotationController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -36,6 +37,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        AutorotationController autorotationController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -44,6 +46,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.autorotationController = autorotationController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -142,11 +145,13 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         logger.Info($"CE automation starting for {target.Name} ({target.Id}).");
+        autorotationController.ValidateConfiguredPreset();
         return BeginPlanning(target);
     }
 
     public void Stop(string reason)
     {
+        autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
         TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason);
         logger.Info($"CE automation stopped: {reason}");
@@ -155,6 +160,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
+        autorotationController.ReleaseOwnership("CE automation disposal");
         if (State != CriticalEngagementAutomationState.Idle)
         {
             movementController.Stop("CE automation disposal");
@@ -267,6 +273,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         if (snapshot.CurrentCriticalEncounterId == target.Id)
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) combat");
             TransitionTo(CriticalEngagementAutomationState.InBattle, $"Entered CE battle for {target.Name} ({target.Id}).");
             return;
         }
@@ -306,6 +313,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             : $"CE {target.Name} no longer has the player engaged.";
 
         logger.Info(reason);
+        autorotationController.ReleaseOwnership(reason);
         if (configuration.UseReturn)
         {
             StartRecovery(reason);
@@ -382,6 +390,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private void SetFailure(string reason)
     {
+        autorotationController.ReleaseOwnership(reason);
         TransitionTo(CriticalEngagementAutomationState.Failed, reason, clearTarget: false, error: reason);
         logger.Warning(reason);
     }

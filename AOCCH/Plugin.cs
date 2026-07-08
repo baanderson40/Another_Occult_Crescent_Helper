@@ -33,8 +33,10 @@ public sealed class Plugin : IDalamudPlugin
     public OccultCrescentScanner Scanner { get; init; }
     public VNavmeshIpc VNavmesh { get; init; }
     public LifestreamIpc Lifestream { get; init; }
+    public BossModIpc BossMod { get; init; }
     public RoutePlanner RoutePlanner { get; init; }
     public MovementController MovementController { get; init; }
+    public AutorotationController AutorotationController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
@@ -50,13 +52,15 @@ public sealed class Plugin : IDalamudPlugin
         Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
+        BossMod = new BossModIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Logger);
         MovementController = new MovementController(Framework, ObjectTable, Scanner, VNavmesh, Lifestream, RoutePlanner, OccultCrescentData, Logger);
-        CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
+        AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
+        CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController, CriticalEngagementAutomationController);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, CriticalEngagementAutomationController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -93,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         LogWindow.Dispose();
         MainWindow.Dispose();
         CriticalEngagementAutomationController.Dispose();
+        AutorotationController.Dispose();
         MovementController.Dispose();
         Scanner.Dispose();
 
