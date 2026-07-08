@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -12,15 +13,17 @@ public class MainWindow : Window, IDisposable
 {
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
+    private readonly MovementController movementController;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
     // but for ImGui the ID is "Another Occult Crescent Helper##Main".
-    public MainWindow(Configuration configuration, OccultCrescentScanner scanner)
+    public MainWindow(Configuration configuration, OccultCrescentScanner scanner, MovementController movementController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
         this.scanner = scanner;
+        this.movementController = movementController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -42,6 +45,9 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawSelectedTarget(snapshot);
+
+        ImGui.Separator();
+        DrawMovement(snapshot);
 
         ImGui.Separator();
         DrawCriticalEncounters(snapshot);
@@ -210,6 +216,52 @@ public class MainWindow : Window, IDisposable
         if (target.WouldPreemptFate)
         {
             ImGui.TextUnformatted("CE would preempt the current FATE target.");
+        }
+    }
+
+    private void DrawMovement(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Movement");
+        ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
+        ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
+        ImGui.TextUnformatted($"State: {movementController.State}");
+        ImGui.TextWrapped($"Route: {movementController.GetStatusSummary()}");
+        ImGui.TextWrapped($"Step: {movementController.GetActiveStepSummary()}");
+        ImGui.TextUnformatted($"Distance Remaining: {FormatDistance(movementController.DistanceRemaining)}");
+        ImGui.TextUnformatted($"Elapsed: {movementController.GetElapsedSummary()}");
+
+        if (!string.IsNullOrEmpty(movementController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {movementController.LastError}");
+        }
+
+        var hasSelectedTarget = snapshot.EffectiveTarget.Kind != SelectedTargetKind.None;
+        if (ImGui.Button("Plan Route") && hasSelectedTarget)
+        {
+            movementController.PlanRouteToSelectedTarget();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Start Route"))
+        {
+            movementController.StartPlannedRoute();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop Movement"))
+        {
+            movementController.Stop("Manual stop requested.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Recover To Base Camp"))
+        {
+            movementController.RecoverToBaseCamp();
+        }
+
+        if (!hasSelectedTarget)
+        {
+            ImGui.TextUnformatted("Plan Route requires a selected CE or FATE target.");
         }
     }
 

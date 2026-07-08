@@ -1,5 +1,7 @@
 ﻿using AOCCH.Data;
+using AOCCH.IPC;
 using AOCCH.Logging;
+using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
@@ -27,6 +29,10 @@ public sealed class Plugin : IDalamudPlugin
     public AocchLogger Logger { get; init; }
     public OccultCrescentData OccultCrescentData { get; init; }
     public OccultCrescentScanner Scanner { get; init; }
+    public VNavmeshIpc VNavmesh { get; init; }
+    public LifestreamIpc Lifestream { get; init; }
+    public RoutePlanner RoutePlanner { get; init; }
+    public MovementController MovementController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -39,10 +45,14 @@ public sealed class Plugin : IDalamudPlugin
         Logger = new AocchLogger(Log);
         OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
         Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
+        VNavmesh = new VNavmeshIpc(Logger);
+        Lifestream = new LifestreamIpc(Logger);
+        RoutePlanner = new RoutePlanner(OccultCrescentData, Logger);
+        MovementController = new MovementController(Framework, ObjectTable, Scanner, VNavmesh, Lifestream, RoutePlanner, OccultCrescentData, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -78,6 +88,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        MovementController.Dispose();
         Scanner.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
