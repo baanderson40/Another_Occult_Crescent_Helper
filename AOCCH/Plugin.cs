@@ -1,4 +1,5 @@
 ﻿using AOCCH.Data;
+using AOCCH.Automation;
 using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Movement;
@@ -22,6 +23,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
@@ -33,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     public LifestreamIpc Lifestream { get; init; }
     public RoutePlanner RoutePlanner { get; init; }
     public MovementController MovementController { get; init; }
+    public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -49,10 +52,11 @@ public sealed class Plugin : IDalamudPlugin
         Lifestream = new LifestreamIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Logger);
         MovementController = new MovementController(Framework, ObjectTable, Scanner, VNavmesh, Lifestream, RoutePlanner, OccultCrescentData, Logger);
+        CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController, CriticalEngagementAutomationController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -88,6 +92,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        CriticalEngagementAutomationController.Dispose();
         MovementController.Dispose();
         Scanner.Dispose();
 

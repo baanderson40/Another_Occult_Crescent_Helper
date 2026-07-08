@@ -120,6 +120,9 @@ public sealed class MovementController : IDisposable
         => !lifestream.IsAvailable() ? "Unavailable" : (lifestream.IsBusy() ? "Busy" : "Available");
 
     public bool PlanRouteToSelectedTarget()
+        => PlanRoute(scanner.Snapshot.EffectiveTarget);
+
+    public bool PlanRoute(TargetSelection selection)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -128,7 +131,6 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        var selection = scanner.Snapshot.EffectiveTarget;
         SetState(MovementState.Planning);
         if (!routePlanner.TryPlan(selection, playerPosition.Value, out var route, out var failureReason))
         {

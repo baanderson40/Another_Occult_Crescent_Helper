@@ -114,14 +114,18 @@ public sealed class OccultCrescentScanner : IDisposable
             var criticalEncounters = new List<ActiveCriticalEncounter>();
             var unknownCriticalEncounters = new List<ActiveCriticalEncounter>();
             var fates = new List<ActiveFate>();
+            uint currentCriticalEncounterId = 0;
+            ActiveCriticalEncounter? currentCriticalEncounter = null;
             ActiveCriticalEncounter? selectedCriticalEncounter = null;
             ActiveFate? selectedFate = null;
             var effectiveTarget = TargetSelection.None;
 
             if (isInSouthHorn)
             {
-                ScanCriticalEncounters(criticalEncounters, unknownCriticalEncounters);
+                currentCriticalEncounterId = ScanCriticalEncounters(criticalEncounters, unknownCriticalEncounters);
                 ScanFates(fates);
+                currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
+                    ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
                 selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
                 selectedFate = SelectFate(fates);
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
@@ -130,11 +134,14 @@ public sealed class OccultCrescentScanner : IDisposable
             var nextSnapshot = new ScannerSnapshot
             {
                 IsInSouthHorn = isInSouthHorn,
+                IsInCriticalEncounter = currentCriticalEncounterId != 0,
                 TerritoryTypeId = territoryTypeId,
+                CurrentCriticalEncounterId = currentCriticalEncounterId,
                 LastUpdated = now,
                 CriticalEncounters = criticalEncounters,
                 UnknownCriticalEncounters = unknownCriticalEncounters,
                 Fates = fates,
+                CurrentCriticalEncounter = currentCriticalEncounter,
                 SelectedCriticalEncounter = selectedCriticalEncounter,
                 SelectedFate = selectedFate,
                 EffectiveTarget = effectiveTarget,
@@ -153,15 +160,17 @@ public sealed class OccultCrescentScanner : IDisposable
         }
     }
 
-    private unsafe void ScanCriticalEncounters(
+    private unsafe uint ScanCriticalEncounters(
         List<ActiveCriticalEncounter> criticalEncounters,
         List<ActiveCriticalEncounter> unknownCriticalEncounters)
     {
         var instance = PublicContentOccultCrescent.GetInstance();
         if (instance == null)
         {
-            return;
+            return 0;
         }
+
+        var currentCriticalEncounterId = instance->DynamicEventContainer.CurrentEventId;
 
         foreach (var dynamicEvent in instance->DynamicEventContainer.Events.ToArray())
         {
@@ -200,6 +209,7 @@ public sealed class OccultCrescentScanner : IDisposable
 
         criticalEncounters.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
         unknownCriticalEncounters.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
+        return currentCriticalEncounterId;
     }
 
     private void ScanFates(List<ActiveFate> fates)

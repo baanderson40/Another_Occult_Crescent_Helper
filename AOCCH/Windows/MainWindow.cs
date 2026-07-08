@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using AOCCH.Automation;
 using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Bindings.ImGui;
@@ -14,16 +15,22 @@ public class MainWindow : Window, IDisposable
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
     // but for ImGui the ID is "Another Occult Crescent Helper##Main".
-    public MainWindow(Configuration configuration, OccultCrescentScanner scanner, MovementController movementController)
+    public MainWindow(
+        Configuration configuration,
+        OccultCrescentScanner scanner,
+        MovementController movementController,
+        CriticalEngagementAutomationController criticalEngagementAutomationController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.criticalEngagementAutomationController = criticalEngagementAutomationController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -45,6 +52,9 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawSelectedTarget(snapshot);
+
+        ImGui.Separator();
+        DrawCriticalEngagementAutomation(snapshot);
 
         ImGui.Separator();
         DrawMovement(snapshot);
@@ -199,6 +209,15 @@ public class MainWindow : Window, IDisposable
         var target = snapshot.EffectiveTarget;
         if (target.Kind == SelectedTargetKind.None)
         {
+            if (snapshot.CurrentCriticalEncounter != null)
+            {
+                ImGui.TextWrapped($"Current CE: {snapshot.CurrentCriticalEncounter.Name} ({snapshot.CurrentCriticalEncounter.Id}) | State: {snapshot.CurrentCriticalEncounter.State}");
+            }
+            else if (snapshot.IsInCriticalEncounter)
+            {
+                ImGui.TextWrapped($"Current CE ID: {snapshot.CurrentCriticalEncounterId}");
+            }
+
             ImGui.TextUnformatted("Effective Target: None");
             return;
         }
@@ -216,6 +235,53 @@ public class MainWindow : Window, IDisposable
         if (target.WouldPreemptFate)
         {
             ImGui.TextUnformatted("CE would preempt the current FATE target.");
+        }
+
+        if (snapshot.CurrentCriticalEncounter != null)
+        {
+            ImGui.TextWrapped($"Current CE: {snapshot.CurrentCriticalEncounter.Name} ({snapshot.CurrentCriticalEncounter.Id}) | State: {snapshot.CurrentCriticalEncounter.State}");
+        }
+        else if (snapshot.IsInCriticalEncounter)
+        {
+            ImGui.TextWrapped($"Current CE ID: {snapshot.CurrentCriticalEncounterId}");
+        }
+    }
+
+    private void DrawCriticalEngagementAutomation(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Critical Engagement Automation");
+        ImGui.TextUnformatted($"State: {criticalEngagementAutomationController.State}");
+
+        if (criticalEngagementAutomationController.TargetCeId != 0)
+        {
+            ImGui.TextWrapped($"Locked Target: {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId})");
+        }
+        else
+        {
+            ImGui.TextUnformatted("Locked Target: None");
+        }
+
+        ImGui.TextWrapped($"Last Transition: {criticalEngagementAutomationController.LastTransition}");
+        if (!string.IsNullOrEmpty(criticalEngagementAutomationController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {criticalEngagementAutomationController.LastError}");
+        }
+
+        var canStart = snapshot.IsInSouthHorn && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter;
+        if (ImGui.Button("Start CE Automation") && canStart)
+        {
+            criticalEngagementAutomationController.Start();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop CE Automation"))
+        {
+            criticalEngagementAutomationController.Stop("Manual CE automation stop requested.");
+        }
+
+        if (!canStart)
+        {
+            ImGui.TextUnformatted("Start CE Automation requires South Horn and a CE effective target.");
         }
     }
 
