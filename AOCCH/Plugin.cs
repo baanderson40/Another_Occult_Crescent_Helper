@@ -30,7 +30,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
 
-        ConfigWindow = new ConfigWindow();
+        ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow();
 
