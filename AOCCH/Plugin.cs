@@ -37,7 +37,9 @@ public sealed class Plugin : IDalamudPlugin
     public RoutePlanner RoutePlanner { get; init; }
     public MovementController MovementController { get; init; }
     public AutorotationController AutorotationController { get; init; }
+    public BuffRotationController BuffRotationController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
+    public FateAutomationController FateAutomationController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -56,11 +58,13 @@ public sealed class Plugin : IDalamudPlugin
         RoutePlanner = new RoutePlanner(OccultCrescentData, Logger);
         MovementController = new MovementController(Framework, ObjectTable, Scanner, VNavmesh, Lifestream, RoutePlanner, OccultCrescentData, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
+        BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
+        FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, CriticalEngagementAutomationController);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -96,6 +100,8 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        BuffRotationController.Dispose();
+        FateAutomationController.Dispose();
         CriticalEngagementAutomationController.Dispose();
         AutorotationController.Dispose();
         MovementController.Dispose();

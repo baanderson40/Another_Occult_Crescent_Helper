@@ -16,7 +16,9 @@ public class MainWindow : Window, IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly AutorotationController autorotationController;
+    private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
+    private readonly FateAutomationController fateAutomationController;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -26,14 +28,18 @@ public class MainWindow : Window, IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         AutorotationController autorotationController,
-        CriticalEngagementAutomationController criticalEngagementAutomationController)
+        BuffRotationController buffRotationController,
+        CriticalEngagementAutomationController criticalEngagementAutomationController,
+        FateAutomationController fateAutomationController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
         this.autorotationController = autorotationController;
+        this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
+        this.fateAutomationController = fateAutomationController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -60,7 +66,13 @@ public class MainWindow : Window, IDisposable
         DrawCriticalEngagementAutomation(snapshot);
 
         ImGui.Separator();
+        DrawFateAutomation(snapshot);
+
+        ImGui.Separator();
         DrawAutorotation();
+
+        ImGui.Separator();
+        DrawBuffRotation(snapshot);
 
         ImGui.Separator();
         DrawMovement(snapshot);
@@ -273,7 +285,10 @@ public class MainWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {criticalEngagementAutomationController.LastError}");
         }
 
-        var canStart = snapshot.IsInSouthHorn && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter;
+        var otherAutomationRunning = fateAutomationController.IsRunning;
+        var canStart = snapshot.IsInSouthHorn
+            && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
+            && !otherAutomationRunning;
         if (ImGui.Button("Start CE Automation") && canStart)
         {
             criticalEngagementAutomationController.Start();
@@ -285,7 +300,11 @@ public class MainWindow : Window, IDisposable
             criticalEngagementAutomationController.Stop("Manual CE automation stop requested.");
         }
 
-        if (!canStart)
+        if (otherAutomationRunning)
+        {
+            ImGui.TextUnformatted("Stop FATE automation before starting CE automation.");
+        }
+        else if (!canStart)
         {
             ImGui.TextUnformatted("Start CE Automation requires South Horn and a CE effective target.");
         }
@@ -309,6 +328,102 @@ public class MainWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(autorotationController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {autorotationController.LastError}");
+        }
+    }
+
+    private void DrawFateAutomation(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("FATE Automation");
+        ImGui.TextUnformatted($"State: {fateAutomationController.State}");
+
+        if (fateAutomationController.TargetFateId != 0)
+        {
+            ImGui.TextWrapped($"Locked Target: {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId})");
+        }
+        else
+        {
+            ImGui.TextUnformatted("Locked Target: None");
+        }
+
+        ImGui.TextWrapped($"Last Transition: {fateAutomationController.LastTransition}");
+        if (!string.IsNullOrEmpty(fateAutomationController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {fateAutomationController.LastError}");
+        }
+
+        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning;
+        var canStart = snapshot.IsInSouthHorn
+            && snapshot.EffectiveTarget.Kind == SelectedTargetKind.Fate
+            && !otherAutomationRunning;
+        if (ImGui.Button("Start FATE Automation") && canStart)
+        {
+            fateAutomationController.Start();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop FATE Automation"))
+        {
+            fateAutomationController.Stop("Manual FATE automation stop requested.");
+        }
+
+        if (otherAutomationRunning)
+        {
+            ImGui.TextUnformatted("Stop CE automation before starting FATE automation.");
+        }
+        else if (!canStart)
+        {
+            ImGui.TextUnformatted("Start FATE Automation requires South Horn and a FATE effective target.");
+        }
+    }
+
+    private void DrawBuffRotation(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Buff Rotation");
+        ImGui.TextUnformatted($"Enabled: {(configuration.EnableBuffRotation ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"State: {buffRotationController.State}");
+        ImGui.TextWrapped($"Context: {FormatValue(buffRotationController.LastContext)}");
+        ImGui.TextWrapped($"Action: {FormatValue(buffRotationController.CurrentAction)}");
+        ImGui.TextWrapped($"Original Support Job: {FormatSupportJob(buffRotationController.OriginalSupportJob)}");
+        ImGui.TextWrapped($"Current Support Job: {FormatSupportJob(buffRotationController.CurrentSupportJob)}");
+        ImGui.TextWrapped($"Pending Restore: {FormatSupportJob(buffRotationController.PendingSupportJobRestore)}");
+        ImGui.TextWrapped($"Missing Required Statuses: {FormatValue(buffRotationController.MissingRequiredStatuses)}");
+        ImGui.TextWrapped($"Last Transition: {buffRotationController.LastTransition}");
+
+        if (!string.IsNullOrEmpty(buffRotationController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {buffRotationController.LastError}");
+        }
+
+        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning;
+        var canStart = snapshot.IsInSouthHorn && !otherAutomationRunning && !buffRotationController.IsRunning;
+        if (ImGui.Button("Run Buff Rotation") && canStart)
+        {
+            buffRotationController.Start("manual UI");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop Buff Rotation"))
+        {
+            buffRotationController.Stop("Manual buff rotation stop requested.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Restore Support Job"))
+        {
+            buffRotationController.RestorePendingSupportJob("manual UI restore");
+        }
+
+        if (otherAutomationRunning)
+        {
+            ImGui.TextUnformatted("Stop CE/FATE automation before running buff rotation.");
+        }
+        else if (!snapshot.IsInSouthHorn)
+        {
+            ImGui.TextUnformatted("Buff rotation requires South Horn.");
+        }
+        else if (buffRotationController.IsRunning)
+        {
+            ImGui.TextUnformatted("Buff rotation is already running.");
         }
     }
 
@@ -382,6 +497,23 @@ public class MainWindow : Window, IDisposable
 
     private static string FormatPreset(string preset)
         => string.IsNullOrEmpty(preset) ? "None" : preset;
+
+    private static string FormatValue(string? value)
+        => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private static string FormatSupportJob(byte supportJob)
+        => supportJob switch
+        {
+            0 => "0 (Freelancer)",
+            1 => "1 (Knight)",
+            3 => "3 (Monk)",
+            6 => "6 (Bard)",
+            15 => "15 (Dancer)",
+            _ => supportJob.ToString(CultureInfo.InvariantCulture),
+        };
+
+    private static string FormatSupportJob(byte? supportJob)
+        => supportJob.HasValue ? FormatSupportJob(supportJob.Value) : "None";
 
     private static string GetCeTargetLabel(ScannerSnapshot snapshot, ActiveCriticalEncounter encounter)
     {

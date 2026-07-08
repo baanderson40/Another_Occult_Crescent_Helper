@@ -24,4 +24,9 @@ public sealed class ScannerSnapshot
             ? null
             : CriticalEncounters.FirstOrDefault(encounter => encounter.Id == id)
                 ?? UnknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == id);
+
+    public ActiveFate? FindFate(uint id)
+        => id == 0
+            ? null
+            : Fates.FirstOrDefault(fate => fate.Id == id);
 }

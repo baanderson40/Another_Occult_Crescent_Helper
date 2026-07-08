@@ -214,6 +214,44 @@ public sealed class MovementController : IDisposable
         return true;
     }
 
+    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f)
+    {
+        vnavmesh.Stop();
+
+        lock (gate)
+        {
+            plannedRoute = new PlannedRoute
+            {
+                TargetDescription = description,
+                RouteType = "Direct",
+                FinalDestination = destination,
+                EstimatedDistance = float.MaxValue,
+                Steps =
+                [
+                    new RouteStep
+                    {
+                        Kind = RouteStepKind.PathToPoint,
+                        Description = description,
+                        Destination = destination,
+                        ArrivalTolerance = arrivalTolerance,
+                    },
+                ],
+            };
+            currentStepIndex = 0;
+            routeStartedAt = DateTimeOffset.UtcNow;
+            stepStartedAt = DateTimeOffset.MinValue;
+            lastProgressAt = DateTimeOffset.UtcNow;
+            lastDistance = float.MaxValue;
+            stepStarted = false;
+            lifestreamOwned = false;
+            lastError = string.Empty;
+            state = MovementState.Pathfinding;
+        }
+
+        logger.Info($"Starting direct movement: {description}.");
+        return true;
+    }
+
     public void Stop(string reason)
     {
         vnavmesh.Stop();
