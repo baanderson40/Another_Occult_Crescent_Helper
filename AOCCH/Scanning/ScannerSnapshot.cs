@@ -11,4 +11,7 @@ public sealed class ScannerSnapshot
     public IReadOnlyList<ActiveCriticalEncounter> CriticalEncounters { get; init; } = [];
     public IReadOnlyList<ActiveCriticalEncounter> UnknownCriticalEncounters { get; init; } = [];
     public IReadOnlyList<ActiveFate> Fates { get; init; } = [];
+    public ActiveCriticalEncounter? SelectedCriticalEncounter { get; init; }
+    public ActiveFate? SelectedFate { get; init; }
+    public TargetSelection EffectiveTarget { get; init; } = TargetSelection.None;
 }
