@@ -16,7 +16,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan AethernetTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
     private const float TransitionCompletionDistance = 25f;
@@ -24,6 +24,7 @@ public sealed class MovementController : IDisposable
     private const float AethernetBandWidth = 0.25f;
     private const float AethernetApproachTolerance = 0.25f;
     private const float ProgressThreshold = 2f;
+    private const int MaxAethernetAttempts = 3;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -34,6 +35,7 @@ public sealed class MovementController : IDisposable
     private readonly LifestreamIpc lifestream;
     private readonly RoutePlanner routePlanner;
     private readonly GameActionController gameActionController;
+    private readonly Configuration configuration;
     private readonly OccultCrescentData data;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -67,6 +69,7 @@ public sealed class MovementController : IDisposable
         LifestreamIpc lifestream,
         RoutePlanner routePlanner,
         GameActionController gameActionController,
+        Configuration configuration,
         OccultCrescentData data,
         AocchLogger logger)
     {
@@ -79,6 +82,7 @@ public sealed class MovementController : IDisposable
         this.lifestream = lifestream;
         this.routePlanner = routePlanner;
         this.gameActionController = gameActionController;
+        this.configuration = configuration;
         this.data = data;
         this.logger = logger;
 
@@ -513,7 +517,7 @@ public sealed class MovementController : IDisposable
 
         if (!stepStarted)
         {
-            if (step.ShouldMountBeforeStep && !EnsureMounted(step))
+            if (ShouldMountForStep(step, distance) && !EnsureMounted(step))
             {
                 return;
             }
@@ -576,54 +580,7 @@ public sealed class MovementController : IDisposable
     {
         if (!stepStarted)
         {
-            if (lifestream.IsBusy())
-            {
-                SetFailure(MovementState.Failed, "Lifestream is busy.");
-                return;
-            }
-
-            var activeAetheryte = lifestream.GetActiveAetheryte();
-            var activeCustomAetheryte = lifestream.GetActiveCustomAetheryte();
-            if (activeAetheryte == 0 && activeCustomAetheryte == 0)
-            {
-                var source = GetClosestAethernet(playerPosition);
-                if (source == null)
-                {
-                    SetFailure(MovementState.Failed, "No aethernet data is available for Lifestream teleport.");
-                    return;
-                }
-
-                if (CalculateFlatDistance(playerPosition, source.Position.ToVector3()) > source.InteractDistanceMax)
-                {
-                    SetFailure(MovementState.Failed, "Player is not near an aethernet shard for Lifestream teleport.");
-                    return;
-                }
-            }
-
-            if (!lifestream.TryAethernetTeleportByPlaceNameId(step.AethernetPlaceNameId))
-            {
-                SetFailure(MovementState.Failed, $"Lifestream could not teleport to {step.AethernetName}.");
-                return;
-            }
-
-            lock (gate)
-            {
-                state = MovementState.UsingAethernet;
-                stepStarted = true;
-                mountAttempted = false;
-                dismountAttempted = false;
-                stepAttemptCount = 0;
-                stepStartedAt = DateTimeOffset.UtcNow;
-                lastProgressAt = DateTimeOffset.UtcNow;
-                lastDistance = CalculateFlatDistance(playerPosition, step.Destination);
-                progressDistance = lastDistance;
-                startedAwayFromTransitionDestination = lastDistance > TransitionCompletionDistance;
-                transitionObserved = false;
-                stableSince = DateTimeOffset.MinValue;
-                lifestreamOwned = true;
-            }
-
-            logger.Info($"Started route step: {step.Description}.");
+            StartAethernetAttempt(step, playerPosition);
             return;
         }
 
@@ -633,7 +590,244 @@ public sealed class MovementController : IDisposable
             lastDistance = distance;
         }
 
-        WaitForTransitionCompletion(step, playerPosition, distance, AethernetTimeout, includeOccupiedCondition: true, $"aethernet {step.AethernetName}");
+        WaitForAethernetCompletion(step, playerPosition, distance);
+    }
+
+    private void StartAethernetAttempt(RouteStep step, Vector3 playerPosition)
+    {
+        if (stepAttemptCount >= MaxAethernetAttempts)
+        {
+            SetFailure(MovementState.TimedOut, $"aethernet {step.AethernetName} failed after {stepAttemptCount} attempt(s).", stopMovement: true);
+            return;
+        }
+
+        if (!EnsureDismountedForAethernet(step))
+        {
+            return;
+        }
+
+        if (lifestream.IsBusy())
+        {
+            SetFailure(MovementState.Failed, "Lifestream is busy.");
+            return;
+        }
+
+        var activeAetheryte = lifestream.GetActiveAetheryte();
+        var activeCustomAetheryte = lifestream.GetActiveCustomAetheryte();
+        if (activeAetheryte == 0 && activeCustomAetheryte == 0)
+        {
+            var source = GetClosestAethernet(playerPosition);
+            if (source == null)
+            {
+                SetFailure(MovementState.Failed, "No aethernet data is available for Lifestream teleport.");
+                return;
+            }
+
+            if (CalculateFlatDistance(playerPosition, source.Position.ToVector3()) > source.InteractDistanceMax)
+            {
+                SetFailure(MovementState.Failed, "Player is not near an aethernet shard for Lifestream teleport.");
+                return;
+            }
+        }
+
+        int attemptCount;
+        lock (gate)
+        {
+            stepAttemptCount++;
+            attemptCount = stepAttemptCount;
+        }
+
+        if (!lifestream.TryAethernetTeleportByPlaceNameId(step.AethernetPlaceNameId))
+        {
+            RetryOrFailAethernetStep(
+                step,
+                playerPosition,
+                CalculateFlatDistance(playerPosition, step.Destination),
+                observedTransition: false,
+                "Lifestream could not start the teleport request.");
+            return;
+        }
+
+        var distance = CalculateFlatDistance(playerPosition, step.Destination);
+        lock (gate)
+        {
+            state = MovementState.UsingAethernet;
+            stepStarted = true;
+            mountAttempted = false;
+            dismountAttempted = false;
+            stepStartedAt = DateTimeOffset.UtcNow;
+            lastProgressAt = DateTimeOffset.UtcNow;
+            lastDistance = distance;
+            progressDistance = distance;
+            startedAwayFromTransitionDestination = distance > TransitionCompletionDistance;
+            transitionObserved = false;
+            stableSince = DateTimeOffset.MinValue;
+            lifestreamOwned = true;
+        }
+
+        logger.Info($"Started route step: {step.Description} (attempt {attemptCount}/{MaxAethernetAttempts}).");
+    }
+
+    private bool EnsureDismountedForAethernet(RouteStep step)
+    {
+        if (!condition[ConditionFlag.Mounted])
+        {
+            return true;
+        }
+
+        if (condition[ConditionFlag.InCombat]
+            || condition[ConditionFlag.Casting]
+            || condition[ConditionFlag.BetweenAreas]
+            || objectTable.LocalPlayer?.CurrentHp == 0)
+        {
+            if (!dismountAttempted)
+            {
+                lock (gate)
+                {
+                    dismountAttempted = true;
+                }
+
+                logger.Warning($"Delaying aethernet teleport for step {step.Description} because dismount is currently unavailable.");
+            }
+
+            return false;
+        }
+
+        if (!dismountAttempted)
+        {
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, step.Description))
+            {
+                logger.Warning($"Failed to dismount before aethernet teleport for step {step.Description}; retrying.");
+                return false;
+            }
+
+            lock (gate)
+            {
+                dismountAttempted = true;
+                stepStartedAt = DateTimeOffset.UtcNow;
+            }
+
+            logger.Info($"Waiting to dismount before aethernet teleport: {step.Description}.");
+            return false;
+        }
+
+        if (DateTimeOffset.UtcNow - stepStartedAt > MountTimeout)
+        {
+            lock (gate)
+            {
+                dismountAttempted = false;
+                stepStartedAt = DateTimeOffset.UtcNow;
+            }
+
+            logger.Warning($"Dismount confirmation timed out before aethernet teleport for step {step.Description}; retrying.");
+        }
+
+        return false;
+    }
+
+    private void WaitForAethernetCompletion(RouteStep step, Vector3 playerPosition, float distance)
+    {
+        var casting = condition[ConditionFlag.Casting];
+        var betweenAreas = condition[ConditionFlag.BetweenAreas];
+        var occupied = condition[ConditionFlag.OccupiedInQuestEvent];
+        var busy = lifestream.IsBusy();
+
+        if (casting || betweenAreas || occupied || busy)
+        {
+            lock (gate)
+            {
+                transitionObserved = true;
+                lastProgressAt = DateTimeOffset.UtcNow;
+                stableSince = DateTimeOffset.MinValue;
+            }
+
+            return;
+        }
+
+        bool observed;
+        bool startedAway;
+        DateTimeOffset stableStart;
+        int attemptCount;
+        lock (gate)
+        {
+            observed = transitionObserved;
+            startedAway = startedAwayFromTransitionDestination;
+            stableStart = stableSince;
+            attemptCount = stepAttemptCount;
+        }
+
+        var playerAvailable = objectTable.LocalPlayer?.CurrentHp > 0;
+        var now = DateTimeOffset.UtcNow;
+        if (playerAvailable && distance <= TransitionCompletionDistance && (observed || startedAway))
+        {
+            var nextStableStart = stableStart == DateTimeOffset.MinValue ? now : stableStart;
+            lock (gate)
+            {
+                stableSince = nextStableStart;
+            }
+
+            if (now - nextStableStart >= TransitionStableTime)
+            {
+                logger.Info($"Completed route step: {step.Description}.");
+                AdvanceStep();
+            }
+
+            return;
+        }
+
+        lock (gate)
+        {
+            stableSince = DateTimeOffset.MinValue;
+        }
+
+        if (now - stepStartedAt <= AethernetAttemptTimeout)
+        {
+            return;
+        }
+
+        RetryOrFailAethernetStep(
+            step,
+            playerPosition,
+            distance,
+            observed,
+            $"conditions={DescribeTransitionConditions(includeOccupiedCondition: true)} attempt={attemptCount}/{MaxAethernetAttempts}");
+    }
+
+    private void RetryOrFailAethernetStep(RouteStep step, Vector3 playerPosition, float distance, bool observedTransition, string detail)
+    {
+        int attemptCount;
+        lock (gate)
+        {
+            attemptCount = stepAttemptCount;
+        }
+
+        if (lifestreamOwned && lifestream.IsBusy())
+        {
+            lifestream.Abort();
+        }
+
+        if (attemptCount < MaxAethernetAttempts)
+        {
+            lock (gate)
+            {
+                stepStarted = false;
+                stepStartedAt = DateTimeOffset.MinValue;
+                lastProgressAt = DateTimeOffset.UtcNow;
+                transitionObserved = false;
+                startedAwayFromTransitionDestination = false;
+                stableSince = DateTimeOffset.MinValue;
+                lifestreamOwned = false;
+            }
+
+            logger.Warning(
+                $"Retrying aethernet {step.AethernetName} after attempt {attemptCount}/{MaxAethernetAttempts} during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} observedTransition={observedTransition} {detail}");
+            return;
+        }
+
+        SetFailure(
+            MovementState.TimedOut,
+            $"aethernet {step.AethernetName} timed out after {attemptCount}/{MaxAethernetAttempts} attempt(s) during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} observedTransition={observedTransition} {detail}",
+            stopMovement: true);
     }
 
     private void AdvanceStep()
@@ -857,6 +1051,16 @@ public sealed class MovementController : IDisposable
         }
 
         return false;
+    }
+
+    private bool ShouldMountForStep(RouteStep step, float distance)
+    {
+        if (!step.ShouldMountBeforeStep)
+        {
+            return false;
+        }
+
+        return distance > Math.Max(0, configuration.MinimumMountingRange);
     }
 
     private bool IsPathStepComplete(RouteStep step, Vector3 playerPosition, float distance)

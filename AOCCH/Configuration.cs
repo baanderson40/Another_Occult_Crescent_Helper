@@ -28,6 +28,7 @@ public class Configuration : IPluginConfiguration
     public string ExcludedFates { get; set; } = string.Empty;
     public bool UseReturn { get; set; } = true;
     public bool EnableBuffRotation { get; set; } = true;
+    public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
 
     // The below exists just to make saving less cumbersome

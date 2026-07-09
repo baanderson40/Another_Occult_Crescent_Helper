@@ -133,7 +133,6 @@ public sealed class RoutePlanner
                         InteractionCenter = destination,
                         InteractDistanceMin = baseCamp.InteractDistanceMin,
                         InteractDistanceMax = baseCamp.InteractDistanceMax,
-                        ShouldMountBeforeStep = false,
                         ShouldDismountOnArrival = true,
                     },
                 ],
@@ -197,7 +196,7 @@ public sealed class RoutePlanner
 
         if (baseCamp != null && returnTime + RouteSavingsThreshold < aethernetTime)
         {
-            return CreateReturnRoute(targetDescription, destination, baseCamp, preferredAethernet, directDistance);
+            return CreateReturnRoute(targetDescription, playerPosition, destination, baseCamp, preferredAethernet, directDistance);
         }
 
         return CreateAethernetRoute(targetDescription, playerPosition, destination, sourceAethernet, preferredAethernet, directDistance);
@@ -280,6 +279,7 @@ public sealed class RoutePlanner
 
     private PlannedRoute CreateReturnRoute(
         string targetDescription,
+        Vector3 playerPosition,
         Vector3 destination,
         AethernetData baseCamp,
         AethernetData destinationAethernet,

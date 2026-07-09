@@ -61,7 +61,7 @@ public sealed class Plugin : IDalamudPlugin
         BossMod = new BossModIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
         GameActionController = new GameActionController(Logger);
-        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, OccultCrescentData, Logger);
+        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);

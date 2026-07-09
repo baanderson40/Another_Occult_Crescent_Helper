@@ -138,6 +138,15 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawSettingsTab()
     {
+        var minimumMountingRange = configuration.MinimumMountingRange;
+        if (ImGui.InputInt("Minimum Mounting Range", ref minimumMountingRange))
+        {
+            configuration.MinimumMountingRange = Math.Clamp(minimumMountingRange, 0, 100);
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("Movement stays on foot when the current pathing step starts within this many yalms of its destination.");
+
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
         {
