@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     public LifestreamIpc Lifestream { get; init; }
     public BossModIpc BossMod { get; init; }
     public RoutePlanner RoutePlanner { get; init; }
+    public GameActionController GameActionController { get; init; }
     public MovementController MovementController { get; init; }
     public AutorotationController AutorotationController { get; init; }
     public BuffRotationController BuffRotationController { get; init; }
@@ -58,8 +59,9 @@ public sealed class Plugin : IDalamudPlugin
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
-        RoutePlanner = new RoutePlanner(OccultCrescentData, Logger);
-        MovementController = new MovementController(Framework, ObjectTable, Scanner, VNavmesh, Lifestream, RoutePlanner, OccultCrescentData, Logger);
+        RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
+        GameActionController = new GameActionController(Logger);
+        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, OccultCrescentData, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
@@ -176,25 +178,47 @@ public sealed class Plugin : IDalamudPlugin
 
         if (FarmSessionController.IsRunning)
         {
+            Logger.Info("Panic stop: stopping farm session.");
             FarmSessionController.PanicStop();
+        }
+        else
+        {
+            Logger.Info("Panic stop: farm session not running.");
         }
 
         if (CriticalEngagementAutomationController.IsRunning)
         {
+            Logger.Info("Panic stop: stopping CE automation.");
             CriticalEngagementAutomationController.Stop(reason);
+        }
+        else
+        {
+            Logger.Info("Panic stop: CE automation not running.");
         }
 
         if (FateAutomationController.IsRunning)
         {
+            Logger.Info("Panic stop: stopping FATE automation.");
             FateAutomationController.Stop(reason);
+        }
+        else
+        {
+            Logger.Info("Panic stop: FATE automation not running.");
         }
 
         if (BuffRotationController.IsRunning)
         {
+            Logger.Info("Panic stop: stopping buff rotation.");
             BuffRotationController.Stop(reason);
         }
+        else
+        {
+            Logger.Info("Panic stop: buff rotation not running.");
+        }
 
+        Logger.Info("Panic stop: stopping movement.");
         MovementController.Stop(reason);
+        Logger.Info("Panic stop: releasing autorotation ownership.");
         AutorotationController.ReleaseOwnership(reason);
         Logger.Info("Global panic stop completed.");
     }

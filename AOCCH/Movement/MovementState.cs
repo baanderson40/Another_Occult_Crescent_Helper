@@ -4,6 +4,7 @@ public enum MovementState
 {
     Idle,
     Planning,
+    UsingReturn,
     Pathfinding,
     UsingAethernet,
     WaitingForArrival,

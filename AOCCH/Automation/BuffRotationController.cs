@@ -506,7 +506,7 @@ public sealed class BuffRotationController : IDisposable
         currentAction = $"Dismount attempt {dismountAttempt}/{DismountRetries}";
         unsafe
         {
-            ActionManager.Instance()->UseAction(ActionType.GeneralAction, 23);
+            ActionManager.Instance()->UseAction(ActionType.GeneralAction, GameActionController.DismountActionId);
         }
 
         TransitionTo(BuffRotationState.Dismounting, currentAction);

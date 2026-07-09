@@ -72,6 +72,9 @@ public class MainWindow : Window, IDisposable
         DrawSafety(snapshot);
 
         ImGui.Separator();
+        DrawTestReadiness(snapshot);
+
+        ImGui.Separator();
         DrawSelectedTarget(snapshot);
 
         ImGui.Separator();
@@ -566,6 +569,14 @@ public class MainWindow : Window, IDisposable
         }
         ImGui.EndDisabled();
 
+        ImGui.SameLine();
+        ImGui.BeginDisabled(scannerOnlyMode || !movementController.CanUseReturnAction);
+        if (ImGui.Button("Test Return Recovery"))
+        {
+            movementController.RecoverToBaseCamp();
+        }
+        ImGui.EndDisabled();
+
         if (!hasSelectedTarget)
         {
             ImGui.TextUnformatted("Plan Route requires a selected CE or FATE target.");
@@ -574,7 +585,15 @@ public class MainWindow : Window, IDisposable
         if (scannerOnlyMode)
         {
             ImGui.TextUnformatted("Scanner-only mode blocks movement starts and Base Camp recovery.");
+            return;
         }
+
+        if (!movementController.CanUseReturnAction)
+        {
+            ImGui.TextUnformatted("Return recovery testing is blocked because the Return action is unavailable.");
+        }
+
+        ImGui.TextUnformatted("Use Recover To Base Camp to test the Return recovery flow.");
     }
 
     private void DrawSafety(ScannerSnapshot snapshot)
@@ -586,6 +605,7 @@ public class MainWindow : Window, IDisposable
         ImGui.TextUnformatted($"Scanner-Only Mode: {(configuration.ScannerOnlyMode ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
         ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
+        ImGui.TextUnformatted($"Return Action: {(movementController.CanUseReturnAction ? "Available" : "Unavailable")}");
         ImGui.TextUnformatted($"BossMod: {FormatBossModStatus(bossModRequired, bossModAvailable)}");
         ImGui.TextUnformatted($"Farm Running: {(farmSessionController.IsRunning ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Movement State: {movementController.State}");
@@ -599,6 +619,15 @@ public class MainWindow : Window, IDisposable
         {
             ImGui.TextUnformatted("Automation is currently outside South Horn.");
         }
+    }
+
+    private void DrawTestReadiness(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Automation Test Readiness");
+        ImGui.TextUnformatted($"South Horn: {(snapshot.IsInSouthHorn ? "Ready" : "Blocked")}");
+        ImGui.TextUnformatted($"Return Required: {(configuration.UseReturn ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Return Available: {(movementController.CanUseReturnAction ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Farm Start: {FormatValue(GetFarmStartBlocker() ?? "Ready for full farm test")}");
     }
 
     private string? GetFarmStartBlocker()
@@ -626,6 +655,11 @@ public class MainWindow : Window, IDisposable
         if (!movementController.IsLifestreamAvailable)
         {
             return "Farm session start requires Lifestream IPC.";
+        }
+
+        if (configuration.UseReturn && !movementController.CanUseReturnAction)
+        {
+            return "Farm session start requires the Return general action when Use Return is enabled.";
         }
 
         if (autorotationController.ConfiguredPreset.Length > 0 && !autorotationController.RefreshBossModAvailability())
