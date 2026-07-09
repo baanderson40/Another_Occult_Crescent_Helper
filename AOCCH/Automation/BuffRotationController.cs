@@ -845,6 +845,8 @@ public sealed class BuffRotationController : IDisposable
                 lastError = string.Empty;
             }
         }
+
+        logger.Info($"Buff rotation state -> {nextState}: {transition}");
     }
 
     private void SetFailure(string error, bool critical)

@@ -291,18 +291,23 @@ public sealed class FateAutomationController : IDisposable
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                logger.ResetThrottle("fate-traveling");
                 movementController.Stop("Reached FATE destination.");
                 monitorStartedAt = DateTimeOffset.UtcNow;
                 TransitionTo(FateAutomationState.Participating, $"Monitoring FATE {target.Name} ({target.Id}).");
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                logger.ResetThrottle("fate-traveling");
                 if (TryHandleReturnTravelFallback(target))
                 {
                     return;
                 }
 
                 SetFailure($"Movement failed while traveling to FATE: {movementController.LastError}");
+                break;
+            default:
+                logger.DebugThrottled("fate-traveling", MonitorLogInterval, $"FATE automation is still traveling to {target.Name} ({target.Id}). MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
                 break;
         }
     }
@@ -347,13 +352,20 @@ public sealed class FateAutomationController : IDisposable
 
     private void TickRecovering()
     {
+        if (movementController.State is MovementState.Pathfinding or MovementState.WaitingForArrival or MovementState.UsingReturn or MovementState.UsingAethernet)
+        {
+            logger.DebugThrottled("fate-recovering", MonitorLogInterval, $"FATE automation is still recovering to Base Camp. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+        }
+
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                logger.ResetThrottle("fate-recovering");
                 TransitionTo(FateAutomationState.Completed, "FATE recovery completed.", clearTarget: true, clearAutorotationState: true, result: AutomationRunResult.Completed);
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                logger.ResetThrottle("fate-recovering");
                 if (TryHandleReturnRecoveryFallback())
                 {
                     return;

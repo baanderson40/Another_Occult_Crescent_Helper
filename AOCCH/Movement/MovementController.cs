@@ -19,6 +19,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const float TransitionCompletionDistance = 25f;
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
@@ -565,6 +566,11 @@ public sealed class MovementController : IDisposable
             return;
         }
 
+        if (pathBusy)
+        {
+            logger.DebugThrottled(BuildStepLogKey("path"), WaitLogInterval, $"Movement is still traveling step '{step.Description}'. distance={distance:0.0} state={State}.");
+        }
+
         if (!pathBusy && distance > step.ArrivalTolerance)
         {
             lock (gate)
@@ -782,6 +788,7 @@ public sealed class MovementController : IDisposable
 
         if (now - stepStartedAt <= AethernetAttemptTimeout)
         {
+            logger.DebugThrottled(BuildStepLogKey("aethernet"), WaitLogInterval, $"Movement is still waiting for aethernet step '{step.Description}'. distance={distance:0.0} observedTransition={observed} conditions={DescribeTransitionConditions(includeOccupiedCondition: true)}.");
             return;
         }
 
@@ -985,6 +992,7 @@ public sealed class MovementController : IDisposable
 
         if (now - stepStartedAt <= timeout)
         {
+            logger.DebugThrottled(BuildStepLogKey($"transition-{transitionName}"), WaitLogInterval, $"Movement is still waiting for {transitionName} completion during step '{step.Description}'. distance={distance:0.0} observedTransition={observed} conditions={DescribeTransitionConditions(includeOccupiedCondition)}.");
             return;
         }
 
@@ -1164,6 +1172,13 @@ public sealed class MovementController : IDisposable
     {
         distance = CalculateFlatDistance(playerPosition, step.InteractionCenter);
         return distance <= step.InteractDistanceMax;
+    }
+
+    private string BuildStepLogKey(string category)
+    {
+        var routeDescription = PlannedRoute?.TargetDescription ?? "none";
+        var stepDescription = GetActiveStepSummary();
+        return $"movement-{category}-{routeDescription}-{stepDescription}";
     }
 
     private static Vector3 GetDirectionalAethernetApproachPoint(Vector3 playerPosition, RouteStep step)

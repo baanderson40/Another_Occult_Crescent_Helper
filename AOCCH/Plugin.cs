@@ -69,7 +69,7 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, Configuration, Logger);
 
-        ConfigWindow = new ConfigWindow(Configuration);
+        ConfigWindow = new ConfigWindow(Configuration, Logger);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
 
@@ -123,28 +123,38 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        switch (args.Trim().ToLowerInvariant())
+        var normalizedArgs = args.Trim().ToLowerInvariant();
+        Logger.Info($"Slash command received: {command} {args}".TrimEnd());
+
+        switch (normalizedArgs)
         {
             case "":
             case "main":
+                Logger.Info("Slash command action: toggle main window.");
                 MainWindow.Toggle();
                 break;
             case "config":
+                Logger.Info("Slash command action: toggle config window.");
                 ConfigWindow.Toggle();
                 break;
             case "log":
+                Logger.Info("Slash command action: toggle log window.");
                 LogWindow.Toggle();
                 break;
             case "help":
+                Logger.Info("Slash command action: show help.");
                 PrintCommandHelp();
                 break;
             case "start":
+                Logger.Info("Slash command action: start farm session.");
                 FarmSessionController.Start();
                 break;
             case "stop":
+                Logger.Info("Slash command action: stop farm session.");
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
             case "panic":
+                Logger.Warning("Slash command action: panic stop.");
                 PanicStopAll();
                 break;
             default:
@@ -167,9 +177,23 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch help - Show this help");
     }
     
-    public void ToggleConfigUi() => ConfigWindow.Toggle();
-    public void ToggleLogUi() => LogWindow.Toggle();
-    public void ToggleMainUi() => MainWindow.Toggle();
+    public void ToggleConfigUi()
+    {
+        Logger.Info("UI action: toggle config window.");
+        ConfigWindow.Toggle();
+    }
+
+    public void ToggleLogUi()
+    {
+        Logger.Info("UI action: toggle log window.");
+        LogWindow.Toggle();
+    }
+
+    public void ToggleMainUi()
+    {
+        Logger.Info("UI action: toggle main window.");
+        MainWindow.Toggle();
+    }
 
     public void PanicStopAll()
     {

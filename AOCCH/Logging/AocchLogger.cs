@@ -6,10 +6,11 @@ namespace AOCCH.Logging;
 
 public sealed class AocchLogger
 {
-    private const int MaxEntries = 1000;
+    private const int MaxEntries = 5000;
 
     private readonly IPluginLog pluginLog;
     private readonly List<AocchLogEntry> entries = new();
+    private readonly Dictionary<string, DateTimeOffset> throttledEntries = new();
     private readonly object gate = new();
 
     public AocchLogger(IPluginLog pluginLog)
@@ -33,12 +34,26 @@ public sealed class AocchLogger
     public void Info(string message) => Add(AocchLogLevel.Info, message);
     public void Warning(string message) => Add(AocchLogLevel.Warning, message);
     public void Error(string message) => Add(AocchLogLevel.Error, message);
+    public void VerboseThrottled(string key, TimeSpan interval, string message) => AddThrottled(AocchLogLevel.Verbose, key, interval, message);
+    public void DebugThrottled(string key, TimeSpan interval, string message) => AddThrottled(AocchLogLevel.Debug, key, interval, message);
+    public void InfoThrottled(string key, TimeSpan interval, string message) => AddThrottled(AocchLogLevel.Info, key, interval, message);
+    public void WarningThrottled(string key, TimeSpan interval, string message) => AddThrottled(AocchLogLevel.Warning, key, interval, message);
+    public void ErrorThrottled(string key, TimeSpan interval, string message) => AddThrottled(AocchLogLevel.Error, key, interval, message);
 
     public void Clear()
     {
         lock (gate)
         {
             entries.Clear();
+            throttledEntries.Clear();
+        }
+    }
+
+    public void ResetThrottle(string key)
+    {
+        lock (gate)
+        {
+            throttledEntries.Remove(key);
         }
     }
 
@@ -56,6 +71,22 @@ public sealed class AocchLogger
         }
 
         WriteToDalamud(level, message);
+    }
+
+    private void AddThrottled(AocchLogLevel level, string key, TimeSpan interval, string message)
+    {
+        var now = DateTimeOffset.UtcNow;
+        lock (gate)
+        {
+            if (throttledEntries.TryGetValue(key, out var lastLoggedAt) && now - lastLoggedAt < interval)
+            {
+                return;
+            }
+
+            throttledEntries[key] = now;
+        }
+
+        Add(level, message);
     }
 
     private void WriteToDalamud(AocchLogLevel level, string message)

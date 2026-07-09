@@ -12,6 +12,7 @@ public sealed class DeathRecoveryController : IDisposable
     private static readonly TimeSpan RaiseSettleDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReviveConfirmTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan ReleaseConfirmTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly uint[] RaiseStatusIds = [148u, 1140u];
 
     private readonly IFramework framework;
@@ -229,6 +230,7 @@ public sealed class DeathRecoveryController : IDisposable
     {
         if (RaiseDetected && IsSelectYesnoReady())
         {
+            logger.ResetThrottle("death-waiting-raise");
             TransitionTo(DeathRecoveryState.WaitingForRaiseDialog, "Raise dialog detected; waiting for settle.");
             lock (gate)
             {
@@ -238,8 +240,11 @@ public sealed class DeathRecoveryController : IDisposable
             return;
         }
 
+        logger.DebugThrottled("death-waiting-raise", WaitLogInterval, $"Death recovery is still waiting for a raise. elapsed={Elapsed:mm\\:ss} raiseDetected={RaiseDetected}.");
+
         if (deathDetectedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - deathDetectedAt >= RaiseTimeout)
         {
+            logger.ResetThrottle("death-waiting-raise");
             logger.Warning("No raise arrived before timeout; releasing to home point.");
             TransitionTo(DeathRecoveryState.Releasing, "Raise timed out; waiting to confirm release dialog.");
             lock (gate)
@@ -253,12 +258,16 @@ public sealed class DeathRecoveryController : IDisposable
     {
         if (!IsPlayerDead())
         {
+            logger.ResetThrottle("death-accepting-raise");
             FinishRecovery("Raised successfully.");
             return;
         }
 
+        logger.DebugThrottled("death-accepting-raise", WaitLogInterval, "Death recovery is still waiting for raise acceptance to revive the player.");
+
         if (actionStartedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - actionStartedAt >= ReviveConfirmTimeout)
         {
+            logger.ResetThrottle("death-accepting-raise");
             lock (gate)
             {
                 raiseDetected = false;
@@ -276,6 +285,7 @@ public sealed class DeathRecoveryController : IDisposable
         {
             if (TryConfirmSelectYesno())
             {
+                logger.ResetThrottle("death-releasing");
                 logger.Info("Death recovery accepted release dialog.");
                 lock (gate)
                 {
@@ -284,18 +294,25 @@ public sealed class DeathRecoveryController : IDisposable
             }
             else if (stateEnteredAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - stateEnteredAt >= ReleaseConfirmTimeout)
             {
+                logger.ResetThrottle("death-releasing");
                 SetFailure("Raise timed out and release dialog was unavailable.");
             }
+        }
+        else
+        {
+            logger.DebugThrottled("death-releasing", WaitLogInterval, "Death recovery is still waiting for release confirmation to revive the player.");
         }
 
         if (!IsPlayerDead())
         {
+            logger.ResetThrottle("death-releasing");
             FinishRecovery("Released successfully.");
             return;
         }
 
         if (actionStartedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - actionStartedAt >= ReleaseConfirmTimeout)
         {
+            logger.ResetThrottle("death-releasing");
             SetFailure("Release did not revive player.");
         }
     }
@@ -386,15 +403,18 @@ public sealed class DeathRecoveryController : IDisposable
     {
         if (actionStartedAt == DateTimeOffset.MinValue || DateTimeOffset.UtcNow - actionStartedAt < RaiseSettleDelay)
         {
+            logger.DebugThrottled("death-waiting-dialog", WaitLogInterval, "Death recovery is still waiting for the raise dialog to settle.");
             return;
         }
 
         if (!TryConfirmSelectYesno())
         {
+            logger.ResetThrottle("death-waiting-dialog");
             TransitionTo(DeathRecoveryState.WaitingForRaise, "Raise dialog disappeared before confirmation; waiting for another raise.");
             return;
         }
 
+        logger.ResetThrottle("death-waiting-dialog");
         TransitionTo(DeathRecoveryState.AcceptingRaise, "Accepted raise dialog.");
         lock (gate)
         {

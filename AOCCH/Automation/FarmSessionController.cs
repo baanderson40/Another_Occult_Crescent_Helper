@@ -10,6 +10,7 @@ namespace AOCCH.Automation;
 public sealed class FarmSessionController : IDisposable
 {
     private static readonly TimeSpan IdleRescanInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -145,6 +146,7 @@ public sealed class FarmSessionController : IDisposable
             runBuffRotationAfterRecovery = false;
         }
 
+        logger.Info($"Farm session configuration: mode={configuration.FarmingMode} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
         TransitionTo(FarmSessionState.Starting, "Starting unified CE/FATE farm session.", "Startup");
         return true;
     }
@@ -307,9 +309,11 @@ public sealed class FarmSessionController : IDisposable
     {
         if (!scanner.Snapshot.IsInSouthHorn)
         {
+            logger.DebugThrottled("farm-waiting-south-horn", WaitLogInterval, "Farm session is still waiting for the player to enter South Horn.");
             return;
         }
 
+        logger.ResetThrottle("farm-waiting-south-horn");
         StartStartupBuffRotation();
     }
 
@@ -417,9 +421,15 @@ public sealed class FarmSessionController : IDisposable
 
     private void TickRecoveryToBase()
     {
+        if (movementController.State is MovementState.Pathfinding or MovementState.WaitingForArrival or MovementState.UsingReturn or MovementState.UsingAethernet)
+        {
+            logger.DebugThrottled("farm-recovering-base", WaitLogInterval, $"Farm session is still recovering to Base Camp. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+        }
+
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                logger.ResetThrottle("farm-recovering-base");
                 movementController.Stop("Base Camp recovery completed.");
                 if (runBuffRotationAfterRecovery)
                 {
@@ -442,6 +452,7 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                logger.ResetThrottle("farm-recovering-base");
                 SetFailure(movementController.LastError.Length == 0
                     ? "Base Camp recovery failed."
                     : movementController.LastError);
@@ -452,6 +463,7 @@ public sealed class FarmSessionController : IDisposable
     private void TickSelectingTarget()
     {
         var snapshot = scanner.Snapshot;
+        logger.ResetThrottle("farm-idle-waiting");
         if (!snapshot.IsInSouthHorn)
         {
             TransitionTo(FarmSessionState.WaitingForSouthHorn, "Left South Horn while selecting a target.", "Waiting for South Horn");
@@ -495,8 +507,11 @@ public sealed class FarmSessionController : IDisposable
     {
         if (criticalEngagementAutomationController.IsRunning)
         {
+            logger.DebugThrottled("farm-running-ce", WaitLogInterval, $"Farm session is still running CE automation. State={criticalEngagementAutomationController.State} target={criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).");
             return;
         }
+
+        logger.ResetThrottle("farm-running-ce");
 
         switch (criticalEngagementAutomationController.LastResult)
         {
@@ -518,8 +533,11 @@ public sealed class FarmSessionController : IDisposable
     {
         if (fateAutomationController.IsRunning)
         {
+            logger.DebugThrottled("farm-running-fate", WaitLogInterval, $"Farm session is still running FATE automation. State={fateAutomationController.State} target={fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).");
             return;
         }
+
+        logger.ResetThrottle("farm-running-fate");
 
         switch (fateAutomationController.LastResult)
         {
@@ -569,18 +587,31 @@ public sealed class FarmSessionController : IDisposable
 
     private void TickIdleWaiting()
     {
-        var now = DateTimeOffset.UtcNow;
-        if (now - lastIdleScanAt < IdleRescanInterval)
+        var snapshot = scanner.Snapshot;
+        if (!snapshot.IsInSouthHorn)
         {
+            logger.ResetThrottle("farm-idle-waiting");
+            TransitionTo(FarmSessionState.WaitingForSouthHorn, "Left South Horn while idle waiting.", "Waiting for South Horn");
             return;
         }
 
-        lock (gate)
+        if (snapshot.EffectiveTarget.Kind != SelectedTargetKind.None)
         {
-            lastIdleScanAt = now;
+            logger.ResetThrottle("farm-idle-waiting");
+            TransitionTo(FarmSessionState.SelectingTarget, "Target became available while idle waiting.", "Selecting target");
+            return;
         }
 
-        TransitionTo(FarmSessionState.SelectingTarget, "Retrying target selection.", "Selecting target");
+        var now = DateTimeOffset.UtcNow;
+        if (now - lastIdleScanAt >= IdleRescanInterval)
+        {
+            lock (gate)
+            {
+                lastIdleScanAt = now;
+            }
+
+            logger.DebugThrottled("farm-idle-waiting", WaitLogInterval, "Farm session is idle waiting for a new CE or FATE target.");
+        }
     }
 
     private void TransitionTo(FarmSessionState nextState, string reason, string activity, bool clearError = true)

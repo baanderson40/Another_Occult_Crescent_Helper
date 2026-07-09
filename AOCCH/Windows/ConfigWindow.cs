@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using AOCCH.Logging;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 
@@ -9,13 +10,15 @@ public class ConfigWindow : Window, IDisposable
 {
     private static readonly string[] FarmingModeLabels = ["CE & FATE", "CE Only", "FATE Only"];
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
+    private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly Configuration configuration;
+    private readonly AocchLogger logger;
 
     // We give this window a constant ID using ###.
     // This allows for labels to be dynamic, like "{FPS Counter}fps###XYZ counter window",
     // and the window ID will always be "###XYZ counter window" for ImGui
-    public ConfigWindow(Configuration configuration) : base("AOCCH Configuration###AOCCHConfig")
+    public ConfigWindow(Configuration configuration, AocchLogger logger) : base("AOCCH Configuration###AOCCHConfig")
     {
         Flags = ImGuiWindowFlags.NoCollapse;
 
@@ -23,6 +26,7 @@ public class ConfigWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
 
         this.configuration = configuration;
+        this.logger = logger;
     }
 
     public void Dispose() { }
@@ -73,6 +77,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(240);
         if (ImGui.InputText("Autorotation Preset Name", ref autorotationPresetName, 128))
         {
+            logger.InfoThrottled("setting-autorotation-preset-name", SettingTextLogInterval, $"Setting changed: AutorotationPresetName: '{configuration.AutorotationPresetName}' -> '{autorotationPresetName}'.");
             configuration.AutorotationPresetName = autorotationPresetName;
             configuration.Save();
         }
@@ -81,6 +86,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(160);
         if (ImGui.Combo("Farming Mode", ref farmingMode, FarmingModeLabels, FarmingModeLabels.Length))
         {
+            logger.Info($"Setting changed: FarmingMode: {configuration.FarmingMode} -> {(FarmingMode)farmingMode}.");
             configuration.FarmingMode = (FarmingMode)farmingMode;
             configuration.Save();
         }
@@ -88,6 +94,7 @@ public class ConfigWindow : Window, IDisposable
         var prioritizeCe = configuration.PrioritizeCe;
         if (ImGui.Checkbox("Prioritize CE", ref prioritizeCe))
         {
+            logger.Info($"Setting changed: PrioritizeCe: {configuration.PrioritizeCe} -> {prioritizeCe}.");
             configuration.PrioritizeCe = prioritizeCe;
             configuration.Save();
         }
@@ -95,6 +102,7 @@ public class ConfigWindow : Window, IDisposable
         var useReturn = configuration.UseReturn;
         if (ImGui.Checkbox("Use Return", ref useReturn))
         {
+            logger.Info($"Setting changed: UseReturn: {configuration.UseReturn} -> {useReturn}.");
             configuration.UseReturn = useReturn;
             configuration.Save();
         }
@@ -102,6 +110,7 @@ public class ConfigWindow : Window, IDisposable
         var enableBuffRotation = configuration.EnableBuffRotation;
         if (ImGui.Checkbox("Enable Buff Rotation", ref enableBuffRotation))
         {
+            logger.Info($"Setting changed: EnableBuffRotation: {configuration.EnableBuffRotation} -> {enableBuffRotation}.");
             configuration.EnableBuffRotation = enableBuffRotation;
             configuration.Save();
         }
@@ -113,6 +122,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(160);
         if (ImGui.Combo("FATE Priority", ref fatePriority, FatePriorityLabels, FatePriorityLabels.Length))
         {
+            logger.Info($"Setting changed: FatePriority: {configuration.FatePriority} -> {(FatePriority)fatePriority}.");
             configuration.FatePriority = (FatePriority)fatePriority;
             configuration.Save();
         }
@@ -121,6 +131,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(360);
         if (ImGui.InputText("Excluded FATEs", ref excludedFates, 512))
         {
+            logger.InfoThrottled("setting-excluded-fates", SettingTextLogInterval, $"Setting changed: ExcludedFates: '{configuration.ExcludedFates}' -> '{excludedFates}'.");
             configuration.ExcludedFates = excludedFates;
             configuration.Save();
         }
@@ -141,7 +152,9 @@ public class ConfigWindow : Window, IDisposable
         var minimumMountingRange = configuration.MinimumMountingRange;
         if (ImGui.InputInt("Minimum Mounting Range", ref minimumMountingRange))
         {
-            configuration.MinimumMountingRange = Math.Clamp(minimumMountingRange, 0, 100);
+            var nextValue = Math.Clamp(minimumMountingRange, 0, 100);
+            logger.InfoThrottled("setting-minimum-mounting-range", SettingTextLogInterval, $"Setting changed: MinimumMountingRange: {configuration.MinimumMountingRange} -> {nextValue}.");
+            configuration.MinimumMountingRange = nextValue;
             configuration.Save();
         }
 
@@ -150,6 +163,7 @@ public class ConfigWindow : Window, IDisposable
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
         {
+            logger.Info($"Setting changed: ScannerOnlyMode: {configuration.ScannerOnlyMode} -> {scannerOnlyMode}.");
             configuration.ScannerOnlyMode = scannerOnlyMode;
             configuration.Save();
         }

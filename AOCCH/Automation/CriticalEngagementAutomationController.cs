@@ -11,6 +11,7 @@ namespace AOCCH.Automation;
 public sealed class CriticalEngagementAutomationController : IDisposable
 {
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const float RepositionBuffer = 2f;
     private const float MinimumHoldRadius = 3f;
 
@@ -277,17 +278,22 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                logger.ResetThrottle("ce-traveling");
                 movementController.Stop("Reached CE staging point.");
                 TransitionTo(CriticalEngagementAutomationState.WaitingForEngage, $"Waiting inside engage radius for {target.Name} ({target.Id}).");
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                logger.ResetThrottle("ce-traveling");
                 if (TryHandleReturnTravelFallback(target))
                 {
                     return;
                 }
 
                 SetFailure($"Movement failed while traveling to CE: {movementController.LastError}");
+                break;
+            default:
+                logger.DebugThrottled("ce-traveling", WaitLogInterval, $"CE automation is still traveling to {target.Name} ({target.Id}). MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
                 break;
         }
     }
@@ -302,6 +308,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
         if (snapshot.CurrentCriticalEncounterId == target.Id)
         {
+            logger.ResetThrottle("ce-waiting-engage");
             lastCombatSeenAt = DateTimeOffset.UtcNow;
             autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) combat");
             TransitionTo(CriticalEngagementAutomationState.InBattle, $"Entered CE battle for {target.Name} ({target.Id}).");
@@ -310,9 +317,12 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
         if (IsInBattleState(target))
         {
+            logger.ResetThrottle("ce-waiting-engage");
             StartRecovery($"CE {target.Name} entered battle before engagement.");
             return;
         }
+
+        logger.DebugThrottled("ce-waiting-engage", WaitLogInterval, $"CE automation is still waiting to engage {target.Name} ({target.Id}). MovementState={movementController.State} currentCe={snapshot.CurrentCriticalEncounterId}.");
 
         if (!EnsureInsideEngageRadius(target))
         {
@@ -330,6 +340,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         if (snapshot.CurrentCriticalEncounterId == TargetCeId || condition[ConditionFlag.InCombat])
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            logger.DebugThrottled("ce-in-battle", WaitLogInterval, $"CE automation is still in battle for {TargetCeName} ({TargetCeId}). inCombat={condition[ConditionFlag.InCombat]} currentCe={snapshot.CurrentCriticalEncounterId}.");
             return;
         }
 
@@ -342,6 +353,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             ? $"CE {TargetCeName} completed or despawned."
             : $"CE {target.Name} no longer has the player engaged.";
 
+        logger.ResetThrottle("ce-in-battle");
         logger.Info(reason);
         autorotationController.ReleaseOwnership(reason);
         if (configuration.UseReturn)
@@ -355,13 +367,20 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private void TickRecovering()
     {
+        if (movementController.State is MovementState.Pathfinding or MovementState.WaitingForArrival or MovementState.UsingReturn or MovementState.UsingAethernet)
+        {
+            logger.DebugThrottled("ce-recovering", WaitLogInterval, $"CE automation is still recovering to Base Camp. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+        }
+
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                logger.ResetThrottle("ce-recovering");
                 TransitionTo(CriticalEngagementAutomationState.Completed, "CE recovery completed.", clearTarget: true, result: AutomationRunResult.Completed);
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                logger.ResetThrottle("ce-recovering");
                 if (TryHandleReturnRecoveryFallback())
                 {
                     return;
