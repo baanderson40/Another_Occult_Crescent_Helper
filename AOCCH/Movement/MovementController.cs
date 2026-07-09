@@ -1070,7 +1070,7 @@ public sealed class MovementController : IDisposable
             return distance <= step.ArrivalTolerance;
         }
 
-        return IsWithinAethernetBand(playerPosition, step, out _);
+        return IsWithinAethernetInteractRange(playerPosition, step, out _);
     }
 
     private bool CompletePathStepArrival(RouteStep step)
@@ -1158,6 +1158,12 @@ public sealed class MovementController : IDisposable
     {
         distance = CalculateFlatDistance(playerPosition, step.InteractionCenter);
         return distance >= step.InteractDistanceMin && distance <= step.InteractDistanceMax;
+    }
+
+    private static bool IsWithinAethernetInteractRange(Vector3 playerPosition, RouteStep step, out float distance)
+    {
+        distance = CalculateFlatDistance(playerPosition, step.InteractionCenter);
+        return distance <= step.InteractDistanceMax;
     }
 
     private static Vector3 GetDirectionalAethernetApproachPoint(Vector3 playerPosition, RouteStep step)

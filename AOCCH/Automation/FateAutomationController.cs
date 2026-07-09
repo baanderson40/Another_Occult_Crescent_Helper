@@ -350,7 +350,7 @@ public sealed class FateAutomationController : IDisposable
         switch (movementController.State)
         {
             case MovementState.Arrived:
-                TransitionTo(FateAutomationState.Completed, "FATE recovery completed.", clearTarget: true, clearAutorotationState: true);
+                TransitionTo(FateAutomationState.Completed, "FATE recovery completed.", clearTarget: true, clearAutorotationState: true, result: AutomationRunResult.Completed);
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:

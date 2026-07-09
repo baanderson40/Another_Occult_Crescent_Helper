@@ -358,7 +358,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         switch (movementController.State)
         {
             case MovementState.Arrived:
-                TransitionTo(CriticalEngagementAutomationState.Completed, "CE recovery completed.", clearTarget: true);
+                TransitionTo(CriticalEngagementAutomationState.Completed, "CE recovery completed.", clearTarget: true, result: AutomationRunResult.Completed);
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
