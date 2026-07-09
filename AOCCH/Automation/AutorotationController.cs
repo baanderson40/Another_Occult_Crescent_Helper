@@ -13,6 +13,7 @@ public sealed class AutorotationController : IDisposable
 
     private bool bossModAvailable;
     private bool hasOwnership;
+    private bool changedPreset;
     private string initialPreset = string.Empty;
     private string ownedPreset = string.Empty;
     private string lastKnownActivePreset = string.Empty;
@@ -203,6 +204,7 @@ public sealed class AutorotationController : IDisposable
             lock (gate)
             {
                 hasOwnership = false;
+                changedPreset = false;
                 ownedPreset = string.Empty;
             }
 
@@ -227,6 +229,7 @@ public sealed class AutorotationController : IDisposable
         lock (gate)
         {
             hasOwnership = true;
+            changedPreset = true;
             ownedPreset = preset;
         }
 
@@ -243,7 +246,7 @@ public sealed class AutorotationController : IDisposable
         lock (gate)
         {
             preset = ownedPreset;
-            ownsPreset = hasOwnership && preset.Length != 0;
+            ownsPreset = hasOwnership && changedPreset && preset.Length != 0;
         }
 
         if (!ownsPreset)
@@ -302,6 +305,7 @@ public sealed class AutorotationController : IDisposable
         lock (gate)
         {
             hasOwnership = false;
+            changedPreset = false;
             ownedPreset = string.Empty;
             initialPreset = string.Empty;
             if (clearError)
@@ -329,6 +333,8 @@ public sealed class AutorotationController : IDisposable
             lastStatus = error;
             lastError = error;
             hasOwnership = false;
+            changedPreset = false;
+            initialPreset = string.Empty;
             ownedPreset = string.Empty;
         }
 

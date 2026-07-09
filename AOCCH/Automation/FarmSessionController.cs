@@ -29,6 +29,7 @@ public sealed class FarmSessionController : IDisposable
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private string currentActivity = "None";
+    private string currentRunId = string.Empty;
     private DateTimeOffset lastIdleScanAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private bool pendingStop;
@@ -137,6 +138,7 @@ public sealed class FarmSessionController : IDisposable
         lock (gate)
         {
             pendingStop = false;
+            currentRunId = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
             lastError = string.Empty;
             lastIdleScanAt = DateTimeOffset.MinValue;
             recoverAfterBuffRotation = false;
@@ -275,6 +277,12 @@ public sealed class FarmSessionController : IDisposable
         if (!lifestream.IsAvailable())
         {
             SetFailure("Lifestream IPC is unavailable.");
+            return;
+        }
+
+        if (configuration.UseReturn && !movementController.CanUseReturnAction)
+        {
+            SetFailure("Return general action is unavailable while Use Return is enabled.");
             return;
         }
 
@@ -450,36 +458,34 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (configuration.FarmingMode != FarmingMode.FateOnly && snapshot.SelectedCriticalEncounter != null)
+        switch (snapshot.EffectiveTarget.Kind)
         {
-            if (!criticalEngagementAutomationController.Start(snapshot.SelectedCriticalEncounter))
-            {
-                SetFailure(criticalEngagementAutomationController.LastError.Length == 0
-                    ? "Failed to start CE automation."
-                    : criticalEngagementAutomationController.LastError);
+            case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
+                if (!criticalEngagementAutomationController.Start(snapshot.EffectiveTarget.CriticalEncounter))
+                {
+                    SetFailure(criticalEngagementAutomationController.LastError.Length == 0
+                        ? "Failed to start CE automation."
+                        : criticalEngagementAutomationController.LastError);
+                    return;
+                }
+
+                TransitionTo(FarmSessionState.RunningCe,
+                    $"Running CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).",
+                    "Critical Engagement");
                 return;
-            }
+            case SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null:
+                if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate))
+                {
+                    SetFailure(fateAutomationController.LastError.Length == 0
+                        ? "Failed to start FATE automation."
+                        : fateAutomationController.LastError);
+                    return;
+                }
 
-            TransitionTo(FarmSessionState.RunningCe,
-                $"Running CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).",
-                "Critical Engagement");
-            return;
-        }
-
-        if (configuration.FarmingMode != FarmingMode.CeOnly && snapshot.SelectedFate != null)
-        {
-            if (!fateAutomationController.Start(snapshot.SelectedFate))
-            {
-                SetFailure(fateAutomationController.LastError.Length == 0
-                    ? "Failed to start FATE automation."
-                    : fateAutomationController.LastError);
+                TransitionTo(FarmSessionState.RunningFate,
+                    $"Running FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).",
+                    "FATE");
                 return;
-            }
-
-            TransitionTo(FarmSessionState.RunningFate,
-                $"Running FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).",
-                "FATE");
-            return;
         }
 
         TransitionTo(FarmSessionState.IdleWaiting, "No eligible CE/FATE target selected.", "Idle waiting");
@@ -591,7 +597,7 @@ public sealed class FarmSessionController : IDisposable
             }
         }
 
-        logger.Info($"Farm session state -> {nextState}: {reason}");
+        logger.Info($"[Farm {currentRunId}] state -> {nextState}: {reason}");
     }
 
     private void SetFailure(string reason)
@@ -611,6 +617,6 @@ public sealed class FarmSessionController : IDisposable
             runBuffRotationAfterRecovery = false;
         }
 
-        logger.Warning(reason);
+        logger.Warning($"[Farm {currentRunId}] {reason}");
     }
 }
