@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
     private LogWindow LogWindow { get; init; }
     private MainWindow MainWindow { get; init; }
+    private DebugWindow DebugWindow { get; init; }
 
     public Plugin()
     {
@@ -71,15 +72,17 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(Configuration, Logger);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
+        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController);
+        DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
         WindowSystem.AddWindow(MainWindow);
+        WindowSystem.AddWindow(DebugWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, config, log, start, stop, panic, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, panic, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -108,6 +111,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        DebugWindow.Dispose();
         FarmSessionController.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
@@ -136,6 +140,10 @@ public sealed class Plugin : IDalamudPlugin
             case "config":
                 Logger.Info("Slash command action: toggle config window.");
                 ConfigWindow.Toggle();
+                break;
+            case "debug":
+                Logger.Info("Slash command action: toggle debug window.");
+                DebugWindow.Toggle();
                 break;
             case "log":
                 Logger.Info("Slash command action: toggle log window.");
@@ -169,6 +177,7 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("AOCCH commands:");
         ChatGui.Print("/aocch - Toggle main window");
         ChatGui.Print("/aocch main - Toggle main window");
+        ChatGui.Print("/aocch debug - Toggle debug window");
         ChatGui.Print("/aocch config - Toggle config window");
         ChatGui.Print("/aocch log - Toggle log window");
         ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
