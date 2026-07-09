@@ -24,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
@@ -40,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     public BuffRotationController BuffRotationController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
+    public DeathRecoveryController DeathRecoveryController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -61,10 +63,11 @@ public sealed class Plugin : IDalamudPlugin
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
+        DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -94,20 +97,23 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        Logger.Info("AOCCH cleanup starting.");
         
         WindowSystem.RemoveAllWindows();
 
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
-        BuffRotationController.Dispose();
+        DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
         CriticalEngagementAutomationController.Dispose();
+        BuffRotationController.Dispose();
         AutorotationController.Dispose();
         MovementController.Dispose();
         Scanner.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
+        Logger.Info("AOCCH cleanup finished.");
     }
 
     private void OnCommand(string command, string args)

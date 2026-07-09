@@ -278,6 +278,13 @@ public sealed class BuffRotationController : IDisposable
         logger.Info($"Buff rotation stop requested: {reason}");
     }
 
+    public void HandleDeath(string reason)
+    {
+        movementController.Stop(reason);
+        SetFailure(reason, critical: false);
+        logger.Warning($"Buff rotation stopped for death recovery: {reason}");
+    }
+
     public bool RestorePendingSupportJob(string context)
     {
         if (!RequestPendingSupportJobRestore(context, out var restoreError))
@@ -299,7 +306,16 @@ public sealed class BuffRotationController : IDisposable
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
-        _ = RequestPendingSupportJobRestore("plugin disposal", out _);
+        var pendingRestore = PendingSupportJobRestore;
+        if (RequestPendingSupportJobRestore("plugin disposal", out var restoreError))
+        {
+            logger.Info(pendingRestore == null
+                ? "Buff rotation cleanup: no support job restore was needed on plugin disposal."
+                : $"Buff rotation cleanup: requested support job restore to {pendingRestore.Value} on plugin disposal.");
+            return;
+        }
+
+        logger.Warning($"Buff rotation cleanup failed during plugin disposal: {restoreError}");
     }
 
     private void OnFrameworkUpdate(IFramework _)

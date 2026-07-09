@@ -19,6 +19,7 @@ public class MainWindow : Window, IDisposable
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
+    private readonly DeathRecoveryController deathRecoveryController;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -30,7 +31,8 @@ public class MainWindow : Window, IDisposable
         AutorotationController autorotationController,
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
-        FateAutomationController fateAutomationController)
+        FateAutomationController fateAutomationController,
+        DeathRecoveryController deathRecoveryController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
@@ -40,6 +42,7 @@ public class MainWindow : Window, IDisposable
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
+        this.deathRecoveryController = deathRecoveryController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -73,6 +76,9 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawBuffRotation(snapshot);
+
+        ImGui.Separator();
+        DrawDeathRecovery();
 
         ImGui.Separator();
         DrawMovement(snapshot);
@@ -424,6 +430,20 @@ public class MainWindow : Window, IDisposable
         else if (buffRotationController.IsRunning)
         {
             ImGui.TextUnformatted("Buff rotation is already running.");
+        }
+    }
+
+    private void DrawDeathRecovery()
+    {
+        ImGui.TextUnformatted("Death Recovery");
+        ImGui.TextUnformatted($"State: {deathRecoveryController.State}");
+        ImGui.TextUnformatted($"Raise Detected: {(deathRecoveryController.RaiseDetected ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Elapsed: {deathRecoveryController.Elapsed:mm\\:ss}");
+        ImGui.TextWrapped($"Last Transition: {deathRecoveryController.LastTransition}");
+
+        if (!string.IsNullOrEmpty(deathRecoveryController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {deathRecoveryController.LastError}");
         }
     }
 
