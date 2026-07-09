@@ -20,6 +20,7 @@ public class MainWindow : Window, IDisposable
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly DeathRecoveryController deathRecoveryController;
+    private readonly FarmSessionController farmSessionController;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -32,7 +33,8 @@ public class MainWindow : Window, IDisposable
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
-        DeathRecoveryController deathRecoveryController)
+        DeathRecoveryController deathRecoveryController,
+        FarmSessionController farmSessionController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.configuration = configuration;
@@ -43,6 +45,7 @@ public class MainWindow : Window, IDisposable
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.deathRecoveryController = deathRecoveryController;
+        this.farmSessionController = farmSessionController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -64,6 +67,9 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawSelectedTarget(snapshot);
+
+        ImGui.Separator();
+        DrawFarmSession();
 
         ImGui.Separator();
         DrawCriticalEngagementAutomation(snapshot);
@@ -291,7 +297,7 @@ public class MainWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {criticalEngagementAutomationController.LastError}");
         }
 
-        var otherAutomationRunning = fateAutomationController.IsRunning;
+        var otherAutomationRunning = fateAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && !otherAutomationRunning;
@@ -308,7 +314,7 @@ public class MainWindow : Window, IDisposable
 
         if (otherAutomationRunning)
         {
-            ImGui.TextUnformatted("Stop FATE automation before starting CE automation.");
+            ImGui.TextUnformatted("Stop the farm session/FATE automation before starting CE automation.");
         }
         else if (!canStart)
         {
@@ -357,7 +363,7 @@ public class MainWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {fateAutomationController.LastError}");
         }
 
-        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning;
+        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.Fate
             && !otherAutomationRunning;
@@ -374,7 +380,7 @@ public class MainWindow : Window, IDisposable
 
         if (otherAutomationRunning)
         {
-            ImGui.TextUnformatted("Stop CE automation before starting FATE automation.");
+            ImGui.TextUnformatted("Stop the farm session/CE automation before starting FATE automation.");
         }
         else if (!canStart)
         {
@@ -400,7 +406,7 @@ public class MainWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {buffRotationController.LastError}");
         }
 
-        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning;
+        var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn && !otherAutomationRunning && !buffRotationController.IsRunning;
         if (ImGui.Button("Run Buff Rotation") && canStart)
         {
@@ -444,6 +450,36 @@ public class MainWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(deathRecoveryController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {deathRecoveryController.LastError}");
+        }
+    }
+
+    private void DrawFarmSession()
+    {
+        ImGui.TextUnformatted("Farm Session");
+        ImGui.TextUnformatted($"State: {farmSessionController.State}");
+        ImGui.TextWrapped($"Activity: {FormatValue(farmSessionController.CurrentActivity)}");
+        ImGui.TextWrapped($"Last Transition: {farmSessionController.LastTransition}");
+
+        if (!string.IsNullOrEmpty(farmSessionController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {farmSessionController.LastError}");
+        }
+
+        if (ImGui.Button("Start Farm"))
+        {
+            farmSessionController.Start();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop Farm"))
+        {
+            farmSessionController.Stop("Manual farm session stop requested.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Panic Stop"))
+        {
+            farmSessionController.PanicStop();
         }
     }
 

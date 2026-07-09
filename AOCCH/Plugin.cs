@@ -42,6 +42,7 @@ public sealed class Plugin : IDalamudPlugin
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
+    public FarmSessionController FarmSessionController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -64,10 +65,11 @@ public sealed class Plugin : IDalamudPlugin
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController);
+        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -75,7 +77,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, config, log, help."
+            HelpMessage = "Open AOCCH. Args: main, config, log, start, stop, panic, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -104,6 +106,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         LogWindow.Dispose();
         MainWindow.Dispose();
+        FarmSessionController.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
         CriticalEngagementAutomationController.Dispose();
@@ -133,6 +136,15 @@ public sealed class Plugin : IDalamudPlugin
             case "help":
                 PrintCommandHelp();
                 break;
+            case "start":
+                FarmSessionController.Start();
+                break;
+            case "stop":
+                FarmSessionController.Stop("Slash command stop requested.");
+                break;
+            case "panic":
+                FarmSessionController.PanicStop();
+                break;
             default:
                 Logger.Warning($"Unknown command argument: {args}");
                 PrintCommandHelp();
@@ -147,6 +159,9 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch main - Toggle main window");
         ChatGui.Print("/aocch config - Toggle config window");
         ChatGui.Print("/aocch log - Toggle log window");
+        ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
+        ChatGui.Print("/aocch stop - Stop unified CE/FATE farm session");
+        ChatGui.Print("/aocch panic - Panic stop all farm activity");
         ChatGui.Print("/aocch help - Show this help");
     }
     

@@ -29,6 +29,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private string targetCeName = string.Empty;
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
+    private AutomationRunResult lastResult;
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
 
     public CriticalEngagementAutomationController(
@@ -114,7 +115,21 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             and not CriticalEngagementAutomationState.Completed
             and not CriticalEngagementAutomationState.Failed;
 
+    public AutomationRunResult LastResult
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastResult;
+            }
+        }
+    }
+
     public bool Start()
+        => Start(scanner.Snapshot.EffectiveTarget.CriticalEncounter);
+
+    public bool Start(ActiveCriticalEncounter? target)
     {
         if (IsRunning)
         {
@@ -123,8 +138,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         var snapshot = scanner.Snapshot;
-        var target = snapshot.EffectiveTarget.CriticalEncounter;
-        if (snapshot.EffectiveTarget.Kind != SelectedTargetKind.CriticalEncounter || target == null)
+        if (target == null)
         {
             SetFailure("No Critical Engagement target is currently selected.");
             return false;
@@ -141,6 +155,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             targetCeId = target.Id;
             targetCeName = target.Name;
             lastError = string.Empty;
+            lastResult = AutomationRunResult.None;
             lastCombatSeenAt = DateTimeOffset.MinValue;
         }
 
@@ -153,7 +168,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
-        TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason);
+        TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason, result: AutomationRunResult.Stopped);
         logger.Info($"CE automation stopped: {reason}");
     }
 
@@ -320,7 +335,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return;
         }
 
-        TransitionTo(CriticalEngagementAutomationState.Completed, reason, clearTarget: true);
+        TransitionTo(CriticalEngagementAutomationState.Completed, reason, clearTarget: true, result: AutomationRunResult.Completed);
     }
 
     private void TickRecovering()
@@ -391,16 +406,20 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private void SetFailure(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
-        TransitionTo(CriticalEngagementAutomationState.Failed, reason, clearTarget: false, error: reason);
+        TransitionTo(CriticalEngagementAutomationState.Failed, reason, clearTarget: false, error: reason, result: AutomationRunResult.Failed);
         logger.Warning(reason);
     }
 
-    private void TransitionTo(CriticalEngagementAutomationState nextState, string reason, bool clearTarget = false, string? error = null)
+    private void TransitionTo(CriticalEngagementAutomationState nextState, string reason, bool clearTarget = false, string? error = null, AutomationRunResult? result = null)
     {
         lock (gate)
         {
             state = nextState;
             lastTransition = reason;
+            if (result.HasValue)
+            {
+                lastResult = result.Value;
+            }
             if (error != null)
             {
                 lastError = error;

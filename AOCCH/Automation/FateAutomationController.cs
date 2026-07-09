@@ -30,6 +30,7 @@ public sealed class FateAutomationController : IDisposable
     private string lastTransition = "Idle";
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
     private bool autorotationApplied;
+    private AutomationRunResult lastResult;
 
     public FateAutomationController(
         IFramework framework,
@@ -114,7 +115,21 @@ public sealed class FateAutomationController : IDisposable
             and not FateAutomationState.Completed
             and not FateAutomationState.Failed;
 
+    public AutomationRunResult LastResult
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastResult;
+            }
+        }
+    }
+
     public bool Start()
+        => Start(scanner.Snapshot.EffectiveTarget.Fate);
+
+    public bool Start(ActiveFate? target)
     {
         if (IsRunning)
         {
@@ -123,8 +138,7 @@ public sealed class FateAutomationController : IDisposable
         }
 
         var snapshot = scanner.Snapshot;
-        var target = snapshot.EffectiveTarget.Fate;
-        if (snapshot.EffectiveTarget.Kind != SelectedTargetKind.Fate || target == null)
+        if (target == null)
         {
             SetFailure("No FATE target is currently selected.");
             return false;
@@ -143,6 +157,7 @@ public sealed class FateAutomationController : IDisposable
             lastError = string.Empty;
             lastCombatSeenAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
+            lastResult = AutomationRunResult.None;
         }
 
         logger.Info($"FATE automation starting for {target.Name} ({target.Id}).");
@@ -154,7 +169,7 @@ public sealed class FateAutomationController : IDisposable
     {
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
-        TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true);
+        TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Stopped);
         logger.Info($"FATE automation stopped: {reason}");
     }
 
@@ -340,7 +355,7 @@ public sealed class FateAutomationController : IDisposable
             return;
         }
 
-        TransitionTo(FateAutomationState.Completed, reason, clearTarget: true, clearAutorotationState: true);
+        TransitionTo(FateAutomationState.Completed, reason, clearTarget: true, clearAutorotationState: true, result: AutomationRunResult.Completed);
     }
 
     private void HandleCePreemption(ScannerSnapshot snapshot)
@@ -352,7 +367,7 @@ public sealed class FateAutomationController : IDisposable
 
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
-        TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true);
+        TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Preempted);
         logger.Info(reason);
     }
 
@@ -395,16 +410,20 @@ public sealed class FateAutomationController : IDisposable
     private void SetFailure(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
-        TransitionTo(FateAutomationState.Failed, reason, clearTarget: false, error: reason, clearAutorotationState: true);
+        TransitionTo(FateAutomationState.Failed, reason, clearTarget: false, error: reason, clearAutorotationState: true, result: AutomationRunResult.Failed);
         logger.Warning(reason);
     }
 
-    private void TransitionTo(FateAutomationState nextState, string reason, bool clearTarget = false, string? error = null, bool clearAutorotationState = false)
+    private void TransitionTo(FateAutomationState nextState, string reason, bool clearTarget = false, string? error = null, bool clearAutorotationState = false, AutomationRunResult? result = null)
     {
         lock (gate)
         {
             state = nextState;
             lastTransition = reason;
+            if (result.HasValue)
+            {
+                lastResult = result.Value;
+            }
             if (error != null)
             {
                 lastError = error;
