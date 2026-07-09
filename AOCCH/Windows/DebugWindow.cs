@@ -63,7 +63,8 @@ public sealed class DebugWindow : Window, IDisposable
     {
         var snapshot = scanner.Snapshot;
 
-        ImGui.TextUnformatted($"Selected Mode: {FormatFarmingMode(configuration.FarmingMode)}");
+        ImGui.TextUnformatted($"CE Farming: {(configuration.EnableCriticalEngagementFarming ? "Enabled" : "Disabled")}");
+        ImGui.TextUnformatted($"FATE Farming: {(configuration.EnableFateFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
         ImGui.TextUnformatted($"In South Horn: {(snapshot.IsInSouthHorn ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
@@ -104,15 +105,6 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.Separator();
         DrawFates(snapshot);
     }
-
-    private static string FormatFarmingMode(FarmingMode farmingMode)
-        => farmingMode switch
-        {
-            FarmingMode.CeAndFate => "CE & FATE",
-            FarmingMode.CeOnly => "CE Only",
-            FarmingMode.FateOnly => "FATE Only",
-            _ => farmingMode.ToString(),
-        };
 
     private static string FormatTimestamp(DateTimeOffset timestamp)
         => timestamp == DateTimeOffset.MinValue

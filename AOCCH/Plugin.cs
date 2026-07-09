@@ -15,6 +15,7 @@ namespace AOCCH;
 
 public sealed class Plugin : IDalamudPlugin
 {
+    private const uint SouthHornTerritoryTypeId = 1252;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
@@ -25,12 +26,14 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
     public Configuration Configuration { get; init; }
     public AocchLogger Logger { get; init; }
     public OccultCrescentData OccultCrescentData { get; init; }
+    public OccultCrescentNameResolver OccultCrescentNameResolver { get; init; }
     public OccultCrescentScanner Scanner { get; init; }
     public VNavmeshIpc VNavmesh { get; init; }
     public LifestreamIpc Lifestream { get; init; }
@@ -56,6 +59,13 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
         OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
+        if (Configuration.Migrate(OccultCrescentData))
+        {
+            Configuration.Save();
+            Logger.Info("Migrated configuration to CE/FATE checkbox settings.");
+        }
+
+        OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData);
         Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
@@ -70,7 +80,7 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, Configuration, Logger);
 
-        ConfigWindow = new ConfigWindow(Configuration, Logger);
+        ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController);
         DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
@@ -94,6 +104,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        ClientState.TerritoryChanged += OnTerritoryChanged;
 
         Logger.Info($"{PluginInterface.Manifest.Name} loaded.");
     }
@@ -104,6 +115,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        ClientState.TerritoryChanged -= OnTerritoryChanged;
         Logger.Info("AOCCH cleanup starting.");
         
         WindowSystem.RemoveAllWindows();
@@ -202,6 +214,26 @@ public sealed class Plugin : IDalamudPlugin
     {
         Logger.Info("UI action: toggle main window.");
         MainWindow.Toggle();
+    }
+
+    private void OnTerritoryChanged(uint territoryType)
+    {
+        if (territoryType == SouthHornTerritoryTypeId)
+        {
+            if (!MainWindow.IsOpen)
+            {
+                MainWindow.IsOpen = true;
+                Logger.Info("Main window auto-opened on South Horn entry.");
+            }
+
+            return;
+        }
+
+        if (MainWindow.IsOpen)
+        {
+            MainWindow.IsOpen = false;
+            Logger.Info($"Main window auto-closed on territory change to {territoryType}.");
+        }
     }
 
     public void PanicStopAll()

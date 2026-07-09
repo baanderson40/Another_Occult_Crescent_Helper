@@ -184,7 +184,10 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var metadata = data.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == dynamicEvent.DynamicEventId);
             var stateCode = (int)dynamicEvent.State;
-            var isCandidate = metadata != null && IsPreBattleCeState(stateCode);
+            var isCandidate = metadata != null
+                && configuration.EnableCriticalEngagementFarming
+                && configuration.IsCriticalEncounterEnabled(dynamicEvent.DynamicEventId)
+                && IsPreBattleCeState(stateCode);
             var activeEncounter = new ActiveCriticalEncounter
             {
                 Id = dynamicEvent.DynamicEventId,
@@ -217,7 +220,6 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private void ScanFates(List<ActiveFate> fates)
     {
-        var excludedFates = ParseExcludedFates();
         var playerPosition = objectTable.LocalPlayer?.Position;
         var joinedFateId = GetJoinedFateId();
 
@@ -238,7 +240,10 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var metadata = data.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
-            var isExcluded = excludedFates.Contains(name);
+            var isExcluded = metadata == null
+                || IsPotFate(metadata)
+                || !configuration.EnableFateFarming
+                || !configuration.IsFateEnabled(fate.FateId);
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, fate.Position)
                 : float.MaxValue;
@@ -296,41 +301,63 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private TargetSelection SelectEffectiveTarget(ActiveCriticalEncounter? selectedCriticalEncounter, ActiveFate? selectedFate)
     {
-        return configuration.FarmingMode switch
+        if (!configuration.EnableCriticalEngagementFarming && !configuration.EnableFateFarming)
         {
-            FarmingMode.CeOnly when selectedCriticalEncounter != null => new TargetSelection
+            return TargetSelection.None;
+        }
+
+        if (configuration.EnableCriticalEngagementFarming && !configuration.EnableFateFarming && selectedCriticalEncounter != null)
+        {
+            return new TargetSelection
             {
                 Kind = SelectedTargetKind.CriticalEncounter,
                 CriticalEncounter = selectedCriticalEncounter,
                 Reason = "CE priority",
-            },
-            FarmingMode.FateOnly when selectedFate != null => new TargetSelection
+            };
+        }
+
+        if (!configuration.EnableCriticalEngagementFarming && configuration.EnableFateFarming && selectedFate != null)
+        {
+            return new TargetSelection
             {
                 Kind = SelectedTargetKind.Fate,
                 Fate = selectedFate,
                 Reason = configuration.FatePriority == FatePriority.Nearest ? "Nearest FATE" : "Lowest FATE progress",
-            },
-            FarmingMode.CeAndFate when selectedCriticalEncounter != null && configuration.PrioritizeCe => new TargetSelection
+            };
+        }
+
+        if (configuration.EnableCriticalEngagementFarming && configuration.EnableFateFarming && selectedCriticalEncounter != null && configuration.PrioritizeCe)
+        {
+            return new TargetSelection
             {
                 Kind = SelectedTargetKind.CriticalEncounter,
                 CriticalEncounter = selectedCriticalEncounter,
                 Reason = selectedFate != null ? "CE preempted FATE" : "CE priority",
                 WouldPreemptFate = selectedFate != null,
-            },
-            FarmingMode.CeAndFate when selectedCriticalEncounter != null && selectedFate == null => new TargetSelection
+            };
+        }
+
+        if (configuration.EnableCriticalEngagementFarming && selectedCriticalEncounter != null && selectedFate == null)
+        {
+            return new TargetSelection
             {
                 Kind = SelectedTargetKind.CriticalEncounter,
                 CriticalEncounter = selectedCriticalEncounter,
                 Reason = "CE priority",
-            },
-            FarmingMode.CeAndFate when selectedFate != null => new TargetSelection
+            };
+        }
+
+        if (configuration.EnableFateFarming && selectedFate != null)
+        {
+            return new TargetSelection
             {
                 Kind = SelectedTargetKind.Fate,
                 Fate = selectedFate,
                 Reason = configuration.FatePriority == FatePriority.Nearest ? "Nearest FATE" : "Lowest FATE progress",
-            },
-            _ => TargetSelection.None,
-        };
+            };
+        }
+
+        return TargetSelection.None;
     }
 
     private void LogTargetSelectionIfChanged(ScannerSnapshot snapshot)
@@ -391,10 +418,8 @@ public sealed class OccultCrescentScanner : IDisposable
         }
     }
 
-    private HashSet<string> ParseExcludedFates()
-        => configuration.ExcludedFates
-            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private static bool IsPotFate(FateData fate)
+        => string.Equals(fate.Note, "PersistentPots", StringComparison.Ordinal);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

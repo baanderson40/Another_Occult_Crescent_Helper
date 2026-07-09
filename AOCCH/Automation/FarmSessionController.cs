@@ -146,7 +146,7 @@ public sealed class FarmSessionController : IDisposable
             runBuffRotationAfterRecovery = false;
         }
 
-        logger.Info($"Farm session configuration: mode={configuration.FarmingMode} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
+        logger.Info($"Farm session configuration: ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
         TransitionTo(FarmSessionState.Starting, "Starting unified CE/FATE farm session.", "Startup");
         return true;
     }
