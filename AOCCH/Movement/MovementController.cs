@@ -119,6 +119,12 @@ public sealed class MovementController : IDisposable
     public string LifestreamStatusText
         => !lifestream.IsAvailable() ? "Unavailable" : (lifestream.IsBusy() ? "Busy" : "Available");
 
+    public bool IsVNavmeshReady
+        => vnavmesh.IsReady();
+
+    public bool IsLifestreamAvailable
+        => lifestream.IsAvailable();
+
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 

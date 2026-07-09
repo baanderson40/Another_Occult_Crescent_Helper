@@ -106,6 +106,9 @@ public sealed class AutorotationController : IDisposable
     public string ConfiguredPreset
         => (configuration.AutorotationPresetName ?? string.Empty).Trim();
 
+    public bool RefreshBossModAvailability()
+        => ProbeAvailability();
+
     public void Dispose()
     {
         ReleaseOwnership("Plugin disposal");

@@ -122,6 +122,12 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        if (configuration.ScannerOnlyMode)
+        {
+            SetFailure("Farm session start blocked because scanner-only mode is enabled.");
+            return false;
+        }
+
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning)
         {
             SetFailure("Stop CE/FATE automation and buff rotation before starting the farm session.");

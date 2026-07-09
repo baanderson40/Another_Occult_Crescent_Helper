@@ -137,6 +137,12 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return false;
         }
 
+        if (configuration.ScannerOnlyMode)
+        {
+            SetFailure("Critical Engagement automation start blocked because scanner-only mode is enabled.");
+            return false;
+        }
+
         var snapshot = scanner.Snapshot;
         if (target == null)
         {

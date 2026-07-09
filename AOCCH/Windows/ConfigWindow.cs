@@ -136,8 +136,15 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextUnformatted("Treasure coffer settings will be added later.");
     }
 
-    private static void DrawSettingsTab()
+    private void DrawSettingsTab()
     {
-        ImGui.TextUnformatted("General plugin settings will be added later.");
+        var scannerOnlyMode = configuration.ScannerOnlyMode;
+        if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
+        {
+            configuration.ScannerOnlyMode = scannerOnlyMode;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
     }
 }

@@ -12,6 +12,7 @@ namespace AOCCH.Windows;
 
 public class MainWindow : Window, IDisposable
 {
+    private readonly Plugin plugin;
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
@@ -26,6 +27,7 @@ public class MainWindow : Window, IDisposable
     // The user will see "Another Occult Crescent Helper" as window title,
     // but for ImGui the ID is "Another Occult Crescent Helper##Main".
     public MainWindow(
+        Plugin plugin,
         Configuration configuration,
         OccultCrescentScanner scanner,
         MovementController movementController,
@@ -37,6 +39,7 @@ public class MainWindow : Window, IDisposable
         FarmSessionController farmSessionController)
         : base("Another Occult Crescent Helper##Main")
     {
+        this.plugin = plugin;
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
@@ -64,6 +67,9 @@ public class MainWindow : Window, IDisposable
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
         ImGui.TextUnformatted($"In South Horn: {(snapshot.IsInSouthHorn ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
+
+        ImGui.Separator();
+        DrawSafety(snapshot);
 
         ImGui.Separator();
         DrawSelectedTarget(snapshot);
@@ -300,11 +306,15 @@ public class MainWindow : Window, IDisposable
         var otherAutomationRunning = fateAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
-            && !otherAutomationRunning;
-        if (ImGui.Button("Start CE Automation") && canStart)
+            && !otherAutomationRunning
+            && !configuration.ScannerOnlyMode;
+
+        ImGui.BeginDisabled(!canStart);
+        if (ImGui.Button("Start CE Automation"))
         {
             criticalEngagementAutomationController.Start();
         }
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop CE Automation"))
@@ -315,6 +325,10 @@ public class MainWindow : Window, IDisposable
         if (otherAutomationRunning)
         {
             ImGui.TextUnformatted("Stop the farm session/FATE automation before starting CE automation.");
+        }
+        else if (configuration.ScannerOnlyMode)
+        {
+            ImGui.TextUnformatted("Scanner-only mode blocks CE automation starts.");
         }
         else if (!canStart)
         {
@@ -366,11 +380,15 @@ public class MainWindow : Window, IDisposable
         var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.Fate
-            && !otherAutomationRunning;
-        if (ImGui.Button("Start FATE Automation") && canStart)
+            && !otherAutomationRunning
+            && !configuration.ScannerOnlyMode;
+
+        ImGui.BeginDisabled(!canStart);
+        if (ImGui.Button("Start FATE Automation"))
         {
             fateAutomationController.Start();
         }
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop FATE Automation"))
@@ -381,6 +399,10 @@ public class MainWindow : Window, IDisposable
         if (otherAutomationRunning)
         {
             ImGui.TextUnformatted("Stop the farm session/CE automation before starting FATE automation.");
+        }
+        else if (configuration.ScannerOnlyMode)
+        {
+            ImGui.TextUnformatted("Scanner-only mode blocks FATE automation starts.");
         }
         else if (!canStart)
         {
@@ -408,10 +430,14 @@ public class MainWindow : Window, IDisposable
 
         var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || farmSessionController.IsRunning;
         var canStart = snapshot.IsInSouthHorn && !otherAutomationRunning && !buffRotationController.IsRunning;
-        if (ImGui.Button("Run Buff Rotation") && canStart)
+        canStart = canStart && !configuration.ScannerOnlyMode;
+
+        ImGui.BeginDisabled(!canStart);
+        if (ImGui.Button("Run Buff Rotation"))
         {
             buffRotationController.Start("manual UI");
         }
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop Buff Rotation"))
@@ -428,6 +454,10 @@ public class MainWindow : Window, IDisposable
         if (otherAutomationRunning)
         {
             ImGui.TextUnformatted("Stop CE/FATE automation before running buff rotation.");
+        }
+        else if (configuration.ScannerOnlyMode)
+        {
+            ImGui.TextUnformatted("Scanner-only mode blocks buff rotation starts.");
         }
         else if (!snapshot.IsInSouthHorn)
         {
@@ -465,10 +495,13 @@ public class MainWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {farmSessionController.LastError}");
         }
 
+        var farmStartBlocker = GetFarmStartBlocker();
+        ImGui.BeginDisabled(farmStartBlocker != null);
         if (ImGui.Button("Start Farm"))
         {
             farmSessionController.Start();
         }
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop Farm"))
@@ -479,7 +512,12 @@ public class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Panic Stop"))
         {
-            farmSessionController.PanicStop();
+            plugin.PanicStopAll();
+        }
+
+        if (farmStartBlocker != null)
+        {
+            ImGui.TextWrapped(farmStartBlocker);
         }
     }
 
@@ -500,16 +538,19 @@ public class MainWindow : Window, IDisposable
         }
 
         var hasSelectedTarget = snapshot.EffectiveTarget.Kind != SelectedTargetKind.None;
+        var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Button("Plan Route") && hasSelectedTarget)
         {
             movementController.PlanRouteToSelectedTarget();
         }
 
         ImGui.SameLine();
+        ImGui.BeginDisabled(scannerOnlyMode);
         if (ImGui.Button("Start Route"))
         {
             movementController.StartPlannedRoute();
         }
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop Movement"))
@@ -518,15 +559,91 @@ public class MainWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
+        ImGui.BeginDisabled(scannerOnlyMode);
         if (ImGui.Button("Recover To Base Camp"))
         {
             movementController.RecoverToBaseCamp();
         }
+        ImGui.EndDisabled();
 
         if (!hasSelectedTarget)
         {
             ImGui.TextUnformatted("Plan Route requires a selected CE or FATE target.");
         }
+
+        if (scannerOnlyMode)
+        {
+            ImGui.TextUnformatted("Scanner-only mode blocks movement starts and Base Camp recovery.");
+        }
+    }
+
+    private void DrawSafety(ScannerSnapshot snapshot)
+    {
+        var bossModRequired = autorotationController.ConfiguredPreset.Length > 0;
+        var bossModAvailable = autorotationController.RefreshBossModAvailability();
+
+        ImGui.TextUnformatted("Safety");
+        ImGui.TextUnformatted($"Scanner-Only Mode: {(configuration.ScannerOnlyMode ? "Enabled" : "Disabled")}");
+        ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
+        ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
+        ImGui.TextUnformatted($"BossMod: {FormatBossModStatus(bossModRequired, bossModAvailable)}");
+        ImGui.TextUnformatted($"Farm Running: {(farmSessionController.IsRunning ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Movement State: {movementController.State}");
+
+        if (configuration.ScannerOnlyMode)
+        {
+            ImGui.TextWrapped("Automation start requests are blocked while scanner-only mode is enabled.");
+        }
+
+        if (!snapshot.IsInSouthHorn)
+        {
+            ImGui.TextUnformatted("Automation is currently outside South Horn.");
+        }
+    }
+
+    private string? GetFarmStartBlocker()
+    {
+        if (configuration.ScannerOnlyMode)
+        {
+            return "Scanner-only mode blocks farm session starts.";
+        }
+
+        if (farmSessionController.IsRunning)
+        {
+            return "Farm session is already running.";
+        }
+
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning)
+        {
+            return "Stop CE/FATE automation and buff rotation before starting the farm session.";
+        }
+
+        if (!movementController.IsVNavmeshReady)
+        {
+            return "Farm session start requires vnavmesh IPC.";
+        }
+
+        if (!movementController.IsLifestreamAvailable)
+        {
+            return "Farm session start requires Lifestream IPC.";
+        }
+
+        if (autorotationController.ConfiguredPreset.Length > 0 && !autorotationController.RefreshBossModAvailability())
+        {
+            return "Farm session start requires BossMod IPC when an autorotation preset is configured.";
+        }
+
+        return null;
+    }
+
+    private static string FormatBossModStatus(bool required, bool available)
+    {
+        if (!required)
+        {
+            return available ? "Available (Not Required)" : "Not Required";
+        }
+
+        return available ? "Available" : "Unavailable";
     }
 
     private static string FormatCeTime(long startTimestamp)

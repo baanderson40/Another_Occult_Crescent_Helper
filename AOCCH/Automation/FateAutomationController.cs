@@ -137,6 +137,12 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
+        if (configuration.ScannerOnlyMode)
+        {
+            SetFailure("FATE automation start blocked because scanner-only mode is enabled.");
+            return false;
+        }
+
         var snapshot = scanner.Snapshot;
         if (target == null)
         {

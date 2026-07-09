@@ -69,7 +69,7 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(Configuration);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
+        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -143,7 +143,7 @@ public sealed class Plugin : IDalamudPlugin
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
             case "panic":
-                FarmSessionController.PanicStop();
+                PanicStopAll();
                 break;
             default:
                 Logger.Warning($"Unknown command argument: {args}");
@@ -168,4 +168,34 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleConfigUi() => ConfigWindow.Toggle();
     public void ToggleLogUi() => LogWindow.Toggle();
     public void ToggleMainUi() => MainWindow.Toggle();
+
+    public void PanicStopAll()
+    {
+        const string reason = "Global panic stop requested.";
+        Logger.Warning(reason);
+
+        if (FarmSessionController.IsRunning)
+        {
+            FarmSessionController.PanicStop();
+        }
+
+        if (CriticalEngagementAutomationController.IsRunning)
+        {
+            CriticalEngagementAutomationController.Stop(reason);
+        }
+
+        if (FateAutomationController.IsRunning)
+        {
+            FateAutomationController.Stop(reason);
+        }
+
+        if (BuffRotationController.IsRunning)
+        {
+            BuffRotationController.Stop(reason);
+        }
+
+        MovementController.Stop(reason);
+        AutorotationController.ReleaseOwnership(reason);
+        Logger.Info("Global panic stop completed.");
+    }
 }

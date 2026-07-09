@@ -194,6 +194,12 @@ public sealed class BuffRotationController : IDisposable
             return false;
         }
 
+        if (configuration.ScannerOnlyMode)
+        {
+            SetFailure("Buff rotation start blocked because scanner-only mode is enabled.", critical: false);
+            return false;
+        }
+
         lock (gate)
         {
             lastContext = context;
