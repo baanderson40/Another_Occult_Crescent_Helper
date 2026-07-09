@@ -31,6 +31,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private string lastTransition = "Idle";
     private AutomationRunResult lastResult;
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
+    private bool returnTravelFallbackAttempted;
+    private bool returnRecoveryFallbackAttempted;
 
     public CriticalEngagementAutomationController(
         IFramework framework,
@@ -163,6 +165,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             lastError = string.Empty;
             lastResult = AutomationRunResult.None;
             lastCombatSeenAt = DateTimeOffset.MinValue;
+            returnTravelFallbackAttempted = false;
+            returnRecoveryFallbackAttempted = false;
         }
 
         logger.Info($"CE automation starting for {target.Name} ({target.Id}).");
@@ -278,6 +282,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                if (TryHandleReturnTravelFallback(target))
+                {
+                    return;
+                }
+
                 SetFailure($"Movement failed while traveling to CE: {movementController.LastError}");
                 break;
         }
@@ -353,6 +362,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                if (TryHandleReturnRecoveryFallback())
+                {
+                    return;
+                }
+
                 SetFailure($"CE recovery failed: {movementController.LastError}");
                 break;
         }
@@ -393,6 +407,14 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         logger.Info(reason);
         if (!movementController.RecoverToBaseCamp())
         {
+            if (!returnRecoveryFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
+            {
+                returnRecoveryFallbackAttempted = true;
+                logger.Warning("CE recovery Return setup failed; falling back to direct Base Camp recovery.");
+                TransitionTo(CriticalEngagementAutomationState.Recovering, "Recovering to Base Camp after CE with Return fallback.");
+                return;
+            }
+
             SetFailure($"Failed to start CE recovery: {movementController.LastError}");
             return;
         }
@@ -402,6 +424,62 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private bool IsInBattleState(ActiveCriticalEncounter target)
         => target.StateCode >= 3;
+
+    private bool TryHandleReturnTravelFallback(ActiveCriticalEncounter target)
+    {
+        if (returnTravelFallbackAttempted || movementController.PlannedRoute?.RouteType != "Return")
+        {
+            return false;
+        }
+
+        returnTravelFallbackAttempted = true;
+        logger.Warning($"Return route failed while traveling to CE {target.Name} ({target.Id}); retrying without Return.");
+        return BeginPlanningWithoutReturn(target);
+    }
+
+    private bool BeginPlanningWithoutReturn(ActiveCriticalEncounter target)
+    {
+        TransitionTo(CriticalEngagementAutomationState.PlanningRoute, $"Retrying route to CE {target.Name} ({target.Id}) without Return.");
+        var selection = new TargetSelection
+        {
+            Kind = SelectedTargetKind.CriticalEncounter,
+            CriticalEncounter = target,
+            Reason = "CE automation lock fallback",
+        };
+
+        if (!movementController.PlanRoute(selection, allowReturn: false))
+        {
+            logger.Warning($"CE fallback route planning failed: {movementController.LastError}");
+            return false;
+        }
+
+        if (!movementController.StartPlannedRoute())
+        {
+            logger.Warning($"CE fallback route start failed: {movementController.LastError}");
+            return false;
+        }
+
+        TransitionTo(CriticalEngagementAutomationState.TravelingToStaging, $"Traveling to CE staging point for {target.Name} ({target.Id}) with Return fallback disabled.");
+        return true;
+    }
+
+    private bool TryHandleReturnRecoveryFallback()
+    {
+        if (returnRecoveryFallbackAttempted || movementController.PlannedRoute?.RouteType != "Return")
+        {
+            return false;
+        }
+
+        if (!movementController.RecoverToBaseCamp(allowReturn: false))
+        {
+            return false;
+        }
+
+        returnRecoveryFallbackAttempted = true;
+        logger.Warning("Return recovery failed after CE; retrying Base Camp recovery without Return.");
+        TransitionTo(CriticalEngagementAutomationState.Recovering, "Recovering to Base Camp after CE with direct fallback.");
+        return true;
+    }
 
     private void SetFailureAndStopMovement(string reason)
     {

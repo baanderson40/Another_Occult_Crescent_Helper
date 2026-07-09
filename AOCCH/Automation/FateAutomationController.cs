@@ -11,6 +11,7 @@ namespace AOCCH.Automation;
 public sealed class FateAutomationController : IDisposable
 {
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MonitorLogInterval = TimeSpan.FromSeconds(10);
     private const float FateParticipationPadding = 5f;
 
     private readonly IFramework framework;
@@ -29,6 +30,16 @@ public sealed class FateAutomationController : IDisposable
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
+    private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastMonitorLogAt = DateTimeOffset.MinValue;
+    private int lastLoggedProgress = -1;
+    private int lastLoggedStateCode = -1;
+    private bool returnTravelFallbackAttempted;
+    private bool returnRecoveryFallbackAttempted;
+    private int lastObservedProgress = -1;
+    private int lastObservedStateCode = -1;
+    private string lastObservedState = string.Empty;
+    private DateTimeOffset monitorStartedAt = DateTimeOffset.MinValue;
     private bool autorotationApplied;
     private AutomationRunResult lastResult;
 
@@ -162,6 +173,16 @@ public sealed class FateAutomationController : IDisposable
             targetFateName = target.Name;
             lastError = string.Empty;
             lastCombatSeenAt = DateTimeOffset.MinValue;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            lastMonitorLogAt = DateTimeOffset.MinValue;
+            lastLoggedProgress = -1;
+            lastLoggedStateCode = -1;
+            returnTravelFallbackAttempted = false;
+            returnRecoveryFallbackAttempted = false;
+            lastObservedProgress = -1;
+            lastObservedStateCode = -1;
+            lastObservedState = string.Empty;
+            monitorStartedAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
             lastResult = AutomationRunResult.None;
         }
@@ -271,10 +292,16 @@ public sealed class FateAutomationController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached FATE destination.");
+                monitorStartedAt = DateTimeOffset.UtcNow;
                 TransitionTo(FateAutomationState.Participating, $"Monitoring FATE {target.Name} ({target.Id}).");
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                if (TryHandleReturnTravelFallback(target))
+                {
+                    return;
+                }
+
                 SetFailure($"Movement failed while traveling to FATE: {movementController.LastError}");
                 break;
         }
@@ -284,9 +311,12 @@ public sealed class FateAutomationController : IDisposable
     {
         if (target == null)
         {
+            LogFateCompletionAudit("disappeared from the FATE table");
             FinishFate($"FATE {TargetFateName} completed or despawned.");
             return;
         }
+
+        LogFateMonitor(target);
 
         if (IsParticipatingInFate(target))
         {
@@ -302,6 +332,7 @@ public sealed class FateAutomationController : IDisposable
 
         if (!IsFateActive(target))
         {
+            LogFateCompletionAudit("left the active FATE state");
             FinishFate($"FATE {target.Name} ({target.Id}) is no longer active.");
             return;
         }
@@ -323,6 +354,11 @@ public sealed class FateAutomationController : IDisposable
                 break;
             case MovementState.Failed:
             case MovementState.TimedOut:
+                if (TryHandleReturnRecoveryFallback())
+                {
+                    return;
+                }
+
                 SetFailure($"FATE recovery failed: {movementController.LastError}");
                 break;
         }
@@ -353,6 +389,14 @@ public sealed class FateAutomationController : IDisposable
         {
             if (!movementController.RecoverToBaseCamp())
             {
+                if (!returnRecoveryFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
+                {
+                    returnRecoveryFallbackAttempted = true;
+                    logger.Warning("FATE recovery Return setup failed; falling back to direct Base Camp recovery.");
+                    TransitionTo(FateAutomationState.Recovering, "Recovering to Base Camp after FATE with Return fallback.", clearAutorotationState: true);
+                    return;
+                }
+
                 SetFailure($"Failed to start FATE recovery: {movementController.LastError}");
                 return;
             }
@@ -426,6 +470,7 @@ public sealed class FateAutomationController : IDisposable
         {
             state = nextState;
             lastTransition = reason;
+            stateEnteredAt = DateTimeOffset.UtcNow;
             if (result.HasValue)
             {
                 lastResult = result.Value;
@@ -446,9 +491,104 @@ public sealed class FateAutomationController : IDisposable
                 autorotationApplied = false;
                 lastCombatSeenAt = DateTimeOffset.MinValue;
             }
+
+            if (nextState != FateAutomationState.Participating)
+            {
+                lastMonitorLogAt = DateTimeOffset.MinValue;
+                lastLoggedProgress = -1;
+                lastLoggedStateCode = -1;
+            }
         }
 
         logger.Info($"FATE automation state -> {nextState}: {reason}");
+    }
+
+    private void LogFateMonitor(ActiveFate target)
+    {
+        lastObservedProgress = target.Progress;
+        lastObservedStateCode = target.StateCode;
+        lastObservedState = target.State;
+
+        var now = DateTimeOffset.UtcNow;
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        var distance = playerPosition == null ? float.MaxValue : CalculateFlatDistance(playerPosition.Value, target.Position);
+        var shouldLog = now - lastMonitorLogAt >= MonitorLogInterval
+            || lastLoggedProgress != target.Progress
+            || lastLoggedStateCode != target.StateCode;
+
+        if (!shouldLog)
+        {
+            return;
+        }
+
+        lastMonitorLogAt = now;
+        lastLoggedProgress = target.Progress;
+        lastLoggedStateCode = target.StateCode;
+        var elapsed = stateEnteredAt == DateTimeOffset.MinValue ? TimeSpan.Zero : now - stateEnteredAt;
+        logger.Debug(
+            $"FATE monitor {target.Name} ({target.Id}): state={target.State}({target.StateCode}) progress={target.Progress}% inCombat={condition[ConditionFlag.InCombat]} insideRadius={HasArrivedWithinFateRadius(target)} distance={distance:0.0} elapsed={elapsed:mm\\:ss}.");
+    }
+
+    private bool TryHandleReturnTravelFallback(ActiveFate target)
+    {
+        if (returnTravelFallbackAttempted || movementController.PlannedRoute?.RouteType != "Return")
+        {
+            return false;
+        }
+
+        returnTravelFallbackAttempted = true;
+        logger.Warning($"Return route failed while traveling to FATE {target.Name} ({target.Id}); retrying without Return.");
+        return BeginPlanningWithoutReturn(target);
+    }
+
+    private bool BeginPlanningWithoutReturn(ActiveFate target)
+    {
+        TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
+        var selection = new TargetSelection
+        {
+            Kind = SelectedTargetKind.Fate,
+            Fate = target,
+            Reason = "FATE automation lock fallback",
+        };
+
+        if (!movementController.PlanRoute(selection, allowReturn: false))
+        {
+            logger.Warning($"FATE fallback route planning failed: {movementController.LastError}");
+            return false;
+        }
+
+        if (!movementController.StartPlannedRoute())
+        {
+            logger.Warning($"FATE fallback route start failed: {movementController.LastError}");
+            return false;
+        }
+
+        TransitionTo(FateAutomationState.TravelingToFate, $"Traveling to FATE {target.Name} ({target.Id}) with Return fallback disabled.");
+        return true;
+    }
+
+    private bool TryHandleReturnRecoveryFallback()
+    {
+        if (returnRecoveryFallbackAttempted || movementController.PlannedRoute?.RouteType != "Return")
+        {
+            return false;
+        }
+
+        if (!movementController.RecoverToBaseCamp(allowReturn: false))
+        {
+            return false;
+        }
+
+        returnRecoveryFallbackAttempted = true;
+        logger.Warning("Return recovery failed after FATE; retrying Base Camp recovery without Return.");
+        TransitionTo(FateAutomationState.Recovering, "Recovering to Base Camp after FATE with direct fallback.", clearAutorotationState: true);
+        return true;
+    }
+
+    private void LogFateCompletionAudit(string completionKind)
+    {
+        var elapsed = monitorStartedAt == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - monitorStartedAt;
+        logger.Info($"FATE completion audit for {TargetFateName} ({TargetFateId}): completion={completionKind} lastState={lastObservedState}({lastObservedStateCode}) lastProgress={lastObservedProgress}% monitorElapsed={elapsed:mm\\:ss}.");
     }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
