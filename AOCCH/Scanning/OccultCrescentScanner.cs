@@ -30,6 +30,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private DateTimeOffset lastScanAt = DateTimeOffset.MinValue;
     private bool? lastSouthHornState;
     private string lastSelectionKey = string.Empty;
+    private bool pendingForceRefresh = true;
 
     public OccultCrescentScanner(
         IClientState clientState,
@@ -52,7 +53,6 @@ public sealed class OccultCrescentScanner : IDisposable
         clientState.TerritoryChanged += OnTerritoryChanged;
 
         logger.Info("Occult Crescent scanner initialized in read-only mode.");
-        RefreshSnapshot(force: true);
     }
 
     public ScannerSnapshot Snapshot
@@ -75,7 +75,9 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private void OnFrameworkUpdate(IFramework _)
     {
-        RefreshSnapshot(force: false);
+        var force = pendingForceRefresh;
+        pendingForceRefresh = false;
+        RefreshSnapshot(force);
     }
 
     private void OnTerritoryChanged(uint territoryType)
@@ -85,7 +87,7 @@ public sealed class OccultCrescentScanner : IDisposable
             ? $"Scanner detected entry into South Horn (territory {territoryType})."
             : $"Scanner detected territory change to {territoryType}; South Horn scanner is idle.");
 
-        RefreshSnapshot(force: true);
+        pendingForceRefresh = true;
     }
 
     private void RefreshSnapshot(bool force)
