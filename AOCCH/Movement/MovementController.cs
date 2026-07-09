@@ -163,7 +163,11 @@ public sealed class MovementController : IDisposable
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 
-    public bool PlanRoute(TargetSelection selection, bool allowReturn = true)
+    public bool PlanRoute(
+        TargetSelection selection,
+        bool allowReturn = true,
+        Vector3? finalDestinationOverride = null,
+        float? finalArrivalToleranceOverride = null)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -173,7 +177,7 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlan(selection, playerPosition.Value, out var route, out var failureReason, allowReturn))
+        if (!routePlanner.TryPlan(selection, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -333,6 +337,9 @@ public sealed class MovementController : IDisposable
         logger.Info($"Starting direct movement: {description}.");
         return true;
     }
+
+    public Vector3? FindNearestNavigablePoint(Vector3 position, float halfExtentXZ = 5f, float halfExtentY = 5f)
+        => vnavmesh.FindNearestPoint(position, halfExtentXZ, halfExtentY);
 
     public void Stop(string reason)
     {

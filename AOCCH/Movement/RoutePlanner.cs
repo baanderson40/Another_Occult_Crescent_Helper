@@ -28,7 +28,14 @@ public sealed class RoutePlanner
         this.logger = logger;
     }
 
-    public bool TryPlan(TargetSelection selection, Vector3 playerPosition, out PlannedRoute route, out string failureReason, bool allowReturn = true)
+    public bool TryPlan(
+        TargetSelection selection,
+        Vector3 playerPosition,
+        out PlannedRoute route,
+        out string failureReason,
+        bool allowReturn = true,
+        Vector3? finalDestinationOverride = null,
+        float? finalArrivalToleranceOverride = null)
     {
         route = new PlannedRoute();
         failureReason = string.Empty;
@@ -39,7 +46,7 @@ public sealed class RoutePlanner
             return false;
         }
 
-        var destination = GetDestination(selection);
+        var destination = finalDestinationOverride ?? GetDestination(selection);
         var targetDescription = GetTargetDescription(selection);
         if (destination == null)
         {
@@ -51,7 +58,7 @@ public sealed class RoutePlanner
         var travelSpeed = MathF.Max(data.MountedTravelSpeed, 1f);
         if (data.Aethernets.Count == 0)
         {
-            route = CreateDirectRoute(targetDescription, destination.Value, directDistance);
+            route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride);
             logger.Warning($"No aethernet data is loaded; using direct route for {targetDescription}.");
             return true;
         }
@@ -59,14 +66,14 @@ public sealed class RoutePlanner
         var preferredAethernet = GetPreferredAethernet(selection, destination.Value);
         if (preferredAethernet == null)
         {
-            route = CreateDirectRoute(targetDescription, destination.Value, directDistance);
+            route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride);
             return true;
         }
 
         var sourceAethernet = GetClosestAethernet(playerPosition);
         if (sourceAethernet == null)
         {
-            route = CreateDirectRoute(targetDescription, destination.Value, directDistance);
+            route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride);
             logger.Warning($"No source aethernet data is available; using direct route for {targetDescription}.");
             return true;
         }
@@ -82,7 +89,7 @@ public sealed class RoutePlanner
             returnTime = CalculateReturnTime(preferredAethernet, destination.Value, travelSpeed);
         }
 
-        route = ChooseRoute(selection, targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime);
+        route = ChooseRoute(selection, targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
 
         logger.Info($"Selected {route.RouteType} route for {targetDescription}: reason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}.");
         return true;
@@ -176,7 +183,8 @@ public sealed class RoutePlanner
         AethernetData sourceAethernet,
         AethernetData preferredAethernet,
         float aethernetTime,
-        float returnTime)
+        float returnTime,
+        float? finalArrivalToleranceOverride)
     {
         var baseCamp = GetBaseCampAethernet();
         var closeToBaseCamp = baseCamp != null
@@ -185,24 +193,24 @@ public sealed class RoutePlanner
 
         if (closeToBaseCamp)
         {
-            return CreateDirectRoute(targetDescription, destination, directDistance);
+            return CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
         }
 
         if ((directTime + RouteSavingsThreshold) <= aethernetTime
             && (directTime + RouteSavingsThreshold) <= returnTime)
         {
-            return CreateDirectRoute(targetDescription, destination, directDistance);
+            return CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
         }
 
         if (baseCamp != null && returnTime + RouteSavingsThreshold < aethernetTime)
         {
-            return CreateReturnRoute(targetDescription, playerPosition, destination, baseCamp, preferredAethernet, directDistance);
+            return CreateReturnRoute(targetDescription, playerPosition, destination, baseCamp, preferredAethernet, directDistance, finalArrivalToleranceOverride);
         }
 
-        return CreateAethernetRoute(targetDescription, playerPosition, destination, sourceAethernet, preferredAethernet, directDistance);
+        return CreateAethernetRoute(targetDescription, playerPosition, destination, sourceAethernet, preferredAethernet, directDistance, finalArrivalToleranceOverride);
     }
 
-    private PlannedRoute CreateDirectRoute(string targetDescription, Vector3 destination, float directDistance)
+    private PlannedRoute CreateDirectRoute(string targetDescription, Vector3 destination, float directDistance, float? finalArrivalToleranceOverride)
         => new()
         {
             TargetDescription = targetDescription,
@@ -217,7 +225,7 @@ public sealed class RoutePlanner
                     Kind = RouteStepKind.PathToPoint,
                     Description = $"Path directly to {targetDescription}",
                     Destination = destination,
-                    ArrivalTolerance = TargetArrivalTolerance,
+                    ArrivalTolerance = finalArrivalToleranceOverride ?? TargetArrivalTolerance,
                 },
             ],
         };
@@ -228,7 +236,8 @@ public sealed class RoutePlanner
         Vector3 destination,
         AethernetData sourceAethernet,
         AethernetData destinationAethernet,
-        float estimatedDistance)
+        float estimatedDistance,
+        float? finalArrivalToleranceOverride)
     {
         var steps = new List<RouteStep>();
         var sourcePosition = sourceAethernet.Position.ToVector3();
@@ -263,7 +272,7 @@ public sealed class RoutePlanner
             Kind = RouteStepKind.PathToPoint,
             Description = $"Path from {FormatAethernetName(destinationAethernet.Name)} to {targetDescription}",
             Destination = destination,
-            ArrivalTolerance = TargetArrivalTolerance,
+            ArrivalTolerance = finalArrivalToleranceOverride ?? TargetArrivalTolerance,
         });
 
         return new PlannedRoute
@@ -283,7 +292,8 @@ public sealed class RoutePlanner
         Vector3 destination,
         AethernetData baseCamp,
         AethernetData destinationAethernet,
-        float estimatedDistance)
+        float estimatedDistance,
+        float? finalArrivalToleranceOverride)
     {
         var steps = new List<RouteStep>
         {
@@ -329,7 +339,7 @@ public sealed class RoutePlanner
             Kind = RouteStepKind.PathToPoint,
             Description = $"Path from Return route to {targetDescription}",
             Destination = destination,
-            ArrivalTolerance = TargetArrivalTolerance,
+            ArrivalTolerance = finalArrivalToleranceOverride ?? TargetArrivalTolerance,
         });
 
         return new PlannedRoute

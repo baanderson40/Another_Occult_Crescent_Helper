@@ -12,6 +12,10 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 {
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
+    private const int WaitPointCandidateCount = 10;
+    private const int WaitPointApproachArcDegrees = 120;
+    private const float WaitRingMinRadius = 7f;
+    private const float WaitPointStopDistance = 0.75f;
     private const float RepositionBuffer = 2f;
     private const float MinimumHoldRadius = 3f;
 
@@ -34,6 +38,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
     private bool returnTravelFallbackAttempted;
     private bool returnRecoveryFallbackAttempted;
+    private Vector3 ceWaitPoint;
+    private float ceWaitPointArrivalTolerance;
 
     public CriticalEngagementAutomationController(
         IFramework framework,
@@ -168,6 +174,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             lastCombatSeenAt = DateTimeOffset.MinValue;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
+            ceWaitPoint = default;
+            ceWaitPointArrivalTolerance = 0f;
         }
 
         logger.Info($"CE automation starting for {target.Name} ({target.Id}).");
@@ -236,6 +244,35 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private bool BeginPlanning(ActiveCriticalEncounter target)
     {
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (playerPosition == null)
+        {
+            SetFailure("Player position is unavailable while planning CE movement.");
+            return false;
+        }
+
+        var routeDestination = target.StagingPoint;
+        var arrivalTolerance = MathF.Max(0.5f, target.EngageRadius - RepositionBuffer);
+        if (TrySelectCeWaitPoint(target, playerPosition.Value, out var waitPoint))
+        {
+            routeDestination = waitPoint;
+            arrivalTolerance = WaitPointStopDistance;
+
+            lock (gate)
+            {
+                ceWaitPoint = waitPoint;
+                ceWaitPointArrivalTolerance = arrivalTolerance;
+            }
+        }
+        else
+        {
+            lock (gate)
+            {
+                ceWaitPoint = target.StagingPoint;
+                ceWaitPointArrivalTolerance = arrivalTolerance;
+            }
+        }
+
         TransitionTo(CriticalEngagementAutomationState.PlanningRoute, $"Planning route to CE {target.Name} ({target.Id}).");
         var selection = new TargetSelection
         {
@@ -244,7 +281,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             Reason = "CE automation lock",
         };
 
-        if (!movementController.PlanRoute(selection))
+        if (!movementController.PlanRoute(selection, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance))
         {
             SetFailure($"Failed to plan route to CE: {movementController.LastError}");
             return false;
@@ -256,7 +293,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return false;
         }
 
-        TransitionTo(CriticalEngagementAutomationState.TravelingToStaging, $"Traveling to CE staging point for {target.Name} ({target.Id}).");
+        TransitionTo(CriticalEngagementAutomationState.TravelingToStaging, $"Traveling to CE wait point for {target.Name} ({target.Id}).");
         return true;
     }
 
@@ -279,7 +316,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         {
             case MovementState.Arrived:
                 logger.ResetThrottle("ce-traveling");
-                movementController.Stop("Reached CE staging point.");
+                movementController.Stop("Reached CE wait point.");
                 TransitionTo(CriticalEngagementAutomationState.WaitingForEngage, $"Waiting inside engage radius for {target.Name} ({target.Id}).");
                 break;
             case MovementState.Failed:
@@ -418,7 +455,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         logger.Info($"Player drifted outside CE engage radius for {target.Name} ({target.Id}); repositioning.");
-        return BeginPlanning(target);
+        return BeginWaitPointReposition(target, playerPosition.Value);
     }
 
     private void StartRecovery(string reason)
@@ -458,6 +495,20 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private bool BeginPlanningWithoutReturn(ActiveCriticalEncounter target)
     {
+        Vector3 routeDestination;
+        float arrivalTolerance;
+        lock (gate)
+        {
+            routeDestination = ceWaitPoint;
+            arrivalTolerance = ceWaitPointArrivalTolerance;
+        }
+
+        if (arrivalTolerance <= 0f)
+        {
+            routeDestination = target.StagingPoint;
+            arrivalTolerance = MathF.Max(0.5f, target.EngageRadius - RepositionBuffer);
+        }
+
         TransitionTo(CriticalEngagementAutomationState.PlanningRoute, $"Retrying route to CE {target.Name} ({target.Id}) without Return.");
         var selection = new TargetSelection
         {
@@ -466,7 +517,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             Reason = "CE automation lock fallback",
         };
 
-        if (!movementController.PlanRoute(selection, allowReturn: false))
+        if (!movementController.PlanRoute(selection, allowReturn: false, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance))
         {
             logger.Warning($"CE fallback route planning failed: {movementController.LastError}");
             return false;
@@ -478,7 +529,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return false;
         }
 
-        TransitionTo(CriticalEngagementAutomationState.TravelingToStaging, $"Traveling to CE staging point for {target.Name} ({target.Id}) with Return fallback disabled.");
+        TransitionTo(CriticalEngagementAutomationState.TravelingToStaging, $"Traveling to CE wait point for {target.Name} ({target.Id}) with Return fallback disabled.");
         return true;
     }
 
@@ -532,6 +583,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             {
                 targetCeId = 0;
                 targetCeName = string.Empty;
+                ceWaitPoint = default;
+                ceWaitPointArrivalTolerance = 0f;
             }
         }
 
@@ -544,4 +597,117 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         var deltaZ = left.Z - right.Z;
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
+
+    private bool BeginWaitPointReposition(ActiveCriticalEncounter target, Vector3 playerPosition)
+    {
+        if (TrySelectCeWaitPoint(target, playerPosition, out var waitPoint))
+        {
+            lock (gate)
+            {
+                ceWaitPoint = waitPoint;
+                ceWaitPointArrivalTolerance = WaitPointStopDistance;
+            }
+
+            return movementController.StartDirectMove($"Reposition to CE wait point for {target.Name} ({target.Id})", waitPoint, WaitPointStopDistance);
+        }
+
+        var fallbackTolerance = MathF.Max(0.5f, target.EngageRadius - RepositionBuffer);
+        lock (gate)
+        {
+            ceWaitPoint = target.StagingPoint;
+            ceWaitPointArrivalTolerance = fallbackTolerance;
+        }
+
+        logger.Warning($"No valid CE wait point found for {target.Name} ({target.Id}); falling back to the staging center with inner-radius tolerance.");
+        return movementController.StartDirectMove($"Reposition inside CE radius for {target.Name} ({target.Id})", target.StagingPoint, fallbackTolerance);
+    }
+
+    private bool TrySelectCeWaitPoint(ActiveCriticalEncounter target, Vector3 playerPosition, out Vector3 waitPoint)
+    {
+        waitPoint = default;
+
+        var safeOuterRadius = MathF.Max(0.5f, target.EngageRadius - RepositionBuffer);
+        var minRadius = MathF.Min(WaitRingMinRadius, safeOuterRadius);
+        var candidates = new Vector3[WaitPointCandidateCount];
+        var validCount = 0;
+        var hasDirection = TryGetApproachDirection(target.StagingPoint, playerPosition, out var directionX, out var directionZ);
+
+        for (var index = 0; index < WaitPointCandidateCount; index++)
+        {
+            var candidate = hasDirection
+                ? CreateBiasedRingPoint(target.StagingPoint, minRadius, safeOuterRadius, directionX, directionZ)
+                : CreateRandomRingPoint(target.StagingPoint, minRadius, safeOuterRadius);
+            var snappedCandidate = movementController.FindNearestNavigablePoint(candidate, 5f, 5f);
+            if (!snappedCandidate.HasValue)
+            {
+                continue;
+            }
+
+            var snappedDistance = CalculateFlatDistance(snappedCandidate.Value, target.StagingPoint);
+            if (snappedDistance < minRadius || snappedDistance > safeOuterRadius)
+            {
+                continue;
+            }
+
+            candidates[validCount++] = snappedCandidate.Value;
+        }
+
+        if (validCount == 0)
+        {
+            logger.Warning($"CE wait-point selection found no valid navigable positions for {target.Name} ({target.Id}) inside {minRadius:0.0}..{safeOuterRadius:0.0} yalms.");
+            return false;
+        }
+
+        waitPoint = candidates[Random.Shared.Next(validCount)];
+        logger.Info($"Selected CE wait point for {target.Name} ({target.Id}) from {validCount}/{WaitPointCandidateCount} valid candidates at {FormatVector(waitPoint)}.");
+        return true;
+    }
+
+    private static bool TryGetApproachDirection(Vector3 center, Vector3 playerPosition, out float directionX, out float directionZ)
+    {
+        directionX = playerPosition.X - center.X;
+        directionZ = playerPosition.Z - center.Z;
+        var length = MathF.Sqrt((directionX * directionX) + (directionZ * directionZ));
+        if (length <= float.Epsilon)
+        {
+            directionX = 0f;
+            directionZ = 0f;
+            return false;
+        }
+
+        directionX /= length;
+        directionZ /= length;
+        return true;
+    }
+
+    private static Vector3 CreateBiasedRingPoint(Vector3 center, float minRadius, float maxRadius, float directionX, float directionZ)
+    {
+        var baseAngle = MathF.Atan2(directionZ, directionX);
+        var halfArcRadians = (WaitPointApproachArcDegrees * (MathF.PI / 180f)) * 0.5f;
+        var angle = baseAngle + (((float)Random.Shared.NextDouble() * 2f - 1f) * halfArcRadians);
+        var radius = GetRandomRingRadius(minRadius, maxRadius);
+        return new Vector3(
+            center.X + (MathF.Cos(angle) * radius),
+            center.Y,
+            center.Z + (MathF.Sin(angle) * radius));
+    }
+
+    private static Vector3 CreateRandomRingPoint(Vector3 center, float minRadius, float maxRadius)
+    {
+        var angle = (float)(Random.Shared.NextDouble() * Math.PI * 2d);
+        var radius = GetRandomRingRadius(minRadius, maxRadius);
+        return new Vector3(
+            center.X + (MathF.Cos(angle) * radius),
+            center.Y,
+            center.Z + (MathF.Sin(angle) * radius));
+    }
+
+    private static float GetRandomRingRadius(float minRadius, float maxRadius)
+    {
+        var radiusSquared = (float)Random.Shared.NextDouble();
+        return MathF.Sqrt((radiusSquared * ((maxRadius * maxRadius) - (minRadius * minRadius))) + (minRadius * minRadius));
+    }
+
+    private static string FormatVector(Vector3 position)
+        => $"<{position.X:0.000}, {position.Y:0.000}, {position.Z:0.000}>";
 }
