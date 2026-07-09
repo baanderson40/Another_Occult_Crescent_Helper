@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using AOCCH.Logging;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
@@ -28,6 +29,8 @@ public sealed class LogWindow : Window, IDisposable
 
     public override void Draw()
     {
+        var visibleEntries = GetVisibleEntries();
+
         ImGui.SetNextItemWidth(140);
         ImGui.Combo("Level", ref selectedFilterIndex, FilterLabels, FilterLabels.Length);
 
@@ -37,7 +40,7 @@ public sealed class LogWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Copy Visible"))
         {
-            ImGui.SetClipboardText(string.Join(Environment.NewLine, GetVisibleEntries().Select(entry => entry.Format())));
+            ImGui.SetClipboardText(string.Join(Environment.NewLine, visibleEntries.Select(entry => entry.Format())));
         }
 
         ImGui.SameLine();
@@ -54,10 +57,14 @@ public sealed class LogWindow : Window, IDisposable
             return;
         }
 
-        foreach (var entry in GetVisibleEntries())
-        {
-            ImGui.TextUnformatted(entry.Format());
-        }
+        var visibleLogText = string.Join(Environment.NewLine, visibleEntries.Select(entry => entry.Format()));
+        var visibleLogBuffer = Encoding.UTF8.GetBytes(visibleLogText + '\0');
+
+        ImGui.InputTextMultiline(
+            "##VisibleLogEntries",
+            visibleLogBuffer,
+            new Vector2(-1, -1),
+            ImGuiInputTextFlags.ReadOnly);
 
         if (autoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
         {
