@@ -8,6 +8,7 @@ public sealed class ActiveFate
     public string Name { get; init; } = string.Empty;
     public string State { get; init; } = string.Empty;
     public int StateCode { get; init; }
+    public bool IsInFate { get; init; }
     public byte Progress { get; init; }
     public float Radius { get; init; }
     public Vector3 Position { get; init; }

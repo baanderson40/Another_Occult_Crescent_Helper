@@ -318,7 +318,7 @@ public sealed class FateAutomationController : IDisposable
 
         LogFateMonitor(target);
 
-        if (IsParticipatingInFate(target))
+        if (IsAutorotationParticipationActive(target))
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
             EnsureAutorotationApplied(target);
@@ -374,6 +374,10 @@ public sealed class FateAutomationController : IDisposable
             }
         }
 
+        var reason = target.IsInFate
+            ? "joined FATE"
+            : "entered combat";
+        logger.Info($"Applying autorotation for FATE {target.Name} ({target.Id}) because the player {reason}.");
         autorotationController.ApplyForCombat($"FATE {target.Name} ({target.Id}) combat");
         lock (gate)
         {
@@ -425,14 +429,9 @@ public sealed class FateAutomationController : IDisposable
         => snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && snapshot.EffectiveTarget.WouldPreemptFate;
 
-    private bool IsParticipatingInFate(ActiveFate target)
+    private bool IsAutorotationParticipationActive(ActiveFate target)
     {
-        if (!condition[ConditionFlag.InCombat])
-        {
-            return false;
-        }
-
-        return HasArrivedWithinFateRadius(target);
+        return condition[ConditionFlag.InCombat] || target.IsInFate;
     }
 
     private bool HasArrivedWithinFateRadius(ActiveFate target)
@@ -526,7 +525,7 @@ public sealed class FateAutomationController : IDisposable
         lastLoggedStateCode = target.StateCode;
         var elapsed = stateEnteredAt == DateTimeOffset.MinValue ? TimeSpan.Zero : now - stateEnteredAt;
         logger.Debug(
-            $"FATE monitor {target.Name} ({target.Id}): state={target.State}({target.StateCode}) progress={target.Progress}% inCombat={condition[ConditionFlag.InCombat]} insideRadius={HasArrivedWithinFateRadius(target)} distance={distance:0.0} elapsed={elapsed:mm\\:ss}.");
+            $"FATE monitor {target.Name} ({target.Id}): state={target.State}({target.StateCode}) progress={target.Progress}% inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} insideRadius={HasArrivedWithinFateRadius(target)} distance={distance:0.0} elapsed={elapsed:mm\\:ss}.");
     }
 
     private bool TryHandleReturnTravelFallback(ActiveFate target)

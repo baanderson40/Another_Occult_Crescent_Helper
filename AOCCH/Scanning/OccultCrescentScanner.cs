@@ -5,6 +5,7 @@ using System.Numerics;
 using AOCCH.Data;
 using AOCCH.Logging;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace AOCCH.Scanning;
@@ -218,6 +219,7 @@ public sealed class OccultCrescentScanner : IDisposable
     {
         var excludedFates = ParseExcludedFates();
         var playerPosition = objectTable.LocalPlayer?.Position;
+        var joinedFateId = GetJoinedFateId();
 
         foreach (var fate in fateTable)
         {
@@ -247,6 +249,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 Name = name,
                 State = stateText,
                 StateCode = stateCode,
+                IsInFate = joinedFateId != 0 && joinedFateId == fate.FateId,
                 Progress = fate.Progress,
                 Radius = fate.Radius,
                 Position = fate.Position,
@@ -373,6 +376,20 @@ public sealed class OccultCrescentScanner : IDisposable
     private static bool IsActiveFateState(string state)
         => !string.Equals(state, "Ended", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(state, "Failed", StringComparison.OrdinalIgnoreCase);
+
+    private static uint GetJoinedFateId()
+    {
+        unsafe
+        {
+            var fateManager = FateManager.Instance();
+            if (fateManager == null || fateManager->FateJoined == 0)
+            {
+                return 0;
+            }
+
+            return fateManager->GetCurrentFateId();
+        }
+    }
 
     private HashSet<string> ParseExcludedFates()
         => configuration.ExcludedFates
