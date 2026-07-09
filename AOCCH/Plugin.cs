@@ -53,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
     private LogWindow LogWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private DebugWindow DebugWindow { get; init; }
+    private bool isDisposing;
 
     public Plugin()
     {
@@ -111,13 +112,25 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
+        isDisposing = true;
+
         // Unregister all actions to not leak anything during disposal of plugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
         Logger.Info("AOCCH cleanup starting.");
-        
+
+        ConfigWindow.IsOpen = false;
+        LogWindow.IsOpen = false;
+        MainWindow.IsOpen = false;
+        DebugWindow.IsOpen = false;
+
         WindowSystem.RemoveAllWindows();
 
         ConfigWindow.Dispose();
@@ -139,6 +152,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
         var normalizedArgs = args.Trim().ToLowerInvariant();
         Logger.Info($"Slash command received: {command} {args}".TrimEnd());
 
@@ -200,24 +218,44 @@ public sealed class Plugin : IDalamudPlugin
     
     public void ToggleConfigUi()
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
         Logger.Info("UI action: toggle config window.");
         ConfigWindow.Toggle();
     }
 
     public void ToggleLogUi()
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
         Logger.Info("UI action: toggle log window.");
         LogWindow.Toggle();
     }
 
     public void ToggleMainUi()
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
         Logger.Info("UI action: toggle main window.");
         MainWindow.Toggle();
     }
 
     private void OnTerritoryChanged(uint territoryType)
     {
+        if (isDisposing)
+        {
+            return;
+        }
+
         if (territoryType == SouthHornTerritoryTypeId)
         {
             if (!MainWindow.IsOpen)
