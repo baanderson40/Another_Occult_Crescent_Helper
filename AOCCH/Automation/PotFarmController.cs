@@ -24,6 +24,7 @@ public sealed class PotFarmController : IDisposable
     private readonly FateAutomationController fateAutomationController;
     private readonly PotCycleTracker potCycleTracker;
     private readonly TreasureHintTracker treasureHintTracker;
+    private readonly TreasureSearchController treasureSearchController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, PotFateData> potFatesById;
@@ -55,6 +56,7 @@ public sealed class PotFarmController : IDisposable
         FateAutomationController fateAutomationController,
         PotCycleTracker potCycleTracker,
         TreasureHintTracker treasureHintTracker,
+        TreasureSearchController treasureSearchController,
         OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
@@ -65,6 +67,7 @@ public sealed class PotFarmController : IDisposable
         this.fateAutomationController = fateAutomationController;
         this.potCycleTracker = potCycleTracker;
         this.treasureHintTracker = treasureHintTracker;
+        this.treasureSearchController = treasureSearchController;
         this.configuration = configuration;
         this.logger = logger;
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
@@ -265,6 +268,11 @@ public sealed class PotFarmController : IDisposable
         }
 
         treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm stopped: {reason}", TreasureSessionState.Abandoned);
+        if (treasureSearchController.State != TreasureSearchState.Idle)
+        {
+            treasureSearchController.Stop(reason);
+        }
+
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
@@ -305,6 +313,7 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.WaitingForTreasureBuff
             and not PotFarmState.MovingNearTreasureCenter
             and not PotFarmState.TreasurePending
+            and not PotFarmState.RunningTreasureSearch
             && scannerSnapshot.HasTreasureBuff
             && hasTreasurePotContext)
         {
@@ -337,6 +346,9 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.TreasurePending:
                 TickTreasurePending();
+                break;
+            case PotFarmState.RunningTreasureSearch:
+                TickRunningTreasureSearch();
                 break;
             case PotFarmState.RecoveringToBase:
                 TickRecoveringToBase();
@@ -558,16 +570,84 @@ public sealed class PotFarmController : IDisposable
         if (!scannerSnapshot.HasTreasureBuff)
         {
             logger.ResetThrottle("pot-treasure-pending");
+            if (treasureSearchController.State != TreasureSearchState.Idle)
+            {
+                treasureSearchController.Stop("Treasure buff expired before treasure search completed.");
+            }
+
             ClearTreasurePotContext();
             BeginRecoveryToBase("Treasure buff expired before treasure execution was implemented; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
             return;
         }
 
         var treasureSnapshot = treasureHintTracker.Snapshot;
+        if (!treasureSearchController.IsRunning && treasureSnapshot.HasInitialHint)
+        {
+            if (!treasureSearchController.Start(treasurePotId, treasurePotName))
+            {
+                SetFailure(treasureSearchController.LastError.Length == 0
+                    ? "Failed to start treasure candidate traversal."
+                    : treasureSearchController.LastError);
+                return;
+            }
+
+            logger.ResetThrottle("pot-treasure-pending");
+            TransitionTo(PotFarmState.RunningTreasureSearch, treasureSearchController.LastTransition);
+            return;
+        }
+
         logger.DebugThrottled(
             "pot-treasure-pending",
             WaitLogInterval,
             $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
+    }
+
+    private void TickRunningTreasureSearch()
+    {
+        var scannerSnapshot = scanner.Snapshot;
+        if (!scannerSnapshot.HasTreasureBuff)
+        {
+            treasureSearchController.Stop("Treasure buff expired during treasure traversal.");
+            ClearTreasurePotContext();
+            BeginRecoveryToBase("Treasure buff expired during treasure traversal; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
+            return;
+        }
+
+        if (treasureSearchController.IsRunning)
+        {
+            logger.DebugThrottled(
+                "pot-treasure-search",
+                WaitLogInterval,
+                $"Treasure traversal is active. group={treasureSearchController.ActiveGroupKey} candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "none"} index={treasureSearchController.CurrentCandidateIndex} handoff={treasureSearchController.LastHandoffReason}.");
+            return;
+        }
+
+        logger.ResetThrottle("pot-treasure-search");
+        switch (treasureSearchController.LastResult)
+        {
+            case TreasureSearchRunResult.ReadyForInteraction:
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Treasure coffer located at candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"}, but coffer interaction is not implemented yet; returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.TreasurePending);
+                return;
+            case TreasureSearchRunResult.CandidatesExhausted:
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    "Treasure traversal exhausted all mapped candidates; returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.Completed);
+                return;
+            case TreasureSearchRunResult.Stopped when pendingStop:
+                TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
+                return;
+            default:
+                SetFailure(treasureSearchController.LastError.Length == 0
+                    ? treasureSearchController.LastTransition
+                    : treasureSearchController.LastError);
+                return;
+        }
     }
 
     private bool TryBeginConfiguredBootstrapStaging()
@@ -739,6 +819,11 @@ public sealed class PotFarmController : IDisposable
     private void SetFailure(string reason)
     {
         treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm failed: {reason}", TreasureSessionState.Abandoned);
+        if (treasureSearchController.State != TreasureSearchState.Idle)
+        {
+            treasureSearchController.Stop(reason);
+        }
+
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);

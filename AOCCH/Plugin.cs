@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     public DeathRecoveryController DeathRecoveryController { get; init; }
     public PotCycleTracker PotCycleTracker { get; init; }
     public TreasureHintTracker TreasureHintTracker { get; init; }
+    public TreasureSearchController TreasureSearchController { get; init; }
     public PotFallbackWindowEvaluator PotFallbackWindowEvaluator { get; init; }
     public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
@@ -87,8 +88,9 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
+        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, TreasureHintTracker, OccultCrescentData, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -149,6 +151,7 @@ public sealed class Plugin : IDalamudPlugin
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
+        TreasureSearchController.Dispose();
         TreasureHintTracker.Dispose();
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();

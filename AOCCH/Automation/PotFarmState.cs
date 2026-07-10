@@ -11,6 +11,7 @@ public enum PotFarmState
     WaitingForTreasureBuff,
     MovingNearTreasureCenter,
     TreasurePending,
+    RunningTreasureSearch,
     RecoveringToBase,
     Stopped,
     Completed,

@@ -740,7 +740,7 @@ public sealed class FarmSessionController : IDisposable
             PotFarmState.WaitingForPredictedWindow or PotFarmState.Bootstrapping => FarmSessionState.WaitingForPredictedPotWindow,
             PotFarmState.TravelingToSpawn or PotFarmState.WaitingAtSpawn => FarmSessionState.WaitingAtPotSpawn,
             PotFarmState.RunningPotFate or PotFarmState.RecoveringToBase => FarmSessionState.RunningPots,
-            PotFarmState.WaitingForTreasureBuff or PotFarmState.MovingNearTreasureCenter or PotFarmState.TreasurePending => FarmSessionState.RunningTreasureHunt,
+            PotFarmState.WaitingForTreasureBuff or PotFarmState.MovingNearTreasureCenter or PotFarmState.TreasurePending or PotFarmState.RunningTreasureSearch => FarmSessionState.RunningTreasureHunt,
             _ => FarmSessionState.RunningPots,
         };
 

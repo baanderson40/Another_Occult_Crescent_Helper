@@ -565,6 +565,19 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Treasure Transition: {treasureSnapshot.LastTransition}");
         ImGui.TextWrapped($"Treasure Reset Reason: {FormatValue(treasureSnapshot.LastResetReason)}");
 
+        var treasureSearch = plugin.TreasureSearchController;
+        ImGui.TextUnformatted($"Treasure Search State: {treasureSearch.State}");
+        ImGui.TextWrapped($"Treasure Search Transition: {treasureSearch.LastTransition}");
+        ImGui.TextWrapped($"Treasure Search Group: {FormatValue(treasureSearch.ActiveGroupKey)}");
+        ImGui.TextWrapped($"Treasure Search Candidate: {FormatValue(treasureSearch.ActiveCandidateKey?.Label)}");
+        ImGui.TextWrapped($"Treasure Search Candidate Index: {treasureSearch.CurrentCandidateIndex}");
+        ImGui.TextWrapped($"Treasure Search Handoff: {FormatValue(treasureSearch.LastHandoffReason)}");
+        var visibleMatch = treasureSearch.ActiveVisibleCofferMatch;
+        var visibleMatchText = visibleMatch == null
+            ? null
+            : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | {visibleMatch.AttributionReason}";
+        ImGui.TextWrapped($"Treasure Visible Match: {FormatValue(visibleMatchText)}");
+
         if (!string.IsNullOrEmpty(potFarmController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {potFarmController.LastError}");
