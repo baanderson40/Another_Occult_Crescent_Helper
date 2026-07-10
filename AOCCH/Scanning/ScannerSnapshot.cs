@@ -19,7 +19,6 @@ public sealed class ScannerSnapshot
     public ActiveCriticalEncounter? SelectedCriticalEncounter { get; init; }
     public ActiveFate? SelectedFate { get; init; }
     public ActivePotFate? ActivePotFate { get; init; }
-    public PotAnchorObservation? PotAnchor { get; init; }
     public bool HasTreasureBuff { get; init; }
     public float TreasureBuffRemainingSeconds { get; init; }
     public IReadOnlyList<VisibleCoffer> VisibleCoffers { get; init; } = [];

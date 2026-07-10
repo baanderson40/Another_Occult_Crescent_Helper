@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
+    public PotCycleTracker PotCycleTracker { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
@@ -81,6 +82,7 @@ public sealed class Plugin : IDalamudPlugin
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
+        PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -140,6 +142,7 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
+        PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
         CriticalEngagementAutomationController.Dispose();

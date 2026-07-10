@@ -37,8 +37,6 @@ public sealed class OccultCrescentScanner : IDisposable
     private DateTimeOffset lastScanAt = DateTimeOffset.MinValue;
     private bool? lastSouthHornState;
     private string lastSelectionKey = string.Empty;
-    private PotAnchorObservation? lastPotAnchor;
-    private uint lastActivePotFateId;
     private bool? lastTreasureBuffState;
     private bool pendingForceRefresh = true;
 
@@ -137,7 +135,6 @@ public sealed class OccultCrescentScanner : IDisposable
             ActiveCriticalEncounter? selectedCriticalEncounter = null;
             ActiveFate? selectedFate = null;
             ActivePotFate? activePotFate = null;
-            PotAnchorObservation? potAnchor = lastPotAnchor;
             var hasTreasureBuff = false;
             var treasureBuffRemainingSeconds = 0f;
             var effectiveTarget = TargetSelection.None;
@@ -145,7 +142,7 @@ public sealed class OccultCrescentScanner : IDisposable
             if (isInSouthHorn)
             {
                 currentCriticalEncounterId = ScanCriticalEncounters(criticalEncounters, unknownCriticalEncounters);
-                ScanFates(now, fates, potFates, out activePotFate, out potAnchor);
+                ScanFates(fates, potFates, out activePotFate);
                 currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
                     ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
                 selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
@@ -156,7 +153,6 @@ public sealed class OccultCrescentScanner : IDisposable
             }
             else
             {
-                lastActivePotFateId = 0;
                 TrackTreasureBuffState(false);
             }
 
@@ -175,7 +171,6 @@ public sealed class OccultCrescentScanner : IDisposable
                 SelectedCriticalEncounter = selectedCriticalEncounter,
                 SelectedFate = selectedFate,
                 ActivePotFate = activePotFate,
-                PotAnchor = potAnchor,
                 HasTreasureBuff = hasTreasureBuff,
                 TreasureBuffRemainingSeconds = treasureBuffRemainingSeconds,
                 VisibleCoffers = visibleCoffers,
@@ -251,16 +246,13 @@ public sealed class OccultCrescentScanner : IDisposable
     }
 
     private void ScanFates(
-        DateTimeOffset now,
         List<ActiveFate> fates,
         List<ActivePotFate> potFates,
-        out ActivePotFate? activePotFate,
-        out PotAnchorObservation? potAnchor)
+        out ActivePotFate? activePotFate)
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
         var joinedFateId = GetJoinedFateId();
         activePotFate = null;
-        potAnchor = lastPotAnchor;
 
         foreach (var fate in fateTable)
         {
@@ -341,23 +333,8 @@ public sealed class OccultCrescentScanner : IDisposable
 
         if (activePotFate != null)
         {
-            if (lastActivePotFateId != activePotFate.Id)
-            {
-                potAnchor = new PotAnchorObservation
-                {
-                    FateId = activePotFate.Id,
-                    FateName = activePotFate.Name,
-                    ObservedAt = now,
-                };
-                lastPotAnchor = potAnchor;
-                lastActivePotFateId = activePotFate.Id;
-                logger.Info($"Pot anchor observed: {activePotFate.Name} ({activePotFate.Id}) at {now:O}.");
-            }
-
             return;
         }
-
-        lastActivePotFateId = 0;
     }
 
     private void ScanTreasureBuff(out bool hasTreasureBuff, out float remainingTime)
