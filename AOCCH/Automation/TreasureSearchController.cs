@@ -40,6 +40,8 @@ public sealed class TreasureSearchController : IDisposable
     private DateTimeOffset candidateTravelDeadlineAt = DateTimeOffset.MinValue;
     private VisibleCofferMatch? activeVisibleCofferMatch;
     private TreasureCandidateKey? activeCandidateKey;
+    private bool activeCandidateUsesOverride;
+    private Vector3 activeCandidateResolvedPosition;
 
     public TreasureSearchController(
         IFramework framework,
@@ -171,6 +173,28 @@ public sealed class TreasureSearchController : IDisposable
     public bool IsRunning
         => State == TreasureSearchState.TravelingToCandidate;
 
+    public bool ActiveCandidateUsesOverride
+    {
+        get
+        {
+            lock (gate)
+            {
+                return activeCandidateUsesOverride;
+            }
+        }
+    }
+
+    public Vector3 ActiveCandidateResolvedPosition
+    {
+        get
+        {
+            lock (gate)
+            {
+                return activeCandidateResolvedPosition;
+            }
+        }
+    }
+
     public bool Start(uint fateId, string fateName)
     {
         if (IsRunning)
@@ -210,6 +234,8 @@ public sealed class TreasureSearchController : IDisposable
             candidateTravelDeadlineAt = DateTimeOffset.MinValue;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
             lastError = string.Empty;
             lastResult = TreasureSearchRunResult.None;
         }
@@ -258,6 +284,8 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex++;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
         }
 
         return BeginCurrentCandidate(reason);
@@ -396,6 +424,8 @@ public sealed class TreasureSearchController : IDisposable
             lastHandoffReason = $"Handoff to treasure group {group.GroupKey} from hint revision {hintSnapshot.Revision}.";
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
         }
 
         logger.ResetThrottle("treasure-search-travel");
@@ -477,6 +507,8 @@ public sealed class TreasureSearchController : IDisposable
         {
             currentCandidateIndex++;
             activeVisibleCofferMatch = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
         }
 
         BeginCurrentCandidate(reason);
@@ -531,6 +563,8 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateKey = candidateKey;
             candidateTravelDeadlineAt = DateTimeOffset.UtcNow + travelTimeout;
             activeVisibleCofferMatch = null;
+            activeCandidateUsesOverride = usedOverride;
+            activeCandidateResolvedPosition = targetPosition;
         }
 
         TransitionTo(
@@ -598,6 +632,8 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex++;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
         }
 
         return BeginCurrentCandidate(reason);

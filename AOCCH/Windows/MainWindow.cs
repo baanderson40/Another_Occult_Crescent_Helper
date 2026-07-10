@@ -44,11 +44,11 @@ public sealed class MainWindow : Window, IDisposable
         this.fateAutomationController = fateAutomationController;
         this.farmSessionController = farmSessionController;
 
-        Size = new Vector2(420, 120);
+        Size = new Vector2(460, 190);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(360, 120),
+            MinimumSize = new Vector2(380, 170),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
@@ -74,7 +74,14 @@ public sealed class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        ImGui.TextWrapped($"Activity: {GetActivityLabel(scanner.Snapshot)}");
+        var snapshot = scanner.Snapshot;
+        var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
+        var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
+
+        ImGui.TextWrapped($"Farm: {farmSessionController.State} | {farmSessionController.CurrentActivity}");
+        ImGui.TextWrapped($"Activity: {GetActivityLabel(snapshot)}");
+        ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot)}");
+        ImGui.TextWrapped($"Treasure: {GetTreasureSummary(treasureSnapshot)}");
 
         var farmStartBlocker = GetFarmStartBlocker();
         ImGui.BeginDisabled(farmStartBlocker != null);
@@ -167,4 +174,43 @@ public sealed class MainWindow : Window, IDisposable
 
         return "None";
     }
+
+    private static string GetPotSummary(ScannerSnapshot snapshot, PotCycleSnapshot potCycleSnapshot)
+    {
+        if (snapshot.ActivePotFate != null)
+        {
+            return $"Active {snapshot.ActivePotFate.Name} ({snapshot.ActivePotFate.Id})";
+        }
+
+        if (potCycleSnapshot.HasPredictedNextPot)
+        {
+            var timeUntil = potCycleSnapshot.PredictedNextSpawnAt - DateTimeOffset.UtcNow;
+            var eta = timeUntil > TimeSpan.Zero
+                ? $"in {timeUntil:mm\\:ss}"
+                : $"{(-timeUntil):mm\\:ss} late";
+            return $"Next {potCycleSnapshot.PredictedNextPotFateName} {eta}";
+        }
+
+        if (potCycleSnapshot.HasKnownAnchor)
+        {
+            return $"Anchor {potCycleSnapshot.LastObservedPotFateName} @ {potCycleSnapshot.LastObservedSpawnAt.ToLocalTime():HH:mm:ss}";
+        }
+
+        return "No anchor yet";
+    }
+
+    private static string GetTreasureSummary(TreasureHintSnapshot treasureSnapshot)
+    {
+        if (treasureSnapshot.SessionState == TreasureSessionState.Active)
+        {
+            return $"{treasureSnapshot.SessionState} | {treasureSnapshot.GetHintSummary()}";
+        }
+
+        return treasureSnapshot.SessionState == TreasureSessionState.Idle
+            ? "Idle"
+            : $"{treasureSnapshot.SessionState} | {FormatValue(treasureSnapshot.CompletionReason)}";
+    }
+
+    private static string FormatValue(string? value)
+        => string.IsNullOrEmpty(value) ? "None" : value;
 }

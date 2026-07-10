@@ -16,12 +16,14 @@ public sealed class DebugWindow : Window, IDisposable
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly AutorotationController autorotationController;
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly PotFarmController potFarmController;
+    private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly FarmSessionController farmSessionController;
 
     // We give this window a hidden ID using ##.
@@ -32,12 +34,14 @@ public sealed class DebugWindow : Window, IDisposable
         Configuration configuration,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        GameActionController gameActionController,
         AutorotationController autorotationController,
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
         DeathRecoveryController deathRecoveryController,
         PotFarmController potFarmController,
+        DangerousTreasureTravelController dangerousTreasureTravelController,
         FarmSessionController farmSessionController)
         : base("AOCCH Debug###AOCCHDebug")
     {
@@ -45,12 +49,14 @@ public sealed class DebugWindow : Window, IDisposable
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.autorotationController = autorotationController;
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.deathRecoveryController = deathRecoveryController;
         this.potFarmController = potFarmController;
+        this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.farmSessionController = farmSessionController;
 
         SizeConstraints = new WindowSizeConstraints
@@ -86,6 +92,9 @@ public sealed class DebugWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawPotStatus(snapshot);
+
+        ImGui.Separator();
+        DrawDangerousTreasureTravel();
 
         ImGui.Separator();
         DrawCriticalEngagementAutomation(snapshot);
@@ -538,6 +547,8 @@ public sealed class DebugWindow : Window, IDisposable
         var now = DateTimeOffset.UtcNow;
         var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now);
         var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now);
+        var departureAt = GetDepartureAt(potCycleSnapshot);
+        var timeUntilDeparture = departureAt == DateTimeOffset.MinValue ? (TimeSpan?)null : departureAt - now;
 
         ImGui.TextUnformatted("Pot Control");
         ImGui.TextUnformatted($"Enabled: {(configuration.EnablePotFarming ? "Yes" : "No")}");
@@ -548,8 +559,11 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Known Anchor: {(potCycleSnapshot.HasKnownAnchor ? "Yes" : "No")}");
         ImGui.TextWrapped($"Last Anchor: {FormatValue(potCycleSnapshot.LastObservedPotFateName)} @ {FormatTimestamp(potCycleSnapshot.LastObservedSpawnAt)}");
         ImGui.TextWrapped($"Predicted Next Pot: {FormatValue(potCycleSnapshot.PredictedNextPotFateName)} @ {FormatTimestamp(potCycleSnapshot.PredictedNextSpawnAt)}");
+        ImGui.TextWrapped($"Time Until Departure: {FormatTimeSpan(timeUntilDeparture)}");
         ImGui.TextWrapped($"Spawn Wait Deadline: {FormatTimestamp(potFarmController.WaitDeadlineAt)}");
+        ImGui.TextUnformatted($"CE Fallback Allowed: {(ceDecision.AllowStart ? "Yes" : "No")}");
         ImGui.TextWrapped($"CE Fallback: {ceDecision.Reason}");
+        ImGui.TextUnformatted($"FATE Fallback Allowed: {(fateDecision.AllowStart ? "Yes" : "No")}");
         ImGui.TextWrapped($"FATE Fallback: {fateDecision.Reason}");
 
         var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
@@ -570,13 +584,17 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Treasure Search Transition: {treasureSearch.LastTransition}");
         ImGui.TextWrapped($"Treasure Search Group: {FormatValue(treasureSearch.ActiveGroupKey)}");
         ImGui.TextWrapped($"Treasure Search Candidate: {FormatValue(treasureSearch.ActiveCandidateKey?.Label)}");
+        ImGui.TextWrapped($"Treasure Search Candidate Key: {FormatValue(treasureSearch.ActiveCandidateKey?.ToString())}");
         ImGui.TextWrapped($"Treasure Search Candidate Index: {treasureSearch.CurrentCandidateIndex}");
+        ImGui.TextWrapped($"Treasure Search Position Source: {FormatPositionSource(treasureSearch.ActiveCandidateKey, treasureSearch.ActiveCandidateUsesOverride)}");
+        ImGui.TextWrapped($"Treasure Search Resolved Position: {FormatResolvedPosition(treasureSearch.ActiveCandidateKey, treasureSearch.ActiveCandidateResolvedPosition)}");
         ImGui.TextWrapped($"Treasure Search Handoff: {FormatValue(treasureSearch.LastHandoffReason)}");
         ImGui.TextWrapped($"Coffer Override Count: {plugin.CofferPositionOverrideStore.Count}");
+        ImGui.TextWrapped($"Last Saved Override: {FormatOverride(plugin.CofferPositionOverrideStore.LastSavedOverride)}");
         var visibleMatch = treasureSearch.ActiveVisibleCofferMatch;
         var visibleMatchText = visibleMatch == null
             ? null
-            : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | {visibleMatch.AttributionReason}";
+            : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | dataId={visibleMatch.Coffer.DataId} | pos={FormatVector3(visibleMatch.Coffer.Position)} | {visibleMatch.AttributionReason}";
         ImGui.TextWrapped($"Treasure Visible Match: {FormatValue(visibleMatchText)}");
 
         var cofferInteraction = plugin.CofferInteractionController;
@@ -587,12 +605,28 @@ public sealed class DebugWindow : Window, IDisposable
         var activeInteractionMatch = cofferInteraction.ActiveMatch;
         var activeInteractionMatchText = activeInteractionMatch == null
             ? null
-            : $"{activeInteractionMatch.CandidateKey.Label} <- {activeInteractionMatch.Coffer.Name} ({activeInteractionMatch.Coffer.GameObjectId:X})";
+            : $"{activeInteractionMatch.CandidateKey.Label} <- {activeInteractionMatch.Coffer.Name} ({activeInteractionMatch.Coffer.GameObjectId:X}) | dataId={activeInteractionMatch.Coffer.DataId} | pos={FormatVector3(activeInteractionMatch.Coffer.Position)}";
         ImGui.TextWrapped($"Coffer Interaction Match: {FormatValue(activeInteractionMatchText)}");
 
         if (!string.IsNullOrEmpty(potFarmController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {potFarmController.LastError}");
+        }
+    }
+
+    private void DrawDangerousTreasureTravel()
+    {
+        ImGui.TextUnformatted("Dangerous Treasure Travel");
+        ImGui.TextUnformatted($"State: {dangerousTreasureTravelController.State}");
+        ImGui.TextUnformatted($"Ninja Gearset Equipped By Controller: {(dangerousTreasureTravelController.HasEquippedNinjaGearset ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Current Class Job: {gameActionController.CurrentClassJobId}");
+        ImGui.TextUnformatted($"Hide Available: {(gameActionController.CanUseHide() ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Stealthed: {(gameActionController.IsStealthed ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Last Transition: {dangerousTreasureTravelController.LastTransition}");
+
+        if (!string.IsNullOrEmpty(dangerousTreasureTravelController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {dangerousTreasureTravelController.LastError}");
         }
     }
 
@@ -779,11 +813,53 @@ public sealed class DebugWindow : Window, IDisposable
     private static string FormatDistance(float distance)
         => float.IsFinite(distance) ? $"{distance:0.0}" : "Unknown";
 
+    private static string FormatTimeSpan(TimeSpan? timeSpan)
+    {
+        if (!timeSpan.HasValue)
+        {
+            return "Unknown";
+        }
+
+        var value = timeSpan.Value;
+        if (value >= TimeSpan.Zero)
+        {
+            return value.ToString("mm\\:ss", CultureInfo.InvariantCulture);
+        }
+
+        return $"-{(-value).ToString("mm\\:ss", CultureInfo.InvariantCulture)}";
+    }
+
     private static string FormatPreset(string preset)
         => string.IsNullOrEmpty(preset) ? "None" : preset;
 
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private static string FormatResolvedPosition(TreasureCandidateKey? candidateKey, Vector3 position)
+        => candidateKey == null ? "None" : FormatVector3(position);
+
+    private static string FormatPositionSource(TreasureCandidateKey? candidateKey, bool usesOverride)
+        => candidateKey == null ? "None" : usesOverride ? "Override" : "Canonical";
+
+    private static string FormatOverride(AOCCH.Data.CofferPositionOverride? entry)
+    {
+        if (entry == null)
+        {
+            return "None";
+        }
+
+        return $"{entry.FateId}:{entry.GroupKey}:{entry.CandidateKey} | dataId={entry.ObservedDataId} | pos={FormatVector3(entry.ObservedPosition.ToVector3())} | {FormatTimestamp(entry.LastConfirmedAt)}";
+    }
+
+    private DateTimeOffset GetDepartureAt(PotCycleSnapshot snapshot)
+    {
+        if (!snapshot.HasPredictedNextPot)
+        {
+            return DateTimeOffset.MinValue;
+        }
+
+        return snapshot.PredictedNextSpawnAt - TimeSpan.FromMinutes(Math.Max(0, configuration.SpawnLeadMinutes));
+    }
 
     private static string FormatTreasureHint(TreasureHintEvent? hint)
     {

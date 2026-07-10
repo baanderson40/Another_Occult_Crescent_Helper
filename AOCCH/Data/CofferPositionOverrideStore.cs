@@ -26,6 +26,7 @@ public sealed class CofferPositionOverrideStore
     private readonly AocchLogger logger;
     private readonly object gate = new();
     private Dictionary<string, CofferPositionOverride> overridesByKey = new(StringComparer.OrdinalIgnoreCase);
+    private CofferPositionOverride? lastSavedOverride;
 
     public CofferPositionOverrideStore(IDalamudPluginInterface pluginInterface, AocchLogger logger)
     {
@@ -58,6 +59,17 @@ public sealed class CofferPositionOverrideStore
 
         position = Vector3.Zero;
         return false;
+    }
+
+    public CofferPositionOverride? LastSavedOverride
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastSavedOverride;
+            }
+        }
     }
 
     public bool SaveConfirmedPosition(VisibleCofferMatch match)
@@ -93,7 +105,13 @@ public sealed class CofferPositionOverrideStore
                 logger.Info($"Saving coffer override for {match.CandidateKey} at <{next.ObservedPosition.X:0.000}, {next.ObservedPosition.Y:0.000}, {next.ObservedPosition.Z:0.000}> from {match.Coffer.Name} ({match.Coffer.DataId}).");
             }
 
-            return PersistLocked();
+            var persisted = PersistLocked();
+            if (persisted)
+            {
+                lastSavedOverride = next;
+            }
+
+            return persisted;
         }
     }
 
