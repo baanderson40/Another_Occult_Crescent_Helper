@@ -561,6 +561,17 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Predicted Next Pot: {FormatValue(potCycleSnapshot.PredictedNextPotFateName)} @ {FormatTimestamp(potCycleSnapshot.PredictedNextSpawnAt)}");
         ImGui.TextWrapped($"Time Until Departure: {FormatTimeSpan(timeUntilDeparture)}");
         ImGui.TextWrapped($"Spawn Wait Deadline: {FormatTimestamp(potFarmController.WaitDeadlineAt)}");
+        var instanceTimeDecision = potFarmController.LastInstanceTimeDecision;
+        ImGui.TextUnformatted($"Instance Timer Available: {(instanceTimeDecision.IsContentTimerAvailable ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Instance Time Remaining: {FormatTimeSpan(instanceTimeDecision.IsContentTimerAvailable ? TimeSpan.FromSeconds(instanceTimeDecision.RemainingSeconds) : null)}");
+        ImGui.TextWrapped($"Instance Time Next Pot Wait: {FormatTimeSpan(instanceTimeDecision.IsContentTimerAvailable ? TimeSpan.FromSeconds(instanceTimeDecision.WaitSecondsUntilNextPot) : null)}");
+        ImGui.TextWrapped($"Instance Time Required: {FormatTimeSpan(instanceTimeDecision.IsContentTimerAvailable ? TimeSpan.FromSeconds(instanceTimeDecision.RequiredSeconds) : null)}");
+        ImGui.TextWrapped($"Instance Time Source: {FormatValue(instanceTimeDecision.TimingSource)}");
+        ImGui.TextUnformatted($"Instance Time Allow Next Cycle: {(instanceTimeDecision.AllowNextPotCycle ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Instance Time Can Leave: {(instanceTimeDecision.CanLeaveCurrentContent ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Leave Pending: {(potFarmController.IsLeavePending ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Leave Requested At: {FormatTimestamp(potFarmController.LeaveRequestedAt)}");
+        ImGui.TextWrapped($"Instance Time Decision: {FormatValue(instanceTimeDecision.Reason)}");
         ImGui.TextUnformatted($"CE Fallback Allowed: {(ceDecision.AllowStart ? "Yes" : "No")}");
         ImGui.TextWrapped($"CE Fallback: {ceDecision.Reason}");
         ImGui.TextUnformatted($"FATE Fallback Allowed: {(fateDecision.AllowStart ? "Yes" : "No")}");
@@ -594,7 +605,7 @@ public sealed class DebugWindow : Window, IDisposable
         var visibleMatch = treasureSearch.ActiveVisibleCofferMatch;
         var visibleMatchText = visibleMatch == null
             ? null
-            : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | dataId={visibleMatch.Coffer.DataId} | pos={FormatVector3(visibleMatch.Coffer.Position)} | {visibleMatch.AttributionReason}";
+            : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | trusted={(visibleMatch.IsTrustworthy ? "yes" : "no")} | nearestOther={(visibleMatch.DistanceToNearestOtherCandidate == float.MaxValue ? "none" : $"{visibleMatch.DistanceToNearestOtherCandidate:0.0}y")} | dataId={visibleMatch.Coffer.DataId} | pos={FormatVector3(visibleMatch.Coffer.Position)} | {visibleMatch.AttributionReason}";
         ImGui.TextWrapped($"Treasure Visible Match: {FormatValue(visibleMatchText)}");
 
         var cofferInteraction = plugin.CofferInteractionController;
@@ -605,7 +616,7 @@ public sealed class DebugWindow : Window, IDisposable
         var activeInteractionMatch = cofferInteraction.ActiveMatch;
         var activeInteractionMatchText = activeInteractionMatch == null
             ? null
-            : $"{activeInteractionMatch.CandidateKey.Label} <- {activeInteractionMatch.Coffer.Name} ({activeInteractionMatch.Coffer.GameObjectId:X}) | dataId={activeInteractionMatch.Coffer.DataId} | pos={FormatVector3(activeInteractionMatch.Coffer.Position)}";
+            : $"{activeInteractionMatch.CandidateKey.Label} <- {activeInteractionMatch.Coffer.Name} ({activeInteractionMatch.Coffer.GameObjectId:X}) | trusted={(activeInteractionMatch.IsTrustworthy ? "yes" : "no")} | dataId={activeInteractionMatch.Coffer.DataId} | pos={FormatVector3(activeInteractionMatch.Coffer.Position)}";
         ImGui.TextWrapped($"Coffer Interaction Match: {FormatValue(activeInteractionMatchText)}");
 
         if (!string.IsNullOrEmpty(potFarmController.LastError))

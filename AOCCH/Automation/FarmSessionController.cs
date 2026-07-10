@@ -680,6 +680,9 @@ public sealed class FarmSessionController : IDisposable
                 case PotFarmRunResult.Completed:
                     StartPostFateFlow();
                     return;
+                case PotFarmRunResult.LeftContent:
+                    TransitionTo(FarmSessionState.Stopped, potFarmController.LastTransition, "Stopped");
+                    return;
                 case PotFarmRunResult.TreasurePending:
                     TransitionTo(FarmSessionState.SelectingTarget, potFarmController.LastTransition, "Selecting target");
                     return;

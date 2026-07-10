@@ -1,9 +1,12 @@
+using System;
+
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace AOCCH.Movement;
@@ -15,6 +18,8 @@ public sealed class GameActionController
     public const uint DismountActionId = 23;
     public const uint HideActionId = 2245;
     public const uint NinjaClassJobId = 30;
+    public const uint MagicalElixirEventItemId = 2003296;
+    public const string MagicalElixirKeyItemName = "Magical Elixir";
 
     private readonly ICommandManager commandManager;
     private readonly ICondition condition;
@@ -157,4 +162,62 @@ public sealed class GameActionController
         logger.Info($"Dispatched gearset command '{command}' for {description}.");
         return true;
     }
+
+    public bool TryUseKeyItem(string keyItemName, string description)
+    {
+        if (string.IsNullOrWhiteSpace(keyItemName))
+        {
+            logger.Warning($"Cannot use an unnamed key item for {description}.");
+            return false;
+        }
+
+        var escapedKeyItemName = keyItemName.Replace("\"", "\\\"", StringComparison.Ordinal);
+        var command = $"/keyitem \"{escapedKeyItemName}\"";
+        if (!commandManager.ProcessCommand(command))
+        {
+            logger.Warning($"Failed to dispatch key item command '{command}' for {description}.");
+            return false;
+        }
+
+        logger.Info($"Dispatched key item command '{command}' for {description}.");
+        return true;
+    }
+
+    public unsafe bool TryUseInventoryItem(uint itemId, bool isHighQuality, string description)
+    {
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            logger.Warning($"InventoryManager is unavailable for {description}.");
+            return false;
+        }
+
+        var count = inventoryManager->GetInventoryItemCount(itemId, isHighQuality);
+        if (count <= 0)
+        {
+            logger.Warning($"Item {itemId} is unavailable for {description}.");
+            return false;
+        }
+
+        var agent = AgentInventoryContext.Instance();
+        if (agent == null)
+        {
+            logger.Warning($"AgentInventoryContext is unavailable for {description}.");
+            return false;
+        }
+
+        var itemToUse = isHighQuality ? itemId + 1_000_000u : itemId;
+        var result = agent->UseItem(itemToUse);
+        if (result != 0)
+        {
+            logger.Warning($"UseItem({itemToUse}) returned {result} for {description}.");
+            return false;
+        }
+
+        logger.Info($"Used inventory item {itemToUse} for {description}.");
+        return true;
+    }
+
+    public bool TryUseMagicalElixir(string description)
+        => TryUseInventoryItem(MagicalElixirEventItemId, isHighQuality: false, description);
 }

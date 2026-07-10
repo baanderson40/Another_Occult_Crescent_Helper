@@ -14,6 +14,7 @@ namespace AOCCH.Automation;
 public sealed class TreasureSearchController : IDisposable
 {
     private const float CandidateArrivalTolerance = 5f;
+    private const float MaximumTrustedAttributionDistance = 25f;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
@@ -445,20 +446,56 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        foreach (var coffer in scannerSnapshot.VisibleCoffers)
+        if (!TryGetCurrentCandidate(out var activeCandidate))
         {
-            CompleteWithVisibleCoffer(
-                coffer,
-                ActiveCandidateKey,
-                float.MaxValue,
-                $"Attributed visible coffer {coffer.Name} to active route candidate {ActiveCandidateKey.Label} by route context.");
-            return true;
+            return false;
         }
 
-        return false;
+        var coffer = scannerSnapshot.VisibleCoffers[0];
+        var activePosition = ActiveCandidateResolvedPosition != Vector3.Zero
+            ? ActiveCandidateResolvedPosition
+            : ResolveCandidatePosition(activeCandidate);
+        var distanceToActive = CalculateFlatDistance(coffer.Position, activePosition);
+        var nearestOtherDistance = float.MaxValue;
+        TreasureCandidateKey? nearestOtherCandidateKey = null;
+
+        foreach (var candidate in group.Candidates)
+        {
+            if (string.Equals(candidate.CandidateKey, ActiveCandidateKey.CandidateKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidateDistance = CalculateFlatDistance(coffer.Position, ResolveCandidatePosition(candidate));
+            if (candidateDistance >= nearestOtherDistance)
+            {
+                continue;
+            }
+
+            nearestOtherDistance = candidateDistance;
+            nearestOtherCandidateKey = ToCandidateKey(candidate);
+        }
+
+        var isTrustworthy = distanceToActive <= MaximumTrustedAttributionDistance
+            && (nearestOtherCandidateKey == null || distanceToActive <= nearestOtherDistance);
+        var reason = isTrustworthy
+            ? $"Attributed visible coffer {coffer.Name} to active route candidate {ActiveCandidateKey.Label} by route context. candidateDistance={distanceToActive:0.0}y"
+            : nearestOtherCandidateKey == null
+                ? $"Visible coffer {coffer.Name} was found while routing {ActiveCandidateKey.Label}, but the mapped candidate distance {distanceToActive:0.0}y exceeds the trust threshold {MaximumTrustedAttributionDistance:0.0}y. Interaction will continue without learning an override."
+                : $"Visible coffer {coffer.Name} was found while routing {ActiveCandidateKey.Label}, but {nearestOtherCandidateKey.Label} is closer ({nearestOtherDistance:0.0}y vs {distanceToActive:0.0}y). Interaction will continue without learning an override.";
+
+        CompleteWithVisibleCoffer(
+            coffer,
+            ActiveCandidateKey,
+            distanceToActive,
+            isTrustworthy,
+            nearestOtherDistance,
+            reason);
+        return true;
+
     }
 
-    private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, string reason)
+    private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, bool isTrustworthy, float nearestOtherDistance, string reason)
     {
         if (dangerousTreasureTravelController.IsRunning)
         {
@@ -479,6 +516,8 @@ public sealed class TreasureSearchController : IDisposable
                 CandidateKey = candidateKey,
                 Coffer = coffer,
                 MatchDistance = matchDistance,
+                IsTrustworthy = isTrustworthy,
+                DistanceToNearestOtherCandidate = nearestOtherDistance,
                 AttributionReason = reason,
             };
         }
@@ -571,6 +610,14 @@ public sealed class TreasureSearchController : IDisposable
             TreasureSearchState.TravelingToCandidate,
             $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position{(isDangerousCandidate ? " with Ninja/Hide dangerous-area flow" : string.Empty)}.");
         return true;
+    }
+
+    private Vector3 ResolveCandidatePosition(TreasureCofferCandidateData candidate)
+    {
+        var candidateKey = ToCandidateKey(candidate);
+        return cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition)
+            ? overridePosition
+            : candidate.Position.ToVector3();
     }
 
     private bool TryHandleDangerousTravelTerminalResult()
@@ -719,4 +766,11 @@ public sealed class TreasureSearchController : IDisposable
             TreasureDirection.Northwest => "northwest",
             _ => string.Empty,
         };
+
+    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+    }
 }

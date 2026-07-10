@@ -388,6 +388,12 @@ public sealed class CofferInteractionController : IDisposable
 
     private void PersistConfirmedOverride(VisibleCofferMatch match)
     {
+        if (!match.IsTrustworthy)
+        {
+            logger.Info($"Skipping coffer override persistence for {match.CandidateKey} because the attribution was not trustworthy. {match.AttributionReason}");
+            return;
+        }
+
         if (cofferPositionOverrideStore.SaveConfirmedPosition(match))
         {
             return;

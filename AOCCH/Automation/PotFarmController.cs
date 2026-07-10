@@ -16,17 +16,26 @@ public sealed class PotFarmController : IDisposable
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PotSpawnGrace = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan TreasureHintWaitTimeout = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan TreasureElixirRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan LeaveTransitionTimeout = TimeSpan.FromSeconds(15);
+    private const int MaximumTreasureElixirAttempts = 3;
+    private const int PotWaitPointCandidateCount = 10;
+    private const float PotWaitPointStopDistance = 4f;
     private const float TreasureCenterArrivalTolerance = 5f;
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly FateAutomationController fateAutomationController;
+    private readonly InstancedContentController instancedContentController;
     private readonly PotCycleTracker potCycleTracker;
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly TreasureSearchController treasureSearchController;
     private readonly CofferInteractionController cofferInteractionController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
+    private readonly PotInstanceTimeEvaluator potInstanceTimeEvaluator;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, PotFateData> potFatesById;
@@ -46,21 +55,30 @@ public sealed class PotFarmController : IDisposable
     private bool hasTreasurePotContext;
     private DateTimeOffset waitDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset treasureHintDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+    private DateTimeOffset leaveRequestedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
+    private int treasureElixirAttemptCount;
+    private bool leavePending;
     private bool pendingStop;
     private bool resumeBootstrapAfterRecovery;
     private PotFarmRunResult completionResultAfterRecovery;
+    private PotInstanceTimeDecision lastInstanceTimeDecision = new();
 
     public PotFarmController(
         IFramework framework,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        GameActionController gameActionController,
         FateAutomationController fateAutomationController,
+        InstancedContentController instancedContentController,
         PotCycleTracker potCycleTracker,
         TreasureHintTracker treasureHintTracker,
         TreasureSearchController treasureSearchController,
         CofferInteractionController cofferInteractionController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
+        PotInstanceTimeEvaluator potInstanceTimeEvaluator,
         OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
@@ -68,12 +86,15 @@ public sealed class PotFarmController : IDisposable
         this.framework = framework;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.fateAutomationController = fateAutomationController;
+        this.instancedContentController = instancedContentController;
         this.potCycleTracker = potCycleTracker;
         this.treasureHintTracker = treasureHintTracker;
         this.treasureSearchController = treasureSearchController;
         this.cofferInteractionController = cofferInteractionController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
+        this.potInstanceTimeEvaluator = potInstanceTimeEvaluator;
         this.configuration = configuration;
         this.logger = logger;
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
@@ -153,6 +174,39 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.Completed
             and not PotFarmState.Failed;
 
+    public PotInstanceTimeDecision LastInstanceTimeDecision
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastInstanceTimeDecision;
+            }
+        }
+    }
+
+    public bool IsLeavePending
+    {
+        get
+        {
+            lock (gate)
+            {
+                return leavePending;
+            }
+        }
+    }
+
+    public DateTimeOffset LeaveRequestedAt
+    {
+        get
+        {
+            lock (gate)
+            {
+                return leaveRequestedAt;
+            }
+        }
+    }
+
     public bool NeedsControlNow(DateTimeOffset now, out string reason)
         => NeedsControlNow(now, out _, out reason);
 
@@ -191,6 +245,25 @@ public sealed class PotFarmController : IDisposable
         {
             controlReason = PotControlReason.TreasurePending;
             reason = $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.";
+            return true;
+        }
+
+        if (leavePending)
+        {
+            controlReason = PotControlReason.InstanceTimeManagement;
+            reason = lastInstanceTimeDecision.Reason.Length == 0
+                ? "Waiting for instanced content leave to complete."
+                : lastInstanceTimeDecision.Reason;
+            return true;
+        }
+
+        var instanceTimeDecision = EvaluateInstanceTimeDecision(now);
+        if (instanceTimeDecision.ManageInstanceTimeEnabled
+            && instanceTimeDecision.IsContentTimerAvailable
+            && !instanceTimeDecision.AllowNextPotCycle)
+        {
+            controlReason = PotControlReason.InstanceTimeManagement;
+            reason = instanceTimeDecision.Reason;
             return true;
         }
 
@@ -252,9 +325,15 @@ public sealed class PotFarmController : IDisposable
             hasTreasurePotContext = false;
             waitDeadlineAt = DateTimeOffset.MinValue;
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+            treasureHintDeadlineAt = DateTimeOffset.MinValue;
+            lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            leaveRequestedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
+            treasureElixirAttemptCount = 0;
+            leavePending = false;
             lastError = string.Empty;
             lastResult = PotFarmRunResult.None;
+            lastInstanceTimeDecision = new();
         }
 
         TransitionTo(PotFarmState.Bootstrapping, "Starting pot farm control.");
@@ -285,6 +364,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         dangerousTreasureTravelController.RestoreFateGearset($"pot farm stop: {reason}");
+        ClearLeavePending();
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
@@ -309,6 +389,26 @@ public sealed class PotFarmController : IDisposable
         }
 
         var scannerSnapshot = scanner.Snapshot;
+        if (leavePending)
+        {
+            if (!scannerSnapshot.IsInSouthHorn)
+            {
+                ClearLeavePending();
+                TransitionTo(PotFarmState.Completed, "Left South Horn after an instance-time leave request.", result: PotFarmRunResult.LeftContent);
+                return;
+            }
+
+            if (LeaveRequestedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - LeaveRequestedAt >= LeaveTransitionTimeout)
+            {
+                ClearLeavePending();
+                TransitionTo(PotFarmState.WaitingForPredictedWindow, "Instanced-content leave request did not produce a territory transition yet; will retry while holding pot control.");
+                return;
+            }
+
+            logger.DebugThrottled("pot-instance-leave", WaitLogInterval, $"Waiting for instanced-content leave transition. requestedAt={LeaveRequestedAt:O}.");
+            return;
+        }
+
         if (!scannerSnapshot.IsInSouthHorn)
         {
             SetFailure("Left South Horn while pot farm control was active.");
@@ -373,6 +473,11 @@ public sealed class PotFarmController : IDisposable
 
     private void TickBootstrapping()
     {
+        if (TryHandleInstanceTimeManagement("before starting the next pot cycle", PotFarmState.WaitingForPredictedWindow))
+        {
+            return;
+        }
+
         var snapshot = potCycleTracker.Snapshot;
         if (snapshot.HasPredictedNextPot)
         {
@@ -399,6 +504,11 @@ public sealed class PotFarmController : IDisposable
 
     private void TickWaitingForPredictedWindow()
     {
+        if (TryHandleInstanceTimeManagement("while waiting for the next pot cycle", PotFarmState.WaitingForPredictedWindow))
+        {
+            return;
+        }
+
         var snapshot = potCycleTracker.Snapshot;
         if (!snapshot.HasPredictedNextPot)
         {
@@ -550,7 +660,11 @@ public sealed class PotFarmController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached completed pot FATE center.");
-                TransitionTo(PotFarmState.TreasurePending, $"Moved near completed FATE center for {treasurePotName} ({treasurePotId}) at <{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}>; ready to use Magical Elixir.");
+                if (!TryUseMagicalElixir($"Moved near completed FATE center for {treasurePotName} ({treasurePotId}) at <{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}>."))
+                {
+                    return;
+                }
+
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
@@ -626,10 +740,44 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
+        if (treasureElixirAttemptCount == 0)
+        {
+            if (!TryUseMagicalElixir($"Treasure phase is active for {treasurePotName} ({treasurePotId}) but no Magical Elixir attempt has been recorded yet."))
+            {
+                return;
+            }
+
+            return;
+        }
+
+        if (treasureHintDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= treasureHintDeadlineAt)
+        {
+            logger.ResetThrottle("pot-treasure-pending");
+            if (treasureElixirAttemptCount >= MaximumTreasureElixirAttempts)
+            {
+                treasureHintTracker.CompleteCurrentTreasureSession(
+                    $"No initial treasure hint arrived after {treasureElixirAttemptCount} Magical Elixir attempt(s).",
+                    TreasureSessionState.Abandoned);
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"No initial treasure hint arrived after {treasureElixirAttemptCount} Magical Elixir attempt(s); returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.TreasurePending);
+                return;
+            }
+
+            if (!TryUseMagicalElixir($"No treasure hint arrived after Magical Elixir attempt {treasureElixirAttemptCount}; retrying."))
+            {
+                return;
+            }
+
+            return;
+        }
+
         logger.DebugThrottled(
             "pot-treasure-pending",
             WaitLogInterval,
-            $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
+            $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. elixirAttempts={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} hintDeadline={treasureHintDeadlineAt:O} session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
     }
 
     private void TickRunningTreasureSearch()
@@ -811,8 +959,13 @@ public sealed class PotFarmController : IDisposable
 
     private bool BeginTravelToPotLocation(PotFateData potFate, string context, DateTimeOffset waitUntil)
     {
-        var destination = potFate.StagingPosition?.ToVector3() ?? potFate.CenterPosition.ToVector3();
-        var arrivalTolerance = Math.Max(1, configuration.SpawnArrivalRadius);
+        var stagingCenter = potFate.StagingPosition?.ToVector3() ?? potFate.CenterPosition.ToVector3();
+        var destination = TrySelectPotWaitPoint(stagingCenter, out var randomWaitPoint)
+            ? randomWaitPoint
+            : stagingCenter;
+        var arrivalTolerance = destination == stagingCenter
+            ? Math.Max(1, configuration.SpawnArrivalRadius)
+            : PotWaitPointStopDistance;
         var description = $"Stage for {potFate.Name} ({context})";
         if (!movementController.PlanRouteToLocation(description, potFate.PreferredAethernet, destination, arrivalTolerance))
         {
@@ -840,6 +993,11 @@ public sealed class PotFarmController : IDisposable
         }
 
         TransitionTo(PotFarmState.TravelingToSpawn, $"Traveling to {context} staging for {potFate.Name}.");
+        if (destination != stagingCenter)
+        {
+            logger.Info($"Selected randomized pot wait point for {potFate.Name} at <{destination.X:0.000}, {destination.Y:0.000}, {destination.Z:0.000}> around <{stagingCenter.X:0.000}, {stagingCenter.Y:0.000}, {stagingCenter.Z:0.000}>.");
+        }
+
         return true;
     }
 
@@ -901,6 +1059,9 @@ public sealed class PotFarmController : IDisposable
             treasurePotCenter = currentPotCenter;
             hasTreasurePotContext = true;
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+            treasureHintDeadlineAt = DateTimeOffset.MinValue;
+            lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            treasureElixirAttemptCount = 0;
         }
 
         logger.ResetThrottle("pot-running-fate");
@@ -965,6 +1126,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         dangerousTreasureTravelController.RestoreFateGearset($"pot farm failure: {reason}");
+        ClearLeavePending();
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);
@@ -980,7 +1142,172 @@ public sealed class PotFarmController : IDisposable
             treasurePotCenter = Vector3.Zero;
             hasTreasurePotContext = false;
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+            treasureHintDeadlineAt = DateTimeOffset.MinValue;
+            lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            treasureElixirAttemptCount = 0;
         }
+    }
+
+    private bool TryUseMagicalElixir(string reason)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (lastTreasureElixirAttemptAt != DateTimeOffset.MinValue && now - lastTreasureElixirAttemptAt < TreasureElixirRetryDelay)
+        {
+            logger.DebugThrottled(
+                "pot-treasure-elixir-retry",
+                TimeSpan.FromMilliseconds(250),
+                $"Treasure elixir retry is waiting for {TreasureElixirRetryDelay.TotalSeconds:0.0}s between attempts. attempts={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}.");
+            return true;
+        }
+
+        if (!gameActionController.TryUseMagicalElixir("pot treasure startup"))
+        {
+            SetFailure($"Failed to use Magical Elixir during pot treasure startup.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            treasureElixirAttemptCount++;
+            lastTreasureElixirAttemptAt = now;
+            treasureHintDeadlineAt = now + TreasureHintWaitTimeout;
+        }
+
+        logger.ResetThrottle("pot-treasure-pending");
+        logger.ResetThrottle("pot-treasure-elixir-retry");
+        TransitionTo(
+            PotFarmState.TreasurePending,
+            $"{reason} Used Magical Elixir; waiting for an initial treasure hint (attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}).");
+        return true;
+    }
+
+    private PotInstanceTimeDecision EvaluateInstanceTimeDecision(DateTimeOffset now)
+    {
+        var hasContentTimer = instancedContentController.TryGetContentTimeLeftSeconds(out var remainingSeconds);
+        var decision = potInstanceTimeEvaluator.Evaluate(scanner.Snapshot, potCycleTracker.Snapshot, now, remainingSeconds, hasContentTimer);
+        decision.CanLeaveCurrentContent = decision.ShouldAttemptLeave && instancedContentController.CanLeaveCurrentContent();
+
+        lock (gate)
+        {
+            lastInstanceTimeDecision = decision;
+        }
+
+        return decision;
+    }
+
+    private bool TryHandleInstanceTimeManagement(string context, PotFarmState holdState)
+    {
+        var decision = EvaluateInstanceTimeDecision(DateTimeOffset.UtcNow);
+        if (!decision.ManageInstanceTimeEnabled || !decision.IsContentTimerAvailable || decision.AllowNextPotCycle)
+        {
+            logger.ResetThrottle("pot-instance-time");
+            return false;
+        }
+
+        if (!decision.CanLeaveCurrentContent)
+        {
+            var holdReason = $"{decision.Reason} The content cannot be left yet, so pot control is holding.";
+            if (State != holdState || !string.Equals(LastTransition, holdReason, StringComparison.Ordinal))
+            {
+                TransitionTo(holdState, holdReason);
+            }
+
+            logger.DebugThrottled("pot-instance-time", WaitLogInterval, decision.Reason);
+            return true;
+        }
+
+        movementController.Stop($"Instance-time management triggered while {context}.");
+        if (!instancedContentController.TryLeaveCurrentContent(context))
+        {
+            var retryReason = $"{decision.Reason} Leave request failed and will be retried.";
+            if (State != holdState || !string.Equals(LastTransition, retryReason, StringComparison.Ordinal))
+            {
+                TransitionTo(holdState, retryReason);
+            }
+
+            logger.DebugThrottled("pot-instance-time", WaitLogInterval, decision.Reason);
+            return true;
+        }
+
+        lock (gate)
+        {
+            leavePending = true;
+            leaveRequestedAt = DateTimeOffset.UtcNow;
+            lastInstanceTimeDecision = decision;
+            lastInstanceTimeDecision.Reason = $"{decision.Reason} Leave request issued; waiting for a territory transition.";
+        }
+
+        logger.ResetThrottle("pot-instance-time");
+        logger.ResetThrottle("pot-instance-leave");
+        TransitionTo(holdState, LastInstanceTimeDecision.Reason);
+        return true;
+    }
+
+    private void ClearLeavePending()
+    {
+        lock (gate)
+        {
+            leavePending = false;
+            leaveRequestedAt = DateTimeOffset.MinValue;
+        }
+    }
+
+    private bool TrySelectPotWaitPoint(Vector3 center, out Vector3 waitPoint)
+    {
+        var maxRadius = MathF.Max(10f, configuration.SpawnArrivalRadius);
+        var minRadius = MathF.Max(3f, MathF.Min(maxRadius * 0.35f, maxRadius - 1f));
+        var candidates = new Vector3[PotWaitPointCandidateCount];
+        var validCount = 0;
+
+        for (var index = 0; index < PotWaitPointCandidateCount; index++)
+        {
+            var candidate = CreateRandomRingPoint(center, minRadius, maxRadius);
+            var snappedCandidate = movementController.FindNearestNavigablePoint(candidate, 5f, 5f);
+            if (!snappedCandidate.HasValue)
+            {
+                continue;
+            }
+
+            var snappedDistance = CalculateFlatDistance(snappedCandidate.Value, center);
+            if (snappedDistance < minRadius || snappedDistance > maxRadius)
+            {
+                continue;
+            }
+
+            candidates[validCount++] = snappedCandidate.Value;
+        }
+
+        if (validCount == 0)
+        {
+            waitPoint = default;
+            return false;
+        }
+
+        waitPoint = candidates[Random.Shared.Next(validCount)];
+        return true;
+    }
+
+    private static Vector3 CreateRandomRingPoint(Vector3 center, float minRadius, float maxRadius)
+    {
+        var angle = (float)(Random.Shared.NextDouble() * Math.PI * 2d);
+        var radius = GetRandomRingRadius(minRadius, maxRadius);
+        return new Vector3(
+            center.X + (MathF.Cos(angle) * radius),
+            center.Y,
+            center.Z + (MathF.Sin(angle) * radius));
+    }
+
+    private static float GetRandomRingRadius(float minRadius, float maxRadius)
+    {
+        var radiusSquared = (float)Random.Shared.NextDouble();
+        return MathF.Sqrt((radiusSquared * ((maxRadius * maxRadius) - (minRadius * minRadius))) + (minRadius * minRadius));
+    }
+
+    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
 
     private void TransitionTo(PotFarmState nextState, string reason, string? error = null, PotFarmRunResult? result = null)

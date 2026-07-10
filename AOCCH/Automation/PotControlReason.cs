@@ -6,6 +6,7 @@ public enum PotControlReason
     ActivePotFate,
     PredictedDepartureWindow,
     BootstrapStaging,
+    InstanceTimeManagement,
     TreasurePending,
     ActiveRun,
 }

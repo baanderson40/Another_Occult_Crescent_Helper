@@ -44,11 +44,11 @@ public sealed class MainWindow : Window, IDisposable
         this.fateAutomationController = fateAutomationController;
         this.farmSessionController = farmSessionController;
 
-        Size = new Vector2(460, 190);
+        Size = new Vector2(460, 215);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(380, 170),
+            MinimumSize = new Vector2(380, 190),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
@@ -77,11 +77,16 @@ public sealed class MainWindow : Window, IDisposable
         var snapshot = scanner.Snapshot;
         var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
         var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
+        var instanceTimeDecision = plugin.PotFarmController.LastInstanceTimeDecision;
 
         ImGui.TextWrapped($"Farm: {farmSessionController.State} | {farmSessionController.CurrentActivity}");
         ImGui.TextWrapped($"Activity: {GetActivityLabel(snapshot)}");
         ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot)}");
         ImGui.TextWrapped($"Treasure: {GetTreasureSummary(treasureSnapshot)}");
+        if (plugin.PotFarmController.IsLeavePending || (instanceTimeDecision.ManageInstanceTimeEnabled && instanceTimeDecision.IsContentTimerAvailable && !instanceTimeDecision.AllowNextPotCycle))
+        {
+            ImGui.TextWrapped($"Instance: {FormatValue(instanceTimeDecision.Reason)}");
+        }
 
         var farmStartBlocker = GetFarmStartBlocker();
         ImGui.BeginDisabled(farmStartBlocker != null);
