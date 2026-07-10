@@ -5,6 +5,7 @@ using System.Numerics;
 using AOCCH.Data;
 using AOCCH.Logging;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 
 namespace AOCCH.Windows;
@@ -12,6 +13,7 @@ namespace AOCCH.Windows;
 public class ConfigWindow : Window, IDisposable
 {
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
+    private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (South)", "Pleading Pots (North)"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly Configuration configuration;
@@ -128,9 +130,132 @@ public class ConfigWindow : Window, IDisposable
         DrawFateCheckboxList();
     }
 
-    private static void DrawPotsTab()
+    private void DrawPotsTab()
     {
-        ImGui.TextUnformatted("Pot farming settings will be added later.");
+        ImGui.TextUnformatted("Pot Cycle");
+
+        var startingPotFate = (int)configuration.StartingPotFate;
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, StartingPotFateLabels, StartingPotFateLabels.Length))
+        {
+            logger.Info($"Setting changed: StartingPotFate: {configuration.StartingPotFate} -> {(StartingPotFateMode)startingPotFate}.");
+            configuration.StartingPotFate = (StartingPotFateMode)startingPotFate;
+            configuration.Save();
+        }
+
+        DrawClampedIntSetting(
+            "Spawn Lead Minutes",
+            configuration.SpawnLeadMinutes,
+            0,
+            30,
+            value => configuration.SpawnLeadMinutes = value,
+            nameof(configuration.SpawnLeadMinutes));
+
+        var manageInstanceTime = configuration.ManageInstanceTime;
+        if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
+        {
+            logger.Info($"Setting changed: ManageInstanceTime: {configuration.ManageInstanceTime} -> {manageInstanceTime}.");
+            configuration.ManageInstanceTime = manageInstanceTime;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("When enabled, pot timing can respect the remaining instance window and exit buffer.");
+
+        DrawClampedIntSetting(
+            "FATE Completion Budget Minutes",
+            configuration.FateCompletionBudgetMinutes,
+            0,
+            60,
+            value => configuration.FateCompletionBudgetMinutes = value,
+            nameof(configuration.FateCompletionBudgetMinutes));
+        DrawClampedIntSetting(
+            "Treasure Hunt Budget Minutes",
+            configuration.TreasureHuntBudgetMinutes,
+            0,
+            60,
+            value => configuration.TreasureHuntBudgetMinutes = value,
+            nameof(configuration.TreasureHuntBudgetMinutes));
+        DrawClampedIntSetting(
+            "Instance Exit Buffer Minutes",
+            configuration.InstanceExitBufferMinutes,
+            0,
+            30,
+            value => configuration.InstanceExitBufferMinutes = value,
+            nameof(configuration.InstanceExitBufferMinutes));
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Treasure Travel");
+
+        DrawClampedIntSetting(
+            "Spawn Arrival Radius",
+            configuration.SpawnArrivalRadius,
+            0,
+            100,
+            value => configuration.SpawnArrivalRadius = value,
+            nameof(configuration.SpawnArrivalRadius));
+        DrawClampedIntSetting(
+            "Maximum Aggro Level",
+            configuration.MaximumAggroLevel,
+            0,
+            20,
+            value => configuration.MaximumAggroLevel = value,
+            nameof(configuration.MaximumAggroLevel));
+
+        var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
+        if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
+        {
+            logger.Info($"Setting changed: UseNinjaForDangerousArea: {configuration.UseNinjaForDangerousArea} -> {useNinjaForDangerousArea}.");
+            configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+
+        using var disabled = ImRaii.Disabled(!configuration.UseNinjaForDangerousArea);
+        {
+            DrawClampedIntSetting(
+                "Hide Threshold Distance",
+                configuration.HideThresholdDistance,
+                0,
+                500,
+                value => configuration.HideThresholdDistance = value,
+                nameof(configuration.HideThresholdDistance));
+            DrawClampedIntSetting(
+                "Ninja Gearset Number",
+                configuration.NinjaGearsetNumber,
+                0,
+                100,
+                value => configuration.NinjaGearsetNumber = value,
+                nameof(configuration.NinjaGearsetNumber));
+        }
+
+        DrawClampedIntSetting(
+            "FATE Gearset Number",
+            configuration.FateGearsetNumber,
+            0,
+            100,
+            value => configuration.FateGearsetNumber = value,
+            nameof(configuration.FateGearsetNumber));
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Fallback Gating");
+
+        DrawClampedIntSetting(
+            "CE Fallback Cutoff Minutes",
+            configuration.CeFallbackCutoffMinutes,
+            0,
+            30,
+            value => configuration.CeFallbackCutoffMinutes = value,
+            nameof(configuration.CeFallbackCutoffMinutes));
+        DrawClampedIntSetting(
+            "FATE Fallback Cutoff Minutes",
+            configuration.FateFallbackCutoffMinutes,
+            0,
+            30,
+            value => configuration.FateFallbackCutoffMinutes = value,
+            nameof(configuration.FateFallbackCutoffMinutes));
+
+        ImGui.TextWrapped("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
     }
 
     private static void DrawTreasureCoffersTab()
@@ -228,6 +353,25 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.EndChild();
+    }
+
+    private void DrawClampedIntSetting(string label, int currentValue, int minValue, int maxValue, Action<int> applyValue, string logName)
+    {
+        var value = currentValue;
+        if (!ImGui.InputInt(label, ref value))
+        {
+            return;
+        }
+
+        var nextValue = Math.Clamp(value, minValue, maxValue);
+        if (nextValue == currentValue)
+        {
+            return;
+        }
+
+        logger.InfoThrottled($"setting-{logName}", SettingTextLogInterval, $"Setting changed: {logName}: {currentValue} -> {nextValue}.");
+        applyValue(nextValue);
+        configuration.Save();
     }
 
     private List<(uint Id, string Label)> GetCriticalEncounterEntries()
