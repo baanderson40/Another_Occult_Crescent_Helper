@@ -15,6 +15,10 @@ public class ConfigWindow : Window, IDisposable
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
     private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (North)", "Pleading Pots (South)"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
+    private const float PotsNumericInputWidth = 60f;
+    private const float SettingsNumericInputWidth = 60f;
+    private const float SettingsTextInputMinWidth = 120f;
+    private const float SettingsTextInputMaxWidth = 240f;
 
     private readonly Configuration configuration;
     private readonly OccultCrescentData data;
@@ -142,8 +146,6 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        ImGui.TextWrapped("Disabling pot farming keeps passive pot scanning active in South Horn, but blocks pot staging, treasure flow, and pot-based fallback gating.");
-
         ImGui.Separator();
         ImGui.TextUnformatted("Pot Cycle");
 
@@ -156,7 +158,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawClampedIntSetting(
+        DrawPotsIntSetting(
             "Spawn Lead Minutes",
             configuration.SpawnLeadMinutes,
             0,
@@ -164,49 +166,18 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.SpawnLeadMinutes = value,
             nameof(configuration.SpawnLeadMinutes));
 
-        var manageInstanceTime = configuration.ManageInstanceTime;
-        if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
-        {
-            logger.Info($"Setting changed: ManageInstanceTime: {configuration.ManageInstanceTime} -> {manageInstanceTime}.");
-            configuration.ManageInstanceTime = manageInstanceTime;
-            configuration.Save();
-        }
-
-        ImGui.TextWrapped("When enabled, pot timing can respect the remaining instance window and exit buffer.");
-
-        DrawClampedIntSetting(
-            "FATE Completion Budget Minutes",
-            configuration.FateCompletionBudgetMinutes,
-            0,
-            60,
-            value => configuration.FateCompletionBudgetMinutes = value,
-            nameof(configuration.FateCompletionBudgetMinutes));
-        DrawClampedIntSetting(
-            "Treasure Hunt Budget Minutes",
-            configuration.TreasureHuntBudgetMinutes,
-            0,
-            60,
-            value => configuration.TreasureHuntBudgetMinutes = value,
-            nameof(configuration.TreasureHuntBudgetMinutes));
-        DrawClampedIntSetting(
-            "Instance Exit Buffer Minutes",
-            configuration.InstanceExitBufferMinutes,
-            0,
-            30,
-            value => configuration.InstanceExitBufferMinutes = value,
-            nameof(configuration.InstanceExitBufferMinutes));
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Treasure Travel");
-
-        DrawClampedIntSetting(
-            "Spawn Arrival Radius",
+        DrawPotsIntSetting(
+            "Arrival Radius",
             configuration.SpawnArrivalRadius,
             0,
             100,
             value => configuration.SpawnArrivalRadius = value,
             nameof(configuration.SpawnArrivalRadius));
-        DrawClampedIntSetting(
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Treasure Travel");
+
+        DrawPotsIntSetting(
             "Maximum Aggro Level",
             configuration.MaximumAggroLevel,
             0,
@@ -214,6 +185,7 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.MaximumAggroLevel = value,
             nameof(configuration.MaximumAggroLevel));
 
+        var manageInstanceTime = configuration.ManageInstanceTime;
         var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
         if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
         {
@@ -221,19 +193,18 @@ public class ConfigWindow : Window, IDisposable
             configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
             configuration.Save();
         }
+        DrawSettingTooltip("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
 
-        ImGui.TextWrapped("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
-
-        using var disabled = ImRaii.Disabled(!configuration.UseNinjaForDangerousArea);
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
         {
-            DrawClampedIntSetting(
+            DrawPotsIntSetting(
                 "Hide Threshold Distance",
                 configuration.HideThresholdDistance,
                 0,
                 500,
                 value => configuration.HideThresholdDistance = value,
                 nameof(configuration.HideThresholdDistance));
-            DrawClampedIntSetting(
+            DrawPotsIntSetting(
                 "Ninja Gearset Number",
                 configuration.NinjaGearsetNumber,
                 0,
@@ -242,7 +213,7 @@ public class ConfigWindow : Window, IDisposable
                 nameof(configuration.NinjaGearsetNumber));
         }
 
-        DrawClampedIntSetting(
+        DrawPotsIntSetting(
             "FATE Gearset Number",
             configuration.FateGearsetNumber,
             0,
@@ -251,24 +222,53 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.FateGearsetNumber));
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Fallback Gating");
+        ImGui.TextUnformatted("Time Constraints");
 
-        DrawClampedIntSetting(
+        if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
+        {
+            logger.Info($"Setting changed: ManageInstanceTime: {configuration.ManageInstanceTime} -> {manageInstanceTime}.");
+            configuration.ManageInstanceTime = manageInstanceTime;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, pot timing can respect the remaining instance window and exit buffer.");
+
+        DrawPotsIntSetting(
+            "FATE Completion Budget Minutes",
+            configuration.FateCompletionBudgetMinutes,
+            0,
+            60,
+            value => configuration.FateCompletionBudgetMinutes = value,
+            nameof(configuration.FateCompletionBudgetMinutes));
+        DrawPotsIntSetting(
+            "Treasure Hunt Budget Minutes",
+            configuration.TreasureHuntBudgetMinutes,
+            0,
+            60,
+            value => configuration.TreasureHuntBudgetMinutes = value,
+            nameof(configuration.TreasureHuntBudgetMinutes));
+        DrawPotsIntSetting(
+            "Instance Exit Buffer Minutes",
+            configuration.InstanceExitBufferMinutes,
+            0,
+            30,
+            value => configuration.InstanceExitBufferMinutes = value,
+            nameof(configuration.InstanceExitBufferMinutes));
+
+        DrawPotsIntSetting(
             "CE Fallback Cutoff Minutes",
             configuration.CeFallbackCutoffMinutes,
             0,
             30,
             value => configuration.CeFallbackCutoffMinutes = value,
             nameof(configuration.CeFallbackCutoffMinutes));
-        DrawClampedIntSetting(
+        DrawPotsIntSetting(
             "FATE Fallback Cutoff Minutes",
             configuration.FateFallbackCutoffMinutes,
             0,
             30,
             value => configuration.FateFallbackCutoffMinutes = value,
             nameof(configuration.FateFallbackCutoffMinutes));
-
-        ImGui.TextWrapped("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
+        DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
     }
 
     private static void DrawTreasureCoffersTab()
@@ -279,8 +279,10 @@ public class ConfigWindow : Window, IDisposable
     private void DrawSettingsTab()
     {
         var autorotationPresetName = configuration.AutorotationPresetName;
-        ImGui.SetNextItemWidth(240);
-        if (ImGui.InputText("Autorotation Preset Name", ref autorotationPresetName, 128))
+        var presetWidth = ImGui.CalcTextSize(autorotationPresetName).X + 24f;
+        presetWidth = Math.Clamp(presetWidth, SettingsTextInputMinWidth, SettingsTextInputMaxWidth);
+        ImGui.SetNextItemWidth(presetWidth);
+        if (ImGui.InputText("Autorotation Preset Name", ref autorotationPresetName, 120))
         {
             logger.InfoThrottled("setting-autorotation-preset-name", SettingTextLogInterval, $"Setting changed: AutorotationPresetName: '{configuration.AutorotationPresetName}' -> '{autorotationPresetName}'.");
             configuration.AutorotationPresetName = autorotationPresetName;
@@ -304,6 +306,7 @@ public class ConfigWindow : Window, IDisposable
         }
 
         var minimumMountingRange = configuration.MinimumMountingRange;
+        ImGui.SetNextItemWidth(SettingsNumericInputWidth);
         if (ImGui.InputInt("Minimum Mounting Range", ref minimumMountingRange))
         {
             var nextValue = Math.Clamp(minimumMountingRange, 0, 100);
@@ -311,8 +314,6 @@ public class ConfigWindow : Window, IDisposable
             configuration.MinimumMountingRange = nextValue;
             configuration.Save();
         }
-
-        ImGui.TextWrapped("Movement stays on foot when the current pathing step starts within this many yalms of its destination.");
 
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
@@ -352,7 +353,8 @@ public class ConfigWindow : Window, IDisposable
         Func<uint, bool, bool> setEnabled,
         string logLabel)
     {
-        ImGui.BeginChild(childId, new Vector2(0, 170), true);
+        var availableHeight = MathF.Max(1f, ImGui.GetContentRegionAvail().Y);
+        ImGui.BeginChild(childId, new Vector2(0, availableHeight), true);
         foreach (var entry in entries)
         {
             var enabled = isEnabled(entry.Id);
@@ -366,6 +368,22 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.EndChild();
+    }
+
+    private void DrawPotsIntSetting(string label, int currentValue, int minValue, int maxValue, Action<int> applyValue, string logName)
+    {
+        ImGui.SetNextItemWidth(PotsNumericInputWidth);
+        DrawClampedIntSetting(label, currentValue, minValue, maxValue, applyValue, logName);
+    }
+
+    private static void DrawSettingTooltip(string text)
+    {
+        if (!ImGui.IsItemHovered())
+        {
+            return;
+        }
+
+        ImGui.SetTooltip(text);
     }
 
     private void DrawClampedIntSetting(string label, int currentValue, int minValue, int maxValue, Action<int> applyValue, string logName)

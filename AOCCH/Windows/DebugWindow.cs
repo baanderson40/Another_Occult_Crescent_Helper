@@ -12,6 +12,25 @@ namespace AOCCH.Windows;
 
 public sealed class DebugWindow : Window, IDisposable
 {
+    private enum DebugSection
+    {
+        Overview,
+        Safety,
+        AutomationTestReadiness,
+        SelectedTarget,
+        FarmSession,
+        PotControl,
+        DangerousTreasureTravel,
+        CriticalEngagementAutomation,
+        FateAutomation,
+        Autorotation,
+        BuffRotation,
+        DeathRecovery,
+        Movement,
+        CriticalEngagements,
+        Fates,
+    }
+
     private readonly Plugin plugin;
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
@@ -25,6 +44,7 @@ public sealed class DebugWindow : Window, IDisposable
     private readonly PotFarmController potFarmController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly FarmSessionController farmSessionController;
+    private DebugSection selectedSection = DebugSection.Overview;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -72,53 +92,108 @@ public sealed class DebugWindow : Window, IDisposable
     {
         var snapshot = scanner.Snapshot;
 
+        var navWidth = MathF.Max(180f, ImGui.GetContentRegionAvail().X * 0.28f);
+        var childHeight = MathF.Max(1f, ImGui.GetContentRegionAvail().Y);
+
+        ImGui.BeginChild("DebugSectionList", new Vector2(navWidth, childHeight), true);
+        DrawSectionList();
+        ImGui.EndChild();
+
+        ImGui.SameLine();
+
+        ImGui.BeginChild("DebugSectionContent", new Vector2(0, childHeight), true);
+        DrawSectionContent(snapshot);
+        ImGui.EndChild();
+    }
+
+    private void DrawSectionList()
+    {
+        DrawSectionButton(DebugSection.Overview, "Overview");
+        DrawSectionButton(DebugSection.Safety, "Safety");
+        DrawSectionButton(DebugSection.AutomationTestReadiness, "Automation Test Readiness");
+        DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
+        DrawSectionButton(DebugSection.FarmSession, "Farm Session");
+        DrawSectionButton(DebugSection.PotControl, "Pot Control");
+        DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
+        DrawSectionButton(DebugSection.CriticalEngagementAutomation, "Critical Engagement Automation");
+        DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
+        DrawSectionButton(DebugSection.Autorotation, "Autorotation");
+        DrawSectionButton(DebugSection.BuffRotation, "Buff Rotation");
+        DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
+        DrawSectionButton(DebugSection.Movement, "Movement");
+        DrawSectionButton(DebugSection.CriticalEngagements, "Critical Engagements");
+        DrawSectionButton(DebugSection.Fates, "FATEs");
+    }
+
+    private void DrawSectionButton(DebugSection section, string label)
+    {
+        var isSelected = selectedSection == section;
+        if (ImGui.Selectable(label, isSelected))
+        {
+            selectedSection = section;
+        }
+    }
+
+    private void DrawSectionContent(ScannerSnapshot snapshot)
+    {
+        switch (selectedSection)
+        {
+            case DebugSection.Overview:
+                DrawOverview(snapshot);
+                break;
+            case DebugSection.Safety:
+                DrawSafety(snapshot);
+                break;
+            case DebugSection.AutomationTestReadiness:
+                DrawTestReadiness(snapshot);
+                break;
+            case DebugSection.SelectedTarget:
+                DrawSelectedTarget(snapshot);
+                break;
+            case DebugSection.FarmSession:
+                DrawFarmSession();
+                break;
+            case DebugSection.PotControl:
+                DrawPotStatus(snapshot);
+                break;
+            case DebugSection.DangerousTreasureTravel:
+                DrawDangerousTreasureTravel();
+                break;
+            case DebugSection.CriticalEngagementAutomation:
+                DrawCriticalEngagementAutomation(snapshot);
+                break;
+            case DebugSection.FateAutomation:
+                DrawFateAutomation(snapshot);
+                break;
+            case DebugSection.Autorotation:
+                DrawAutorotation();
+                break;
+            case DebugSection.BuffRotation:
+                DrawBuffRotation(snapshot);
+                break;
+            case DebugSection.DeathRecovery:
+                DrawDeathRecovery();
+                break;
+            case DebugSection.Movement:
+                DrawMovement(snapshot);
+                break;
+            case DebugSection.CriticalEngagements:
+                DrawCriticalEncounters(snapshot);
+                break;
+            case DebugSection.Fates:
+                DrawFates(snapshot);
+                break;
+        }
+    }
+
+    private void DrawOverview(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Overview");
         ImGui.TextUnformatted($"CE Farming: {(configuration.EnableCriticalEngagementFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"FATE Farming: {(configuration.EnableFateFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
         ImGui.TextUnformatted($"In South Horn: {(snapshot.IsInSouthHorn ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
-
-        ImGui.Separator();
-        DrawSafety(snapshot);
-
-        ImGui.Separator();
-        DrawTestReadiness(snapshot);
-
-        ImGui.Separator();
-        DrawSelectedTarget(snapshot);
-
-        ImGui.Separator();
-        DrawFarmSession();
-
-        ImGui.Separator();
-        DrawPotStatus(snapshot);
-
-        ImGui.Separator();
-        DrawDangerousTreasureTravel();
-
-        ImGui.Separator();
-        DrawCriticalEngagementAutomation(snapshot);
-
-        ImGui.Separator();
-        DrawFateAutomation(snapshot);
-
-        ImGui.Separator();
-        DrawAutorotation();
-
-        ImGui.Separator();
-        DrawBuffRotation(snapshot);
-
-        ImGui.Separator();
-        DrawDeathRecovery();
-
-        ImGui.Separator();
-        DrawMovement(snapshot);
-
-        ImGui.Separator();
-        DrawCriticalEncounters(snapshot);
-
-        ImGui.Separator();
-        DrawFates(snapshot);
     }
 
     private static string FormatTimestamp(DateTimeOffset timestamp)
