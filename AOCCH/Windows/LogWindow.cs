@@ -45,7 +45,8 @@ public sealed class LogWindow : Window, IDisposable
         ImGui.Checkbox("Auto-scroll", ref autoScroll);
 
         ImGui.SameLine();
-        if (copyMode)
+        var wasCopyMode = copyMode;
+        if (wasCopyMode)
         {
             ImGui.PushStyleColor(ImGuiCol.Button, 0x4000AA00);
         }
@@ -59,7 +60,7 @@ public sealed class LogWindow : Window, IDisposable
             }
         }
 
-        if (copyMode)
+        if (wasCopyMode)
         {
             ImGui.PopStyleColor();
         }
