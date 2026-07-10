@@ -218,6 +218,76 @@ public sealed class GameActionController
         return true;
     }
 
+    public unsafe bool TryUseKeyInventoryItem(uint itemId, string itemName, string description)
+    {
+        if (itemId == 0)
+        {
+            logger.Warning($"Cannot use key item 0 for {description}.");
+            return false;
+        }
+
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            logger.Warning($"InventoryManager is unavailable for {description}.");
+            return false;
+        }
+
+        var keyItemContainer = inventoryManager->GetInventoryContainer(InventoryType.KeyItems);
+        if (keyItemContainer == null)
+        {
+            logger.Warning($"Key item container is unavailable for {description}.");
+            return false;
+        }
+
+        if (!keyItemContainer->IsLoaded || keyItemContainer->Size <= 0 || keyItemContainer->Items == null)
+        {
+            logger.Warning($"Key item container is not ready for {description}. loaded={keyItemContainer->IsLoaded} size={keyItemContainer->Size}.");
+            return false;
+        }
+
+        InventoryItem* itemSlot = null;
+        for (var i = 0; i < keyItemContainer->Size; i++)
+        {
+            var candidate = keyItemContainer->GetInventorySlot(i);
+            if (candidate == null || candidate->IsEmpty())
+            {
+                continue;
+            }
+
+            if (candidate->ItemId != itemId)
+            {
+                continue;
+            }
+
+            itemSlot = candidate;
+            break;
+        }
+
+        if (itemSlot == null)
+        {
+            logger.Warning($"Key item {itemId} ({itemName}) was not found in {InventoryType.KeyItems} for {description}.");
+            return false;
+        }
+
+        var agent = AgentInventoryContext.Instance();
+        if (agent == null)
+        {
+            logger.Warning($"AgentInventoryContext is unavailable for {description}.");
+            return false;
+        }
+
+        var result = agent->UseItem(itemSlot->ItemId, InventoryType.KeyItems, (uint)itemSlot->Slot);
+        if (result != 0)
+        {
+            logger.Warning($"UseItem({itemSlot->ItemId}, {InventoryType.KeyItems}, slot={itemSlot->Slot}) returned {result} for {description}.");
+            return false;
+        }
+
+        logger.Info($"Used key item {itemSlot->ItemId} ({itemName}) from {InventoryType.KeyItems} slot {itemSlot->Slot} for {description}.");
+        return true;
+    }
+
     public bool TryUseMagicalElixir(string description)
-        => TryUseInventoryItem(MagicalElixirEventItemId, isHighQuality: false, description);
+        => TryUseKeyInventoryItem(MagicalElixirEventItemId, MagicalElixirKeyItemName, description);
 }
