@@ -1,4 +1,5 @@
 using AOCCH.Logging;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -12,15 +13,32 @@ public sealed class GameActionController
     public const uint ReturnActionId = 8;
     public const uint MountActionId = 9;
     public const uint DismountActionId = 23;
+    public const uint HideActionId = 2245;
+    public const uint NinjaClassJobId = 30;
 
+    private readonly ICommandManager commandManager;
+    private readonly ICondition condition;
+    private readonly IPlayerState playerState;
     private readonly ITargetManager targetManager;
     private readonly AocchLogger logger;
 
-    public GameActionController(ITargetManager targetManager, AocchLogger logger)
+    public GameActionController(ICommandManager commandManager, ICondition condition, IPlayerState playerState, ITargetManager targetManager, AocchLogger logger)
     {
+        this.commandManager = commandManager;
+        this.condition = condition;
+        this.playerState = playerState;
         this.targetManager = targetManager;
         this.logger = logger;
     }
+
+    public bool IsStealthed
+        => condition[ConditionFlag.Stealthed];
+
+    public uint CurrentClassJobId
+        => playerState.ClassJob.RowId;
+
+    public bool IsOnClassJob(uint classJobId)
+        => CurrentClassJobId == classJobId;
 
     public bool TrySetTarget(IGameObject gameObject, string description)
     {
@@ -77,6 +95,9 @@ public sealed class GameActionController
     public unsafe bool CanUseGeneralAction(uint actionId)
         => ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, actionId) == 0;
 
+    public unsafe bool CanUseAction(uint actionId)
+        => ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId) == 0;
+
     public unsafe bool TryExecuteGeneralAction(uint actionId, string description)
     {
         if (!CanUseGeneralAction(actionId))
@@ -93,6 +114,47 @@ public sealed class GameActionController
         }
 
         logger.Info($"Executed general action {actionId} for {description}.");
+        return true;
+    }
+
+    public unsafe bool TryExecuteAction(uint actionId, string description)
+    {
+        if (!CanUseAction(actionId))
+        {
+            logger.Warning($"Action {actionId} is unavailable for {description}.");
+            return false;
+        }
+
+        var used = ActionManager.Instance()->UseAction(ActionType.Action, actionId);
+        if (!used)
+        {
+            logger.Warning($"Failed to execute action {actionId} for {description}.");
+            return false;
+        }
+
+        logger.Info($"Executed action {actionId} for {description}.");
+        return true;
+    }
+
+    public bool CanUseHide()
+        => CanUseAction(HideActionId);
+
+    public bool TryEquipGearset(int gearsetNumber, string description)
+    {
+        if (gearsetNumber <= 0)
+        {
+            logger.Warning($"Cannot equip an unconfigured gearset for {description}.");
+            return false;
+        }
+
+        var command = $"/gearset change {gearsetNumber}";
+        if (!commandManager.ProcessCommand(command))
+        {
+            logger.Warning($"Failed to dispatch gearset command '{command}' for {description}.");
+            return false;
+        }
+
+        logger.Info($"Dispatched gearset command '{command}' for {description}.");
         return true;
     }
 }

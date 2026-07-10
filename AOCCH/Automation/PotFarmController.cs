@@ -26,6 +26,7 @@ public sealed class PotFarmController : IDisposable
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly TreasureSearchController treasureSearchController;
     private readonly CofferInteractionController cofferInteractionController;
+    private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, PotFateData> potFatesById;
@@ -59,6 +60,7 @@ public sealed class PotFarmController : IDisposable
         TreasureHintTracker treasureHintTracker,
         TreasureSearchController treasureSearchController,
         CofferInteractionController cofferInteractionController,
+        DangerousTreasureTravelController dangerousTreasureTravelController,
         OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
@@ -71,6 +73,7 @@ public sealed class PotFarmController : IDisposable
         this.treasureHintTracker = treasureHintTracker;
         this.treasureSearchController = treasureSearchController;
         this.cofferInteractionController = cofferInteractionController;
+        this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.configuration = configuration;
         this.logger = logger;
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
@@ -281,6 +284,7 @@ public sealed class PotFarmController : IDisposable
             cofferInteractionController.Stop(reason);
         }
 
+        dangerousTreasureTravelController.RestoreFateGearset($"pot farm stop: {reason}");
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
@@ -601,6 +605,16 @@ public sealed class PotFarmController : IDisposable
         {
             if (!treasureSearchController.Start(treasurePotId, treasurePotName))
             {
+                if (treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted)
+                {
+                    ClearTreasurePotContext();
+                    BeginRecoveryToBase(
+                        "Treasure traversal exhausted all mapped candidates while starting the selected treasure group; returning to Base Camp.",
+                        resumeBootstrapAfterRecovery: false,
+                        completionResult: PotFarmRunResult.Completed);
+                    return;
+                }
+
                 SetFailure(treasureSearchController.LastError.Length == 0
                     ? "Failed to start treasure candidate traversal."
                     : treasureSearchController.LastError);
@@ -838,6 +852,8 @@ public sealed class PotFarmController : IDisposable
             movementController.Stop($"Active pot FATE detected: {activePotFate.Name}.");
         }
 
+        dangerousTreasureTravelController.RestoreFateGearset($"starting pot FATE {activePotFate.Name}");
+
         if (!fateAutomationController.Start(activePotFate, FateRunCompletionBehavior.CompleteInPlace))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
@@ -894,6 +910,8 @@ public sealed class PotFarmController : IDisposable
 
     private void BeginRecoveryToBase(string reason, bool resumeBootstrapAfterRecovery, PotFarmRunResult completionResult)
     {
+        dangerousTreasureTravelController.RestoreFateGearset($"pot recovery: {reason}");
+
         if (!movementController.RecoverToBaseCamp())
         {
             if (configuration.UseReturn && movementController.RecoverToBaseCamp(allowReturn: false))
@@ -946,6 +964,7 @@ public sealed class PotFarmController : IDisposable
             cofferInteractionController.Stop(reason);
         }
 
+        dangerousTreasureTravelController.RestoreFateGearset($"pot farm failure: {reason}");
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);

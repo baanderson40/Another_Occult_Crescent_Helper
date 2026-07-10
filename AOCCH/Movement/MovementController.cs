@@ -313,7 +313,7 @@ public sealed class MovementController : IDisposable
         return true;
     }
 
-    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f)
+    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true)
     {
         vnavmesh.Stop();
 
@@ -333,6 +333,7 @@ public sealed class MovementController : IDisposable
                         Description = description,
                         Destination = destination,
                         ArrivalTolerance = arrivalTolerance,
+                        ShouldMountBeforeStep = shouldMountBeforeStep,
                     },
                 ],
             };

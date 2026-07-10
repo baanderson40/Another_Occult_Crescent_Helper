@@ -28,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
+    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
@@ -44,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
     public RoutePlanner RoutePlanner { get; init; }
     public GameActionController GameActionController { get; init; }
     public MovementController MovementController { get; init; }
+    public DangerousTreasureTravelController DangerousTreasureTravelController { get; init; }
     public AutorotationController AutorotationController { get; init; }
     public BuffRotationController BuffRotationController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
@@ -83,8 +85,9 @@ public sealed class Plugin : IDalamudPlugin
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
-        GameActionController = new GameActionController(TargetManager, Logger);
+        GameActionController = new GameActionController(CommandManager, Condition, PlayerState, TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
+        DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
@@ -92,10 +95,10 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
-        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, TreasureHintTracker, OccultCrescentData, CofferPositionOverrideStore, Logger);
+        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, TreasureHintTracker, DangerousTreasureTravelController, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -158,6 +161,7 @@ public sealed class Plugin : IDalamudPlugin
         PotFarmController.Dispose();
         CofferInteractionController.Dispose();
         TreasureSearchController.Dispose();
+        DangerousTreasureTravelController.Dispose();
         TreasureHintTracker.Dispose();
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();

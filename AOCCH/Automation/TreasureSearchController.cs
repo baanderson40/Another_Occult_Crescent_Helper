@@ -20,7 +20,9 @@ public sealed class TreasureSearchController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly TreasureHintTracker treasureHintTracker;
+    private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
+    private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, Dictionary<string, TreasureCofferGroupData>> groupsByFateId;
     private readonly object gate = new();
@@ -44,15 +46,19 @@ public sealed class TreasureSearchController : IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         TreasureHintTracker treasureHintTracker,
+        DangerousTreasureTravelController dangerousTreasureTravelController,
         OccultCrescentData data,
         CofferPositionOverrideStore cofferPositionOverrideStore,
+        Configuration configuration,
         AocchLogger logger)
     {
         this.framework = framework;
         this.scanner = scanner;
         this.movementController = movementController;
         this.treasureHintTracker = treasureHintTracker;
+        this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.cofferPositionOverrideStore = cofferPositionOverrideStore;
+        this.configuration = configuration;
         this.logger = logger;
         groupsByFateId = data.TreasureCofferGroups
             .GroupBy(group => group.FateId)
@@ -213,6 +219,11 @@ public sealed class TreasureSearchController : IDisposable
 
     public void Stop(string reason)
     {
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            dangerousTreasureTravelController.Stop(reason);
+        }
+
         if (IsRunning && movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop(reason);
@@ -279,10 +290,29 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
+        if (TryHandleDangerousTravelTerminalResult())
+        {
+            return;
+        }
+
         if (candidateTravelDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= candidateTravelDeadlineAt)
         {
+            if (dangerousTreasureTravelController.IsRunning)
+            {
+                dangerousTreasureTravelController.Stop("Treasure candidate travel timed out.");
+            }
+
             movementController.Stop("Treasure candidate travel timed out.");
             AdvanceCandidate($"Timed out while traveling to treasure candidate {activeCandidateKey?.Label}.");
+            return;
+        }
+
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            logger.DebugThrottled(
+                "treasure-search-travel",
+                WaitLogInterval,
+                $"Treasure search is running dangerous travel for candidate {activeCandidateKey?.Label} in group {activeGroupKey}. DangerousState={dangerousTreasureTravelController.State} transition={dangerousTreasureTravelController.LastTransition}.");
             return;
         }
 
@@ -352,6 +382,11 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            dangerousTreasureTravelController.Stop($"Treasure hint handoff to group {group.GroupKey}.");
+        }
+
         movementController.Stop($"Treasure hint handoff to group {group.GroupKey}.");
         lock (gate)
         {
@@ -395,6 +430,17 @@ public sealed class TreasureSearchController : IDisposable
 
     private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, string reason)
     {
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            dangerousTreasureTravelController.Stop($"Visible coffer matched during dangerous travel for {candidateKey.Label}.");
+            dangerousTreasureTravelController.AcknowledgeTerminalState();
+        }
+
+        if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
+        {
+            movementController.Stop($"Visible coffer matched for {candidateKey.Label}.");
+        }
+
         lock (gate)
         {
             activeCandidateKey = candidateKey;
@@ -450,7 +496,28 @@ public sealed class TreasureSearchController : IDisposable
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
         var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f)
             ?? targetPosition;
-        if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
+        var isDangerousCandidate = candidate.AggroLevel > configuration.MaximumAggroLevel;
+        if (isDangerousCandidate)
+        {
+            if (!configuration.UseNinjaForDangerousArea)
+            {
+                return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because aggro level {candidate.AggroLevel} exceeds Maximum Aggro Level {configuration.MaximumAggroLevel} and Ninja travel is disabled.");
+            }
+
+            if (!dangerousTreasureTravelController.Start(candidate, destination, CandidateArrivalTolerance))
+            {
+                if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
+                {
+                    return SkipDangerousCandidate(dangerousTreasureTravelController.LastTransition);
+                }
+
+                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                    ? $"Failed to start dangerous travel for treasure candidate {candidate.Label}."
+                    : dangerousTreasureTravelController.LastError);
+                return false;
+            }
+        }
+        else if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to start movement to treasure candidate {candidate.Label}."
@@ -468,8 +535,72 @@ public sealed class TreasureSearchController : IDisposable
 
         TransitionTo(
             TreasureSearchState.TravelingToCandidate,
-            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position.");
+            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position{(isDangerousCandidate ? " with Ninja/Hide dangerous-area flow" : string.Empty)}.");
         return true;
+    }
+
+    private bool TryHandleDangerousTravelTerminalResult()
+    {
+        switch (dangerousTreasureTravelController.State)
+        {
+            case DangerousTreasureTravelState.Arrived:
+                var arriveReason = dangerousTreasureTravelController.LastTransition;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                if (TryHandleVisibleCoffer())
+                {
+                    return true;
+                }
+
+                AdvanceCandidate($"{arriveReason} No visible coffer was found at treasure candidate {activeCandidateKey?.Label}.");
+                return true;
+            case DangerousTreasureTravelState.CandidateSkipped:
+                var skipReason = dangerousTreasureTravelController.LastTransition;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                AdvanceCandidate(skipReason);
+                return true;
+            case DangerousTreasureTravelState.Failed:
+                var failureReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                SetFailure(failureReason);
+                return true;
+            case DangerousTreasureTravelState.Stopped:
+                var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                SetFailure(stoppedReason);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool SkipDangerousCandidate(string reason)
+    {
+        logger.ResetThrottle("treasure-search-travel");
+
+        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
+        {
+            SetFailure(reason);
+            return false;
+        }
+
+        if (CurrentCandidateIndex + 1 >= group.Candidates.Count)
+        {
+            TransitionTo(TreasureSearchState.CandidatesExhausted, reason, result: TreasureSearchRunResult.CandidatesExhausted);
+            return false;
+        }
+
+        lock (gate)
+        {
+            currentCandidateIndex++;
+            activeVisibleCofferMatch = null;
+            activeCandidateKey = null;
+        }
+
+        return BeginCurrentCandidate(reason);
     }
 
     private bool TryGetCurrentCandidate(out TreasureCofferCandidateData candidate)
