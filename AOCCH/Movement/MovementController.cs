@@ -20,6 +20,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
     private const float TransitionCompletionDistance = 25f;
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
@@ -602,6 +603,11 @@ public sealed class MovementController : IDisposable
 
         if (!pathBusy && distance > step.ArrivalTolerance)
         {
+            if (DateTimeOffset.UtcNow - stepStartedAt <= PathStartGrace)
+            {
+                return;
+            }
+
             lock (gate)
             {
                 stepStarted = false;
