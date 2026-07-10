@@ -9,6 +9,8 @@ namespace AOCCH.Data;
 
 public static class OccultCrescentDataLoader
 {
+    // This shipped JSON is the canonical coffer dataset. The Lua route map and
+    // tracker notes in knowledge-base are historical source material only.
     private const string DataFileName = "OccultCrescentData.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
