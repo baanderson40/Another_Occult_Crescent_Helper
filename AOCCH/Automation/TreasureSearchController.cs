@@ -218,6 +218,37 @@ public sealed class TreasureSearchController : IDisposable
         TransitionTo(TreasureSearchState.Stopped, reason, error: reason, result: TreasureSearchRunResult.Stopped);
     }
 
+    public bool StartNextCandidateAfterInteractionLoss(string reason)
+    {
+        if (State != TreasureSearchState.ReadyForInteraction)
+        {
+            SetFailure("Treasure traversal cannot resume after coffer interaction loss because it is not waiting on a matched coffer.");
+            return false;
+        }
+
+        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
+        {
+            SetFailure("Treasure traversal lost its candidate group while handling coffer interaction loss.");
+            return false;
+        }
+
+        logger.ResetThrottle("treasure-search-travel");
+        if (CurrentCandidateIndex + 1 >= group.Candidates.Count)
+        {
+            TransitionTo(TreasureSearchState.CandidatesExhausted, reason, result: TreasureSearchRunResult.CandidatesExhausted);
+            return false;
+        }
+
+        lock (gate)
+        {
+            currentCandidateIndex++;
+            activeVisibleCofferMatch = null;
+            activeCandidateKey = null;
+        }
+
+        return BeginCurrentCandidate(reason);
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

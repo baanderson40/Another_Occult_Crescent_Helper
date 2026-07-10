@@ -27,6 +27,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
 
     private const string CommandName = "/aocch";
 
@@ -50,6 +51,7 @@ public sealed class Plugin : IDalamudPlugin
     public PotCycleTracker PotCycleTracker { get; init; }
     public TreasureHintTracker TreasureHintTracker { get; init; }
     public TreasureSearchController TreasureSearchController { get; init; }
+    public CofferInteractionController CofferInteractionController { get; init; }
     public PotFallbackWindowEvaluator PotFallbackWindowEvaluator { get; init; }
     public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
@@ -79,7 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
-        GameActionController = new GameActionController(Logger);
+        GameActionController = new GameActionController(TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, Configuration, Logger);
@@ -89,8 +91,9 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, TreasureHintTracker, OccultCrescentData, Logger);
+        CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -151,6 +154,7 @@ public sealed class Plugin : IDalamudPlugin
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
+        CofferInteractionController.Dispose();
         TreasureSearchController.Dispose();
         TreasureHintTracker.Dispose();
         PotCycleTracker.Dispose();
@@ -346,6 +350,12 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         TreasureHintTracker.CompleteCurrentTreasureSession(reason, TreasureSessionState.Abandoned);
+        if (CofferInteractionController.IsRunning)
+        {
+            Logger.Info("Panic stop: stopping coffer interaction.");
+            CofferInteractionController.Stop(reason);
+        }
+
         Logger.Info("Panic stop: stopping movement.");
         MovementController.Stop(reason);
         Logger.Info("Panic stop: releasing autorotation ownership.");

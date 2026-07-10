@@ -578,6 +578,17 @@ public sealed class DebugWindow : Window, IDisposable
             : $"{visibleMatch.CandidateKey.Label} <- {visibleMatch.Coffer.Name} ({visibleMatch.MatchDistance:0.0}y) | {visibleMatch.AttributionReason}";
         ImGui.TextWrapped($"Treasure Visible Match: {FormatValue(visibleMatchText)}");
 
+        var cofferInteraction = plugin.CofferInteractionController;
+        ImGui.TextUnformatted($"Coffer Interaction State: {cofferInteraction.State}");
+        ImGui.TextWrapped($"Coffer Interaction Transition: {cofferInteraction.LastTransition}");
+        ImGui.TextWrapped($"Coffer Interaction Attempts: {cofferInteraction.InteractionAttemptCount}");
+        ImGui.TextWrapped($"Coffer Interaction Confirmation Deadline: {FormatTimestamp(cofferInteraction.ConfirmationDeadlineAt)}");
+        var activeInteractionMatch = cofferInteraction.ActiveMatch;
+        var activeInteractionMatchText = activeInteractionMatch == null
+            ? null
+            : $"{activeInteractionMatch.CandidateKey.Label} <- {activeInteractionMatch.Coffer.Name} ({activeInteractionMatch.Coffer.GameObjectId:X})";
+        ImGui.TextWrapped($"Coffer Interaction Match: {FormatValue(activeInteractionMatchText)}");
+
         if (!string.IsNullOrEmpty(potFarmController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {potFarmController.LastError}");

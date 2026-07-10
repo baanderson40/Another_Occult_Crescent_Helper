@@ -25,6 +25,7 @@ public sealed class PotFarmController : IDisposable
     private readonly PotCycleTracker potCycleTracker;
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly TreasureSearchController treasureSearchController;
+    private readonly CofferInteractionController cofferInteractionController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, PotFateData> potFatesById;
@@ -57,6 +58,7 @@ public sealed class PotFarmController : IDisposable
         PotCycleTracker potCycleTracker,
         TreasureHintTracker treasureHintTracker,
         TreasureSearchController treasureSearchController,
+        CofferInteractionController cofferInteractionController,
         OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
@@ -68,6 +70,7 @@ public sealed class PotFarmController : IDisposable
         this.potCycleTracker = potCycleTracker;
         this.treasureHintTracker = treasureHintTracker;
         this.treasureSearchController = treasureSearchController;
+        this.cofferInteractionController = cofferInteractionController;
         this.configuration = configuration;
         this.logger = logger;
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
@@ -273,6 +276,11 @@ public sealed class PotFarmController : IDisposable
             treasureSearchController.Stop(reason);
         }
 
+        if (cofferInteractionController.IsRunning)
+        {
+            cofferInteractionController.Stop(reason);
+        }
+
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
@@ -349,6 +357,9 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.RunningTreasureSearch:
                 TickRunningTreasureSearch();
+                break;
+            case PotFarmState.RunningCofferInteraction:
+                TickRunningCofferInteraction();
                 break;
             case PotFarmState.RecoveringToBase:
                 TickRecoveringToBase();
@@ -575,8 +586,13 @@ public sealed class PotFarmController : IDisposable
                 treasureSearchController.Stop("Treasure buff expired before treasure search completed.");
             }
 
+            if (cofferInteractionController.IsRunning)
+            {
+                cofferInteractionController.Stop("Treasure buff expired before coffer interaction completed.");
+            }
+
             ClearTreasurePotContext();
-            BeginRecoveryToBase("Treasure buff expired before treasure execution was implemented; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
+            BeginRecoveryToBase("Treasure buff expired before treasure execution completed; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
             return;
         }
 
@@ -626,11 +642,48 @@ public sealed class PotFarmController : IDisposable
         switch (treasureSearchController.LastResult)
         {
             case TreasureSearchRunResult.ReadyForInteraction:
-                ClearTreasurePotContext();
-                BeginRecoveryToBase(
-                    $"Treasure coffer located at candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"}, but coffer interaction is not implemented yet; returning to Base Camp.",
-                    resumeBootstrapAfterRecovery: false,
-                    completionResult: PotFarmRunResult.TreasurePending);
+                var activeMatch = treasureSearchController.ActiveVisibleCofferMatch;
+                if (activeMatch == null)
+                {
+                    SetFailure("Treasure search reported a ready coffer interaction without an active coffer match.");
+                    return;
+                }
+
+                if (!cofferInteractionController.IsRunning && !cofferInteractionController.Start(activeMatch))
+                {
+                    switch (cofferInteractionController.LastResult)
+                    {
+                        case CofferInteractionResult.LostCoffer:
+                            logger.Warning($"Matched coffer for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"} vanished before interaction started; resuming candidate traversal.");
+                            if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
+                            {
+                                if (treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted)
+                                {
+                                    ClearTreasurePotContext();
+                                    BeginRecoveryToBase(
+                                        "Matched coffer vanished before interaction and no more mapped candidates remained; returning to Base Camp.",
+                                        resumeBootstrapAfterRecovery: false,
+                                        completionResult: PotFarmRunResult.Completed);
+                                    return;
+                                }
+
+                                SetFailure(treasureSearchController.LastError.Length == 0
+                                    ? "Failed to continue treasure traversal after losing the matched coffer."
+                                    : treasureSearchController.LastError);
+                                return;
+                            }
+
+                            TransitionTo(PotFarmState.RunningTreasureSearch, treasureSearchController.LastTransition);
+                            return;
+                        default:
+                            SetFailure(cofferInteractionController.LastError.Length == 0
+                                ? "Failed to start coffer interaction."
+                                : cofferInteractionController.LastError);
+                            return;
+                    }
+                }
+
+                TransitionTo(PotFarmState.RunningCofferInteraction, cofferInteractionController.LastTransition);
                 return;
             case TreasureSearchRunResult.CandidatesExhausted:
                 ClearTreasurePotContext();
@@ -646,6 +699,70 @@ public sealed class PotFarmController : IDisposable
                 SetFailure(treasureSearchController.LastError.Length == 0
                     ? treasureSearchController.LastTransition
                     : treasureSearchController.LastError);
+                return;
+        }
+    }
+
+    private void TickRunningCofferInteraction()
+    {
+        var scannerSnapshot = scanner.Snapshot;
+        if (!scannerSnapshot.HasTreasureBuff)
+        {
+            cofferInteractionController.Stop("Treasure buff expired during coffer interaction.");
+            ClearTreasurePotContext();
+            BeginRecoveryToBase("Treasure buff expired during coffer interaction; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
+            return;
+        }
+
+        if (cofferInteractionController.IsRunning)
+        {
+            logger.DebugThrottled(
+                "pot-coffer-interaction",
+                WaitLogInterval,
+                $"Coffer interaction is active. state={cofferInteractionController.State} attempts={cofferInteractionController.InteractionAttemptCount} deadline={cofferInteractionController.ConfirmationDeadlineAt:O} candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "none"}.");
+            return;
+        }
+
+        logger.ResetThrottle("pot-coffer-interaction");
+        switch (cofferInteractionController.LastResult)
+        {
+            case CofferInteractionResult.Opened:
+                treasureHintTracker.CompleteCurrentTreasureSession("Treasure coffer opened successfully.", TreasureSessionState.Completed);
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Opened treasure coffer for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"}; returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.Completed);
+                return;
+            case CofferInteractionResult.LostCoffer:
+            case CofferInteractionResult.TimedOut:
+                if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
+                {
+                    if (treasureSearchController.LastResult != TreasureSearchRunResult.CandidatesExhausted)
+                    {
+                        SetFailure(treasureSearchController.LastError.Length == 0
+                            ? cofferInteractionController.LastTransition
+                            : treasureSearchController.LastError);
+                        return;
+                    }
+
+                    ClearTreasurePotContext();
+                    BeginRecoveryToBase(
+                        "Treasure coffer interaction failed and no more mapped candidates remained; returning to Base Camp.",
+                        resumeBootstrapAfterRecovery: false,
+                        completionResult: PotFarmRunResult.Completed);
+                    return;
+                }
+
+                TransitionTo(PotFarmState.RunningTreasureSearch, treasureSearchController.LastTransition);
+                return;
+            case CofferInteractionResult.Stopped when pendingStop:
+                TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
+                return;
+            default:
+                SetFailure(cofferInteractionController.LastError.Length == 0
+                    ? cofferInteractionController.LastTransition
+                    : cofferInteractionController.LastError);
                 return;
         }
     }
@@ -822,6 +939,11 @@ public sealed class PotFarmController : IDisposable
         if (treasureSearchController.State != TreasureSearchState.Idle)
         {
             treasureSearchController.Stop(reason);
+        }
+
+        if (cofferInteractionController.IsRunning)
+        {
+            cofferInteractionController.Stop(reason);
         }
 
         ClearTreasurePotContext();
