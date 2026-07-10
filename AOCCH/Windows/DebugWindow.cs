@@ -552,6 +552,19 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"CE Fallback: {ceDecision.Reason}");
         ImGui.TextWrapped($"FATE Fallback: {fateDecision.Reason}");
 
+        var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
+        ImGui.TextUnformatted($"Treasure Session: {treasureSnapshot.SessionState}");
+        ImGui.TextUnformatted($"Treasure Session ID: {treasureSnapshot.SessionId}");
+        ImGui.TextWrapped($"Treasure Started: {FormatTimestamp(treasureSnapshot.StartedAt)}");
+        ImGui.TextWrapped($"Treasure Completed: {FormatTimestamp(treasureSnapshot.CompletedAt)}");
+        ImGui.TextWrapped($"Treasure Completion: {FormatValue(treasureSnapshot.CompletionReason)}");
+        ImGui.TextUnformatted($"Treasure Revision: {treasureSnapshot.Revision}");
+        ImGui.TextWrapped($"Treasure Initial Hint: {FormatTreasureHint(treasureSnapshot.InitialHintEvent)}");
+        ImGui.TextWrapped($"Treasure Last Hint: {FormatTreasureHint(treasureSnapshot.LastHintEvent)}");
+        ImGui.TextWrapped($"Treasure Last Event: {FormatTreasureEvent(treasureSnapshot.LastEvent)}");
+        ImGui.TextWrapped($"Treasure Transition: {treasureSnapshot.LastTransition}");
+        ImGui.TextWrapped($"Treasure Reset Reason: {FormatValue(treasureSnapshot.LastResetReason)}");
+
         if (!string.IsNullOrEmpty(potFarmController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {potFarmController.LastError}");
@@ -746,6 +759,28 @@ public sealed class DebugWindow : Window, IDisposable
 
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private static string FormatTreasureHint(TreasureHintEvent? hint)
+    {
+        if (hint == null)
+        {
+            return "None";
+        }
+
+        var direction = hint.Direction == TreasureDirection.Unknown ? "unknown" : hint.Direction.ToString().ToLowerInvariant();
+        var distance = string.IsNullOrWhiteSpace(hint.DistanceBucket) ? "unknown" : hint.DistanceBucket;
+        return $"{direction} / {distance} @ {FormatTimestamp(hint.ReceivedAt)}";
+    }
+
+    private static string FormatTreasureEvent(TreasureHintEvent? treasureEvent)
+    {
+        if (treasureEvent == null)
+        {
+            return "None";
+        }
+
+        return $"{treasureEvent.Kind} @ {FormatTimestamp(treasureEvent.ReceivedAt)} | {treasureEvent.RawText}";
+    }
 
     private static string FormatSupportJob(byte supportJob)
         => supportJob switch

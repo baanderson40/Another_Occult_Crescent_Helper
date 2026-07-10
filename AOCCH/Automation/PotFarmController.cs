@@ -20,6 +20,7 @@ public sealed class PotFarmController : IDisposable
     private readonly MovementController movementController;
     private readonly FateAutomationController fateAutomationController;
     private readonly PotCycleTracker potCycleTracker;
+    private readonly TreasureHintTracker treasureHintTracker;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, PotFateData> potFatesById;
@@ -43,6 +44,7 @@ public sealed class PotFarmController : IDisposable
         MovementController movementController,
         FateAutomationController fateAutomationController,
         PotCycleTracker potCycleTracker,
+        TreasureHintTracker treasureHintTracker,
         OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
@@ -52,6 +54,7 @@ public sealed class PotFarmController : IDisposable
         this.movementController = movementController;
         this.fateAutomationController = fateAutomationController;
         this.potCycleTracker = potCycleTracker;
+        this.treasureHintTracker = treasureHintTracker;
         this.configuration = configuration;
         this.logger = logger;
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
@@ -244,6 +247,7 @@ public sealed class PotFarmController : IDisposable
             fateAutomationController.Stop(reason);
         }
 
+        treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm stopped: {reason}", TreasureSessionState.Abandoned);
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
         logger.Info($"Pot farm stopped: {reason}");
@@ -480,7 +484,11 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        logger.DebugThrottled("pot-treasure-pending", WaitLogInterval, $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s.");
+        var treasureSnapshot = treasureHintTracker.Snapshot;
+        logger.DebugThrottled(
+            "pot-treasure-pending",
+            WaitLogInterval,
+            $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
     }
 
     private bool TryBeginConfiguredBootstrapStaging()
@@ -614,6 +622,7 @@ public sealed class PotFarmController : IDisposable
 
     private void SetFailure(string reason)
     {
+        treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm failed: {reason}", TreasureSessionState.Abandoned);
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);
         logger.Warning(reason);

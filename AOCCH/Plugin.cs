@@ -48,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
     public PotCycleTracker PotCycleTracker { get; init; }
+    public TreasureHintTracker TreasureHintTracker { get; init; }
     public PotFallbackWindowEvaluator PotFallbackWindowEvaluator { get; init; }
     public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
@@ -85,8 +86,9 @@ public sealed class Plugin : IDalamudPlugin
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
+        TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, TreasureHintTracker, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -147,6 +149,7 @@ public sealed class Plugin : IDalamudPlugin
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
+        TreasureHintTracker.Dispose();
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
@@ -339,6 +342,7 @@ public sealed class Plugin : IDalamudPlugin
             Logger.Info("Panic stop: buff rotation not running.");
         }
 
+        TreasureHintTracker.CompleteCurrentTreasureSession(reason, TreasureSessionState.Abandoned);
         Logger.Info("Panic stop: stopping movement.");
         MovementController.Stop(reason);
         Logger.Info("Panic stop: releasing autorotation ownership.");
