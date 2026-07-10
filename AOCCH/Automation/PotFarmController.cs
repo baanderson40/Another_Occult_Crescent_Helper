@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 
 using AOCCH.Data;
 using AOCCH.Logging;
@@ -14,6 +15,8 @@ public sealed class PotFarmController : IDisposable
 {
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PotSpawnGrace = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(3);
+    private const float TreasureCenterArrivalTolerance = 5f;
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -32,7 +35,14 @@ public sealed class PotFarmController : IDisposable
     private string lastError = string.Empty;
     private string currentPotName = string.Empty;
     private uint currentPotId;
+    private Vector3 currentPotCenter;
+    private bool hasCurrentPotCenter;
+    private string treasurePotName = string.Empty;
+    private uint treasurePotId;
+    private Vector3 treasurePotCenter;
+    private bool hasTreasurePotContext;
     private DateTimeOffset waitDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private bool pendingStop;
     private bool resumeBootstrapAfterRecovery;
@@ -168,7 +178,7 @@ public sealed class PotFarmController : IDisposable
             return true;
         }
 
-        if (scannerSnapshot.HasTreasureBuff)
+        if (scannerSnapshot.HasTreasureBuff && hasTreasurePotContext)
         {
             controlReason = PotControlReason.TreasurePending;
             reason = $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.";
@@ -225,7 +235,14 @@ public sealed class PotFarmController : IDisposable
             completionResultAfterRecovery = PotFarmRunResult.None;
             currentPotId = 0;
             currentPotName = string.Empty;
+            currentPotCenter = Vector3.Zero;
+            hasCurrentPotCenter = false;
+            treasurePotId = 0;
+            treasurePotName = string.Empty;
+            treasurePotCenter = Vector3.Zero;
+            hasTreasurePotContext = false;
             waitDeadlineAt = DateTimeOffset.MinValue;
+            treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
             lastError = string.Empty;
             lastResult = PotFarmRunResult.None;
@@ -248,6 +265,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm stopped: {reason}", TreasureSessionState.Abandoned);
+        ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
         logger.Info($"Pot farm stopped: {reason}");
@@ -283,7 +301,12 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        if (currentState != PotFarmState.TreasurePending && scannerSnapshot.HasTreasureBuff)
+        if (currentState is not PotFarmState.RunningPotFate
+            and not PotFarmState.WaitingForTreasureBuff
+            and not PotFarmState.MovingNearTreasureCenter
+            and not PotFarmState.TreasurePending
+            && scannerSnapshot.HasTreasureBuff
+            && hasTreasurePotContext)
         {
             TransitionTo(PotFarmState.TreasurePending, $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.");
             return;
@@ -305,6 +328,12 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.RunningPotFate:
                 TickRunningPotFate();
+                break;
+            case PotFarmState.WaitingForTreasureBuff:
+                TickWaitingForTreasureBuff();
+                break;
+            case PotFarmState.MovingNearTreasureCenter:
+                TickMovingNearTreasureCenter();
                 break;
             case PotFarmState.TreasurePending:
                 TickTreasurePending();
@@ -420,17 +449,7 @@ public sealed class PotFarmController : IDisposable
         switch (fateAutomationController.LastResult)
         {
             case AutomationRunResult.Completed:
-                var treasurePending = scanner.Snapshot.HasTreasureBuff;
-                if (treasurePending)
-                {
-                    TransitionTo(PotFarmState.TreasurePending, $"Treasure hunt is pending after {CurrentPotName}, but treasure execution is not implemented yet.");
-                    return;
-                }
-
-                BeginRecoveryToBase(
-                    $"Pot FATE {CurrentPotName} completed; returning to Base Camp.",
-                    resumeBootstrapAfterRecovery: false,
-                    completionResult: PotFarmRunResult.Completed);
+                BeginTreasureBuffWait();
                 return;
             case AutomationRunResult.Stopped when pendingStop:
                 TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
@@ -441,6 +460,36 @@ public sealed class PotFarmController : IDisposable
                     : fateAutomationController.LastError);
                 return;
         }
+    }
+
+    private void TickWaitingForTreasureBuff()
+    {
+        var scannerSnapshot = scanner.Snapshot;
+        if (scannerSnapshot.HasTreasureBuff)
+        {
+            logger.ResetThrottle("pot-waiting-treasure-buff");
+            if (!BeginTreasureCenterApproach())
+            {
+                return;
+            }
+
+            return;
+        }
+
+        if (treasureBuffWaitDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= treasureBuffWaitDeadlineAt)
+        {
+            logger.ResetThrottle("pot-waiting-treasure-buff");
+            BeginRecoveryToBase(
+                $"Treasure buff did not appear within {TreasureBuffWaitTimeout.TotalSeconds:0}s after {CurrentPotName} completed; returning to Base Camp.",
+                resumeBootstrapAfterRecovery: false,
+                completionResult: PotFarmRunResult.Completed);
+            return;
+        }
+
+        logger.DebugThrottled(
+            "pot-waiting-treasure-buff",
+            WaitLogInterval,
+            $"Pot FATE {CurrentPotName} completed; waiting briefly for treasure buff until {treasureBuffWaitDeadlineAt:O}.");
     }
 
     private void TickRecoveringToBase()
@@ -468,6 +517,35 @@ public sealed class PotFarmController : IDisposable
         logger.DebugThrottled("pot-recovering", WaitLogInterval, $"Pot farm is still recovering to Base Camp. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
     }
 
+    private void TickMovingNearTreasureCenter()
+    {
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Reached completed pot FATE center.");
+                TransitionTo(PotFarmState.TreasurePending, $"Moved near completed FATE center for {treasurePotName} ({treasurePotId}) at <{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}>; ready to use Magical Elixir.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                SetFailure(movementController.LastError.Length == 0
+                    ? $"Failed to move near the completed FATE center for {treasurePotName}."
+                    : movementController.LastError);
+                return;
+        }
+
+        logger.DebugThrottled("pot-moving-treasure-center", WaitLogInterval, $"Pot farm is still moving near the completed FATE center for {treasurePotName} ({treasurePotId}) at <{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}>. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+    }
+
+    private void BeginTreasureBuffWait()
+    {
+        lock (gate)
+        {
+            treasureBuffWaitDeadlineAt = DateTimeOffset.UtcNow + TreasureBuffWaitTimeout;
+        }
+
+        TransitionTo(PotFarmState.WaitingForTreasureBuff, $"Pot FATE {CurrentPotName} completed; waiting briefly for treasure buff.");
+    }
+
     private void TickTreasurePending()
     {
         var scannerSnapshot = scanner.Snapshot;
@@ -480,6 +558,7 @@ public sealed class PotFarmController : IDisposable
         if (!scannerSnapshot.HasTreasureBuff)
         {
             logger.ResetThrottle("pot-treasure-pending");
+            ClearTreasurePotContext();
             BeginRecoveryToBase("Treasure buff expired before treasure execution was implemented; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
             return;
         }
@@ -544,6 +623,8 @@ public sealed class PotFarmController : IDisposable
         {
             currentPotId = potFate.FateId;
             currentPotName = potFate.Name;
+            currentPotCenter = potFate.CenterPosition.ToVector3();
+            hasCurrentPotCenter = true;
             waitDeadlineAt = waitUntil;
         }
 
@@ -553,6 +634,8 @@ public sealed class PotFarmController : IDisposable
 
     private void StartActivePotFate(ActivePotFate activePotFate)
     {
+        ClearTreasurePotContext();
+
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop($"Active pot FATE detected: {activePotFate.Name}.");
@@ -570,6 +653,8 @@ public sealed class PotFarmController : IDisposable
         {
             currentPotId = activePotFate.Id;
             currentPotName = activePotFate.Name;
+            currentPotCenter = activePotFate.CenterPosition;
+            hasCurrentPotCenter = true;
             waitDeadlineAt = DateTimeOffset.MinValue;
         }
 
@@ -577,6 +662,37 @@ public sealed class PotFarmController : IDisposable
         logger.ResetThrottle("pot-traveling-spawn");
         logger.ResetThrottle("pot-wait-spawn");
         TransitionTo(PotFarmState.RunningPotFate, $"Running pot FATE {activePotFate.Name} ({activePotFate.Id}).");
+    }
+
+    private bool BeginTreasureCenterApproach()
+    {
+        if (!hasCurrentPotCenter)
+        {
+            SetFailure($"Treasure hunt could not start after {CurrentPotName} because the completed pot center was not captured at FATE start.");
+            return false;
+        }
+
+        var destination = movementController.FindNearestNavigablePoint(currentPotCenter, halfExtentXZ: 5f, halfExtentY: 5f) ?? currentPotCenter;
+        if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination, TreasureCenterArrivalTolerance))
+        {
+            SetFailure(movementController.LastError.Length == 0
+                ? $"Failed to start movement near the completed FATE center for {CurrentPotName}."
+                : movementController.LastError);
+            return false;
+        }
+
+        lock (gate)
+        {
+            treasurePotId = currentPotId;
+            treasurePotName = currentPotName;
+            treasurePotCenter = currentPotCenter;
+            hasTreasurePotContext = true;
+            treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+        }
+
+        logger.ResetThrottle("pot-running-fate");
+        TransitionTo(PotFarmState.MovingNearTreasureCenter, $"Moving near completed FATE center for {CurrentPotName} before using Magical Elixir.");
+        return true;
     }
 
     private void BeginRecoveryToBase(string reason, bool resumeBootstrapAfterRecovery, PotFarmRunResult completionResult)
@@ -623,9 +739,22 @@ public sealed class PotFarmController : IDisposable
     private void SetFailure(string reason)
     {
         treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm failed: {reason}", TreasureSessionState.Abandoned);
+        ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);
         logger.Warning(reason);
+    }
+
+    private void ClearTreasurePotContext()
+    {
+        lock (gate)
+        {
+            treasurePotId = 0;
+            treasurePotName = string.Empty;
+            treasurePotCenter = Vector3.Zero;
+            hasTreasurePotContext = false;
+            treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+        }
     }
 
     private void TransitionTo(PotFarmState nextState, string reason, string? error = null, PotFarmRunResult? result = null)
