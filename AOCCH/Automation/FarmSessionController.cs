@@ -22,6 +22,8 @@ public sealed class FarmSessionController : IDisposable
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly DeathRecoveryController deathRecoveryController;
+    private readonly PotCycleTracker potCycleTracker;
+    private readonly PotFallbackWindowEvaluator potFallbackWindowEvaluator;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -48,6 +50,8 @@ public sealed class FarmSessionController : IDisposable
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
         DeathRecoveryController deathRecoveryController,
+        PotCycleTracker potCycleTracker,
+        PotFallbackWindowEvaluator potFallbackWindowEvaluator,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -61,6 +65,8 @@ public sealed class FarmSessionController : IDisposable
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.deathRecoveryController = deathRecoveryController;
+        this.potCycleTracker = potCycleTracker;
+        this.potFallbackWindowEvaluator = potFallbackWindowEvaluator;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -463,6 +469,8 @@ public sealed class FarmSessionController : IDisposable
     private void TickSelectingTarget()
     {
         var snapshot = scanner.Snapshot;
+        var potCycleSnapshot = potCycleTracker.Snapshot;
+        var now = DateTimeOffset.UtcNow;
         logger.ResetThrottle("farm-idle-waiting");
         if (!snapshot.IsInSouthHorn)
         {
@@ -473,6 +481,13 @@ public sealed class FarmSessionController : IDisposable
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
+                var ceStartDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now);
+                if (!ceStartDecision.AllowStart)
+                {
+                    TransitionTo(FarmSessionState.IdleWaiting, ceStartDecision.Reason, "Idle waiting");
+                    return;
+                }
+
                 if (!criticalEngagementAutomationController.Start(snapshot.EffectiveTarget.CriticalEncounter))
                 {
                     SetFailure(criticalEngagementAutomationController.LastError.Length == 0
@@ -486,6 +501,13 @@ public sealed class FarmSessionController : IDisposable
                     "Critical Engagement");
                 return;
             case SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null:
+                var fateStartDecision = potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now);
+                if (!fateStartDecision.AllowStart)
+                {
+                    TransitionTo(FarmSessionState.IdleWaiting, fateStartDecision.Reason, "Idle waiting");
+                    return;
+                }
+
                 if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate))
                 {
                     SetFailure(fateAutomationController.LastError.Length == 0
@@ -588,6 +610,8 @@ public sealed class FarmSessionController : IDisposable
     private void TickIdleWaiting()
     {
         var snapshot = scanner.Snapshot;
+        var potCycleSnapshot = potCycleTracker.Snapshot;
+        var now = DateTimeOffset.UtcNow;
         if (!snapshot.IsInSouthHorn)
         {
             logger.ResetThrottle("farm-idle-waiting");
@@ -595,14 +619,14 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (snapshot.EffectiveTarget.Kind != SelectedTargetKind.None)
+        var startDecision = EvaluateEffectiveTargetStart(snapshot, potCycleSnapshot, now);
+        if (startDecision?.AllowStart == true)
         {
             logger.ResetThrottle("farm-idle-waiting");
             TransitionTo(FarmSessionState.SelectingTarget, "Target became available while idle waiting.", "Selecting target");
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
         if (now - lastIdleScanAt >= IdleRescanInterval)
         {
             lock (gate)
@@ -610,9 +634,19 @@ public sealed class FarmSessionController : IDisposable
                 lastIdleScanAt = now;
             }
 
-            logger.DebugThrottled("farm-idle-waiting", WaitLogInterval, "Farm session is idle waiting for a new CE or FATE target.");
+            logger.DebugThrottled("farm-idle-waiting", WaitLogInterval, startDecision?.Reason ?? "Farm session is idle waiting for a new CE or FATE target.");
         }
     }
+
+    private PotFallbackStartDecision? EvaluateEffectiveTargetStart(ScannerSnapshot snapshot, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+        => snapshot.EffectiveTarget.Kind switch
+        {
+            SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null
+                => potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now),
+            SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null
+                => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now),
+            _ => null,
+        };
 
     private void TransitionTo(FarmSessionState nextState, string reason, string activity, bool clearError = true)
     {
