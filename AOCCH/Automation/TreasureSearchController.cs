@@ -20,6 +20,7 @@ public sealed class TreasureSearchController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly TreasureHintTracker treasureHintTracker;
+    private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly AocchLogger logger;
     private readonly Dictionary<uint, Dictionary<string, TreasureCofferGroupData>> groupsByFateId;
     private readonly object gate = new();
@@ -44,12 +45,14 @@ public sealed class TreasureSearchController : IDisposable
         MovementController movementController,
         TreasureHintTracker treasureHintTracker,
         OccultCrescentData data,
+        CofferPositionOverrideStore cofferPositionOverrideStore,
         AocchLogger logger)
     {
         this.framework = framework;
         this.scanner = scanner;
         this.movementController = movementController;
         this.treasureHintTracker = treasureHintTracker;
+        this.cofferPositionOverrideStore = cofferPositionOverrideStore;
         this.logger = logger;
         groupsByFateId = data.TreasureCofferGroups
             .GroupBy(group => group.FateId)
@@ -441,8 +444,12 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(candidate.Position.ToVector3(), halfExtentXZ: 5f, halfExtentY: 5f)
-            ?? candidate.Position.ToVector3();
+        var candidateKey = ToCandidateKey(candidate);
+        var canonicalPosition = candidate.Position.ToVector3();
+        var usedOverride = cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition);
+        var targetPosition = usedOverride ? overridePosition : canonicalPosition;
+        var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f)
+            ?? targetPosition;
         if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -454,14 +461,14 @@ public sealed class TreasureSearchController : IDisposable
         var travelTimeout = TimeSpan.FromSeconds(Math.Max(30, candidate.TravelTimeoutSeconds ?? 180));
         lock (gate)
         {
-            activeCandidateKey = ToCandidateKey(candidate);
+            activeCandidateKey = candidateKey;
             candidateTravelDeadlineAt = DateTimeOffset.UtcNow + travelTimeout;
             activeVisibleCofferMatch = null;
         }
 
         TransitionTo(
             TreasureSearchState.TravelingToCandidate,
-            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey}.");
+            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position.");
         return true;
     }
 

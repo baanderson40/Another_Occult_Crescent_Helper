@@ -572,6 +572,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Treasure Search Candidate: {FormatValue(treasureSearch.ActiveCandidateKey?.Label)}");
         ImGui.TextWrapped($"Treasure Search Candidate Index: {treasureSearch.CurrentCandidateIndex}");
         ImGui.TextWrapped($"Treasure Search Handoff: {FormatValue(treasureSearch.LastHandoffReason)}");
+        ImGui.TextWrapped($"Coffer Override Count: {plugin.CofferPositionOverrideStore.Count}");
         var visibleMatch = treasureSearch.ActiveVisibleCofferMatch;
         var visibleMatchText = visibleMatch == null
             ? null

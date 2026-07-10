@@ -3,6 +3,7 @@ using System.Linq;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
+using AOCCH.Data;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 
@@ -21,6 +22,7 @@ public sealed class CofferInteractionController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly GameActionController gameActionController;
+    private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly AocchLogger logger;
     private readonly object gate = new();
 
@@ -39,6 +41,7 @@ public sealed class CofferInteractionController : IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         GameActionController gameActionController,
+        CofferPositionOverrideStore cofferPositionOverrideStore,
         AocchLogger logger)
     {
         this.framework = framework;
@@ -46,6 +49,7 @@ public sealed class CofferInteractionController : IDisposable
         this.scanner = scanner;
         this.movementController = movementController;
         this.gameActionController = gameActionController;
+        this.cofferPositionOverrideStore = cofferPositionOverrideStore;
         this.logger = logger;
 
         framework.Update += OnFrameworkUpdate;
@@ -334,6 +338,7 @@ public sealed class CofferInteractionController : IDisposable
 
             if (missingConfirmationCount >= RequiredMissingConfirmations)
             {
+                PersistConfirmedOverride(active);
                 logger.ResetThrottle("coffer-confirmation");
                 TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
             }
@@ -380,6 +385,16 @@ public sealed class CofferInteractionController : IDisposable
 
     private void SetFailure(string reason)
         => TransitionTo(CofferInteractionState.Failed, reason, error: reason, result: CofferInteractionResult.Failed);
+
+    private void PersistConfirmedOverride(VisibleCofferMatch match)
+    {
+        if (cofferPositionOverrideStore.SaveConfirmedPosition(match))
+        {
+            return;
+        }
+
+        logger.Warning($"Failed to persist confirmed coffer position override for {match.CandidateKey}.");
+    }
 
     private void TransitionTo(CofferInteractionState nextState, string reason, string? error = null, CofferInteractionResult? result = null)
     {
