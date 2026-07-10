@@ -12,6 +12,7 @@ public enum FarmSessionState
     WaitingForPredictedPotWindow,
     WaitingAtPotSpawn,
     RunningPots,
+    RunningTreasureHunt,
     RunningCe,
     RunningFate,
     WaitingForDeathRecovery,

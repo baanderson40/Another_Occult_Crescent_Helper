@@ -272,6 +272,7 @@ public sealed class FarmSessionController : IDisposable
             case FarmSessionState.WaitingForPredictedPotWindow:
             case FarmSessionState.WaitingAtPotSpawn:
             case FarmSessionState.RunningPots:
+            case FarmSessionState.RunningTreasureHunt:
                 TickPotRun();
                 break;
             case FarmSessionState.RunningCe:
@@ -677,8 +678,10 @@ public sealed class FarmSessionController : IDisposable
             switch (potFarmController.LastResult)
             {
                 case PotFarmRunResult.Completed:
-                case PotFarmRunResult.TreasurePending:
                     StartPostFateFlow();
+                    return;
+                case PotFarmRunResult.TreasurePending:
+                    TransitionTo(FarmSessionState.SelectingTarget, potFarmController.LastTransition, "Selecting target");
                     return;
                 case PotFarmRunResult.Stopped when pendingStop:
                     TransitionTo(FarmSessionState.Stopped, "Farm session stop completed.", "Stopped", clearError: false);
@@ -713,7 +716,7 @@ public sealed class FarmSessionController : IDisposable
 
     private bool TryStartOrResumePotControl(DateTimeOffset now)
     {
-        if (!potFarmController.NeedsControlNow(now, out var reason))
+        if (!potFarmController.NeedsControlNow(now, out _, out var reason))
         {
             return false;
         }
@@ -737,6 +740,7 @@ public sealed class FarmSessionController : IDisposable
             PotFarmState.WaitingForPredictedWindow or PotFarmState.Bootstrapping => FarmSessionState.WaitingForPredictedPotWindow,
             PotFarmState.TravelingToSpawn or PotFarmState.WaitingAtSpawn => FarmSessionState.WaitingAtPotSpawn,
             PotFarmState.RunningPotFate or PotFarmState.RecoveringToBase => FarmSessionState.RunningPots,
+            PotFarmState.TreasurePending => FarmSessionState.RunningTreasureHunt,
             _ => FarmSessionState.RunningPots,
         };
 
@@ -746,6 +750,7 @@ public sealed class FarmSessionController : IDisposable
             FarmSessionState.WaitingForPredictedPotWindow => "Waiting for predicted pot window",
             FarmSessionState.WaitingAtPotSpawn => "Waiting at pot spawn",
             FarmSessionState.RunningPots => "Running pots",
+            FarmSessionState.RunningTreasureHunt => "Running treasure hunt",
             _ => "Running pots",
         };
 

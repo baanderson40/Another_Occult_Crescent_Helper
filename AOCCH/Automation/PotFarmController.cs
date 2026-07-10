@@ -132,15 +132,20 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.Failed;
 
     public bool NeedsControlNow(DateTimeOffset now, out string reason)
+        => NeedsControlNow(now, out _, out reason);
+
+    public bool NeedsControlNow(DateTimeOffset now, out PotControlReason controlReason, out string reason)
     {
         if (!configuration.EnablePotFarming)
         {
+            controlReason = PotControlReason.None;
             reason = "Pot farming is disabled.";
             return false;
         }
 
         if (IsRunning)
         {
+            controlReason = State == PotFarmState.TreasurePending ? PotControlReason.TreasurePending : PotControlReason.ActiveRun;
             reason = LastTransition;
             return true;
         }
@@ -148,13 +153,22 @@ public sealed class PotFarmController : IDisposable
         var scannerSnapshot = scanner.Snapshot;
         if (!scannerSnapshot.IsInSouthHorn)
         {
+            controlReason = PotControlReason.None;
             reason = "Pot farming requires South Horn.";
             return false;
         }
 
         if (scannerSnapshot.ActivePotFate != null)
         {
+            controlReason = PotControlReason.ActivePotFate;
             reason = $"Active pot FATE detected: {scannerSnapshot.ActivePotFate.Name} ({scannerSnapshot.ActivePotFate.Id}).";
+            return true;
+        }
+
+        if (scannerSnapshot.HasTreasureBuff)
+        {
+            controlReason = PotControlReason.TreasurePending;
+            reason = $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.";
             return true;
         }
 
@@ -164,6 +178,7 @@ public sealed class PotFarmController : IDisposable
             var departureAt = GetDepartureAt(potCycleSnapshot);
             if (departureAt != DateTimeOffset.MinValue && now >= departureAt)
             {
+                controlReason = PotControlReason.PredictedDepartureWindow;
                 reason = $"Predicted pot departure window opened for {potCycleSnapshot.PredictedNextPotFateName}.";
                 return true;
             }
@@ -171,10 +186,12 @@ public sealed class PotFarmController : IDisposable
 
         if (!potCycleSnapshot.HasKnownAnchor && configuration.StartingPotFate != StartingPotFateMode.Auto)
         {
+            controlReason = PotControlReason.BootstrapStaging;
             reason = "No pot anchor is known yet; bootstrap staging is required.";
             return true;
         }
 
+        controlReason = PotControlReason.None;
         reason = "No pot work is needed right now.";
         return false;
     }
@@ -262,6 +279,12 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
+        if (currentState != PotFarmState.TreasurePending && scannerSnapshot.HasTreasureBuff)
+        {
+            TransitionTo(PotFarmState.TreasurePending, $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.");
+            return;
+        }
+
         switch (currentState)
         {
             case PotFarmState.Bootstrapping:
@@ -278,6 +301,9 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.RunningPotFate:
                 TickRunningPotFate();
+                break;
+            case PotFarmState.TreasurePending:
+                TickTreasurePending();
                 break;
             case PotFarmState.RecoveringToBase:
                 TickRecoveringToBase();
@@ -393,15 +419,14 @@ public sealed class PotFarmController : IDisposable
                 var treasurePending = scanner.Snapshot.HasTreasureBuff;
                 if (treasurePending)
                 {
-                    logger.Warning("Treasure buff detected after pot completion, but treasure hunt is not implemented yet. Recovering to Base Camp.");
+                    TransitionTo(PotFarmState.TreasurePending, $"Treasure hunt is pending after {CurrentPotName}, but treasure execution is not implemented yet.");
+                    return;
                 }
 
                 BeginRecoveryToBase(
-                    treasurePending
-                        ? $"Pot FATE {CurrentPotName} completed with treasure pending; returning to Base Camp."
-                        : $"Pot FATE {CurrentPotName} completed; returning to Base Camp.",
+                    $"Pot FATE {CurrentPotName} completed; returning to Base Camp.",
                     resumeBootstrapAfterRecovery: false,
-                    completionResult: treasurePending ? PotFarmRunResult.TreasurePending : PotFarmRunResult.Completed);
+                    completionResult: PotFarmRunResult.Completed);
                 return;
             case AutomationRunResult.Stopped when pendingStop:
                 TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
@@ -437,6 +462,25 @@ public sealed class PotFarmController : IDisposable
         }
 
         logger.DebugThrottled("pot-recovering", WaitLogInterval, $"Pot farm is still recovering to Base Camp. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+    }
+
+    private void TickTreasurePending()
+    {
+        var scannerSnapshot = scanner.Snapshot;
+        if (scannerSnapshot.ActivePotFate != null)
+        {
+            StartActivePotFate(scannerSnapshot.ActivePotFate);
+            return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff)
+        {
+            logger.ResetThrottle("pot-treasure-pending");
+            BeginRecoveryToBase("Treasure buff expired before treasure execution was implemented; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
+            return;
+        }
+
+        logger.DebugThrottled("pot-treasure-pending", WaitLogInterval, $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s.");
     }
 
     private bool TryBeginConfiguredBootstrapStaging()
