@@ -13,6 +13,13 @@ public enum FatePriority
     Nearest,
 }
 
+public enum StartingPotFateMode
+{
+    Auto,
+    PersistentPots,
+    PleadingPots,
+}
+
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
@@ -29,6 +36,20 @@ public class Configuration : IPluginConfiguration
     public bool EnableBuffRotation { get; set; } = true;
     public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
+    public StartingPotFateMode StartingPotFate { get; set; } = StartingPotFateMode.Auto;
+    public int SpawnLeadMinutes { get; set; } = 5;
+    public bool ManageInstanceTime { get; set; } = true;
+    public int FateCompletionBudgetMinutes { get; set; } = 5;
+    public int TreasureHuntBudgetMinutes { get; set; } = 5;
+    public int InstanceExitBufferMinutes { get; set; } = 2;
+    public int SpawnArrivalRadius { get; set; } = 18;
+    public int MaximumAggroLevel { get; set; } = 19;
+    public bool UseNinjaForDangerousArea { get; set; }
+    public int HideThresholdDistance { get; set; } = 120;
+    public int NinjaGearsetNumber { get; set; }
+    public int FateGearsetNumber { get; set; }
+    public int CeFallbackCutoffMinutes { get; set; } = 10;
+    public int FateFallbackCutoffMinutes { get; set; } = 5;
 
     public bool IsCriticalEncounterEnabled(uint id)
         => !DisabledCriticalEncounterIds.Contains(id);
