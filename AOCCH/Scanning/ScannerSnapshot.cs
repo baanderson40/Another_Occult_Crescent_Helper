@@ -39,4 +39,9 @@ public sealed class ScannerSnapshot
         => id == 0
             ? null
             : PotFates.FirstOrDefault(fate => fate.Id == id);
+
+    public FateRunTarget? FindFateRunTarget(uint id, bool isPotTarget)
+        => isPotTarget
+            ? FindPotFate(id)?.ToFateRunTarget()
+            : FindFate(id)?.ToFateRunTarget();
 }

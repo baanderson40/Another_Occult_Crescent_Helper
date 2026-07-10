@@ -163,6 +163,48 @@ public sealed class MovementController : IDisposable
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 
+    public bool PlanRoute(FateRunTarget target, bool allowReturn = true, Vector3? finalDestinationOverride = null, float? finalArrivalToleranceOverride = null)
+    {
+        var playerPosition = GetPlayerPosition();
+        if (playerPosition == null)
+        {
+            SetFailure(MovementState.Failed, "Player position is unavailable.");
+            return false;
+        }
+
+        SetState(MovementState.Planning);
+        if (!routePlanner.TryPlan(target, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride))
+        {
+            SetFailure(MovementState.Failed, failureReason);
+            return false;
+        }
+
+        InitializePlannedRoute(route);
+        logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
+        return true;
+    }
+
+    public bool PlanRouteToLocation(string description, string preferredAethernet, Vector3 destination, float arrivalTolerance, bool allowReturn = true)
+    {
+        var playerPosition = GetPlayerPosition();
+        if (playerPosition == null)
+        {
+            SetFailure(MovementState.Failed, "Player position is unavailable.");
+            return false;
+        }
+
+        SetState(MovementState.Planning);
+        if (!routePlanner.TryPlanToLocation(description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance))
+        {
+            SetFailure(MovementState.Failed, failureReason);
+            return false;
+        }
+
+        InitializePlannedRoute(route);
+        logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
+        return true;
+    }
+
     public bool PlanRoute(
         TargetSelection selection,
         bool allowReturn = true,
@@ -183,28 +225,7 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        lock (gate)
-        {
-            plannedRoute = route;
-            currentStepIndex = 0;
-            routeStartedAt = DateTimeOffset.MinValue;
-            stepStartedAt = DateTimeOffset.MinValue;
-            lastProgressAt = DateTimeOffset.MinValue;
-            lastDistance = float.MaxValue;
-            progressDistance = float.MaxValue;
-            stepStarted = false;
-            mountAttempted = false;
-            dismountAttempted = false;
-            stepAttemptCount = 0;
-            lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            stableSince = DateTimeOffset.MinValue;
-            lastError = string.Empty;
-            state = MovementState.Idle;
-        }
-
+        InitializePlannedRoute(route);
         logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
         return true;
     }
@@ -932,6 +953,31 @@ public sealed class MovementController : IDisposable
         lock (gate)
         {
             state = nextState;
+        }
+    }
+
+    private void InitializePlannedRoute(PlannedRoute route)
+    {
+        lock (gate)
+        {
+            plannedRoute = route;
+            currentStepIndex = 0;
+            routeStartedAt = DateTimeOffset.MinValue;
+            stepStartedAt = DateTimeOffset.MinValue;
+            lastProgressAt = DateTimeOffset.MinValue;
+            lastDistance = float.MaxValue;
+            progressDistance = float.MaxValue;
+            stepStarted = false;
+            mountAttempted = false;
+            dismountAttempted = false;
+            stepAttemptCount = 0;
+            lifestreamOwned = false;
+            transitionObserved = false;
+            startedAwayFromTransitionDestination = false;
+            returnPromptHandled = false;
+            stableSince = DateTimeOffset.MinValue;
+            lastError = string.Empty;
+            state = MovementState.Idle;
         }
     }
 

@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     public DeathRecoveryController DeathRecoveryController { get; init; }
     public PotCycleTracker PotCycleTracker { get; init; }
     public PotFallbackWindowEvaluator PotFallbackWindowEvaluator { get; init; }
+    public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
@@ -85,12 +86,13 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, FateAutomationController, PotCycleTracker, OccultCrescentData, Configuration, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController);
-        DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, FarmSessionController);
+        DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, FarmSessionController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -144,6 +146,7 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
+        PotFarmController.Dispose();
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
@@ -314,6 +317,16 @@ public sealed class Plugin : IDalamudPlugin
         else
         {
             Logger.Info("Panic stop: FATE automation not running.");
+        }
+
+        if (PotFarmController.IsRunning)
+        {
+            Logger.Info("Panic stop: stopping pot control.");
+            PotFarmController.Stop(reason);
+        }
+        else
+        {
+            Logger.Info("Panic stop: pot control not running.");
         }
 
         if (BuffRotationController.IsRunning)

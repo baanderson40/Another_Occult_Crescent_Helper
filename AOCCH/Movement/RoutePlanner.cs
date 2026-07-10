@@ -89,7 +89,76 @@ public sealed class RoutePlanner
             returnTime = CalculateReturnTime(preferredAethernet, destination.Value, travelSpeed);
         }
 
-        route = ChooseRoute(selection, targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
+        route = ChooseRoute(targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
+
+        logger.Info($"Selected {route.RouteType} route for {targetDescription}: reason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}.");
+        return true;
+    }
+
+    public bool TryPlan(
+        FateRunTarget target,
+        Vector3 playerPosition,
+        out PlannedRoute route,
+        out string failureReason,
+        bool allowReturn = true,
+        Vector3? finalDestinationOverride = null,
+        float? finalArrivalToleranceOverride = null)
+        => TryPlanToLocation(
+            $"FATE {target.Name} ({target.Id})",
+            target.PreferredAethernet,
+            finalDestinationOverride ?? target.Position,
+            playerPosition,
+            out route,
+            out failureReason,
+            allowReturn,
+            finalArrivalToleranceOverride);
+
+    public bool TryPlanToLocation(
+        string targetDescription,
+        string preferredAethernetName,
+        Vector3 destination,
+        Vector3 playerPosition,
+        out PlannedRoute route,
+        out string failureReason,
+        bool allowReturn = true,
+        float? finalArrivalToleranceOverride = null)
+    {
+        route = new PlannedRoute();
+        failureReason = string.Empty;
+
+        var directDistance = CalculateFlatDistance(playerPosition, destination);
+        var travelSpeed = MathF.Max(data.MountedTravelSpeed, 1f);
+        if (data.Aethernets.Count == 0)
+        {
+            route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
+            logger.Warning($"No aethernet data is loaded; using direct route for {targetDescription}.");
+            return true;
+        }
+
+        var preferredAethernet = GetPreferredAethernet(preferredAethernetName, destination);
+        if (preferredAethernet == null)
+        {
+            route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
+            return true;
+        }
+
+        var sourceAethernet = GetClosestAethernet(playerPosition);
+        if (sourceAethernet == null)
+        {
+            route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
+            logger.Warning($"No source aethernet data is available; using direct route for {targetDescription}.");
+            return true;
+        }
+
+        var sourceDistance = CalculateFlatDistance(playerPosition, sourceAethernet.Position.ToVector3());
+        var destinationDistance = CalculateFlatDistance(preferredAethernet.Destination.ToVector3(), destination);
+        var directTime = directDistance / travelSpeed;
+        var aethernetTime = (sourceDistance / travelSpeed) + AethernetTransitionPenaltySeconds + (destinationDistance / travelSpeed);
+        var returnTime = allowReturn && configuration.UseReturn
+            ? CalculateReturnTime(preferredAethernet, destination, travelSpeed)
+            : float.MaxValue;
+
+        route = ChooseRoute(targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
 
         logger.Info($"Selected {route.RouteType} route for {targetDescription}: reason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}.");
         return true;
@@ -174,7 +243,6 @@ public sealed class RoutePlanner
     }
 
     private PlannedRoute ChooseRoute(
-        TargetSelection selection,
         string targetDescription,
         Vector3 playerPosition,
         Vector3 destination,
@@ -367,6 +435,11 @@ public sealed class RoutePlanner
             _ => string.Empty,
         };
 
+        return GetPreferredAethernet(preferredName, destination);
+    }
+
+    private AethernetData? GetPreferredAethernet(string? preferredName, Vector3 destination)
+    {
         if (!string.IsNullOrWhiteSpace(preferredName))
         {
             var explicitMatch = data.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, preferredName, StringComparison.OrdinalIgnoreCase));

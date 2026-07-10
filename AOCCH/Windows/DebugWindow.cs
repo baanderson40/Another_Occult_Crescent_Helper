@@ -21,6 +21,7 @@ public sealed class DebugWindow : Window, IDisposable
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly DeathRecoveryController deathRecoveryController;
+    private readonly PotFarmController potFarmController;
     private readonly FarmSessionController farmSessionController;
 
     // We give this window a hidden ID using ##.
@@ -36,6 +37,7 @@ public sealed class DebugWindow : Window, IDisposable
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
         DeathRecoveryController deathRecoveryController,
+        PotFarmController potFarmController,
         FarmSessionController farmSessionController)
         : base("AOCCH Debug###AOCCHDebug")
     {
@@ -48,6 +50,7 @@ public sealed class DebugWindow : Window, IDisposable
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.deathRecoveryController = deathRecoveryController;
+        this.potFarmController = potFarmController;
         this.farmSessionController = farmSessionController;
 
         SizeConstraints = new WindowSizeConstraints
@@ -80,6 +83,9 @@ public sealed class DebugWindow : Window, IDisposable
 
         ImGui.Separator();
         DrawFarmSession();
+
+        ImGui.Separator();
+        DrawPotStatus(snapshot);
 
         ImGui.Separator();
         DrawCriticalEngagementAutomation(snapshot);
@@ -526,6 +532,32 @@ public sealed class DebugWindow : Window, IDisposable
         }
     }
 
+    private void DrawPotStatus(ScannerSnapshot snapshot)
+    {
+        var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
+        var now = DateTimeOffset.UtcNow;
+        var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now);
+        var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now);
+
+        ImGui.TextUnformatted("Pot Control");
+        ImGui.TextUnformatted($"Enabled: {(configuration.EnablePotFarming ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Farm State: {potFarmController.State}");
+        ImGui.TextWrapped($"Farm Transition: {potFarmController.LastTransition}");
+        ImGui.TextWrapped($"Current Pot: {FormatValue(potFarmController.CurrentPotName)}");
+        ImGui.TextUnformatted($"Active Pot: {FormatValue(snapshot.ActivePotFate?.Name)}");
+        ImGui.TextUnformatted($"Known Anchor: {(potCycleSnapshot.HasKnownAnchor ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Last Anchor: {FormatValue(potCycleSnapshot.LastObservedPotFateName)} @ {FormatTimestamp(potCycleSnapshot.LastObservedSpawnAt)}");
+        ImGui.TextWrapped($"Predicted Next Pot: {FormatValue(potCycleSnapshot.PredictedNextPotFateName)} @ {FormatTimestamp(potCycleSnapshot.PredictedNextSpawnAt)}");
+        ImGui.TextWrapped($"Spawn Wait Deadline: {FormatTimestamp(potFarmController.WaitDeadlineAt)}");
+        ImGui.TextWrapped($"CE Fallback: {ceDecision.Reason}");
+        ImGui.TextWrapped($"FATE Fallback: {fateDecision.Reason}");
+
+        if (!string.IsNullOrEmpty(potFarmController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {potFarmController.LastError}");
+        }
+    }
+
     private void DrawMovement(ScannerSnapshot snapshot)
     {
         ImGui.TextUnformatted("Movement");
@@ -649,9 +681,9 @@ public sealed class DebugWindow : Window, IDisposable
             return "Farm session is already running.";
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation and buff rotation before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)

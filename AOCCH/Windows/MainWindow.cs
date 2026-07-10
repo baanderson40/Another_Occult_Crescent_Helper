@@ -117,9 +117,9 @@ public sealed class MainWindow : Window, IDisposable
             return "Farm session is already running.";
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation and buff rotation before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)

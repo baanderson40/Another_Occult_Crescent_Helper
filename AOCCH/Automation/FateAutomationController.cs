@@ -27,6 +27,8 @@ public sealed class FateAutomationController : IDisposable
     private FateAutomationState state = FateAutomationState.Idle;
     private uint targetFateId;
     private string targetFateName = string.Empty;
+    private bool targetIsPot;
+    private FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase;
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
@@ -141,6 +143,12 @@ public sealed class FateAutomationController : IDisposable
         => Start(scanner.Snapshot.EffectiveTarget.Fate);
 
     public bool Start(ActiveFate? target)
+        => Start(target?.ToFateRunTarget(), FateRunCompletionBehavior.RecoverToBase);
+
+    public bool Start(ActivePotFate? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.CompleteInPlace)
+        => Start(target?.ToFateRunTarget(), completionBehavior);
+
+    public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase)
     {
         if (IsRunning)
         {
@@ -171,6 +179,8 @@ public sealed class FateAutomationController : IDisposable
         {
             targetFateId = target.Id;
             targetFateName = target.Name;
+            targetIsPot = target.IsPotTarget;
+            this.completionBehavior = completionBehavior;
             lastError = string.Empty;
             lastCombatSeenAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
@@ -231,7 +241,7 @@ public sealed class FateAutomationController : IDisposable
             return;
         }
 
-        var target = snapshot.FindFate(TargetFateId);
+        var target = snapshot.FindFateRunTarget(TargetFateId, targetIsPot);
         switch (currentState)
         {
             case FateAutomationState.PlanningRoute:
@@ -254,17 +264,10 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
-    private bool BeginPlanning(ActiveFate target)
+    private bool BeginPlanning(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Planning route to FATE {target.Name} ({target.Id}).");
-        var selection = new TargetSelection
-        {
-            Kind = SelectedTargetKind.Fate,
-            Fate = target,
-            Reason = "FATE automation lock",
-        };
-
-        if (!movementController.PlanRoute(selection))
+        if (!movementController.PlanRoute(target))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -280,7 +283,7 @@ public sealed class FateAutomationController : IDisposable
         return true;
     }
 
-    private void TickTraveling(ActiveFate? target)
+    private void TickTraveling(FateRunTarget? target)
     {
         if (target == null)
         {
@@ -312,7 +315,7 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
-    private void TickParticipating(ActiveFate? target)
+    private void TickParticipating(FateRunTarget? target)
     {
         if (target == null)
         {
@@ -376,7 +379,7 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
-    private void EnsureAutorotationApplied(ActiveFate target)
+    private void EnsureAutorotationApplied(FateRunTarget target)
     {
         lock (gate)
         {
@@ -401,6 +404,12 @@ public sealed class FateAutomationController : IDisposable
     {
         logger.Info(reason);
         autorotationController.ReleaseOwnership(reason);
+        if (completionBehavior == FateRunCompletionBehavior.CompleteInPlace)
+        {
+            TransitionTo(FateAutomationState.Completed, reason, clearTarget: true, clearAutorotationState: true, result: AutomationRunResult.Completed);
+            return;
+        }
+
         if (configuration.UseReturn)
         {
             if (!movementController.RecoverToBaseCamp())
@@ -438,15 +447,16 @@ public sealed class FateAutomationController : IDisposable
     }
 
     private bool IsCePreempting(ScannerSnapshot snapshot)
-        => snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
+        => !targetIsPot
+            && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && snapshot.EffectiveTarget.WouldPreemptFate;
 
-    private bool IsAutorotationParticipationActive(ActiveFate target)
+    private bool IsAutorotationParticipationActive(FateRunTarget target)
     {
         return condition[ConditionFlag.InCombat] || target.IsInFate;
     }
 
-    private bool HasArrivedWithinFateRadius(ActiveFate target)
+    private bool HasArrivedWithinFateRadius(FateRunTarget target)
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
         if (playerPosition == null)
@@ -458,7 +468,7 @@ public sealed class FateAutomationController : IDisposable
         return CalculateFlatDistance(playerPosition.Value, target.Position) <= participationRadius;
     }
 
-    private static bool IsFateActive(ActiveFate target)
+    private static bool IsFateActive(FateRunTarget target)
         => !string.Equals(target.State, "Ended", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(target.State, "Failed", StringComparison.OrdinalIgnoreCase);
 
@@ -495,6 +505,8 @@ public sealed class FateAutomationController : IDisposable
             {
                 targetFateId = 0;
                 targetFateName = string.Empty;
+                targetIsPot = false;
+                completionBehavior = FateRunCompletionBehavior.RecoverToBase;
             }
 
             if (clearAutorotationState)
@@ -514,7 +526,7 @@ public sealed class FateAutomationController : IDisposable
         logger.Info($"FATE automation state -> {nextState}: {reason}");
     }
 
-    private void LogFateMonitor(ActiveFate target)
+    private void LogFateMonitor(FateRunTarget target)
     {
         lastObservedProgress = target.Progress;
         lastObservedStateCode = target.StateCode;
@@ -540,7 +552,7 @@ public sealed class FateAutomationController : IDisposable
             $"FATE monitor {target.Name} ({target.Id}): state={target.State}({target.StateCode}) progress={target.Progress}% inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} insideRadius={HasArrivedWithinFateRadius(target)} distance={distance:0.0} elapsed={elapsed:mm\\:ss}.");
     }
 
-    private bool TryHandleReturnTravelFallback(ActiveFate target)
+    private bool TryHandleReturnTravelFallback(FateRunTarget target)
     {
         if (returnTravelFallbackAttempted || movementController.PlannedRoute?.RouteType != "Return")
         {
@@ -552,17 +564,10 @@ public sealed class FateAutomationController : IDisposable
         return BeginPlanningWithoutReturn(target);
     }
 
-    private bool BeginPlanningWithoutReturn(ActiveFate target)
+    private bool BeginPlanningWithoutReturn(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
-        var selection = new TargetSelection
-        {
-            Kind = SelectedTargetKind.Fate,
-            Fate = target,
-            Reason = "FATE automation lock fallback",
-        };
-
-        if (!movementController.PlanRoute(selection, allowReturn: false))
+        if (!movementController.PlanRoute(target, allowReturn: false))
         {
             logger.Warning($"FATE fallback route planning failed: {movementController.LastError}");
             return false;

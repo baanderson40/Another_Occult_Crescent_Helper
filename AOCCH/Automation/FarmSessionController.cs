@@ -24,6 +24,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly PotCycleTracker potCycleTracker;
     private readonly PotFallbackWindowEvaluator potFallbackWindowEvaluator;
+    private readonly PotFarmController potFarmController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -52,6 +53,7 @@ public sealed class FarmSessionController : IDisposable
         DeathRecoveryController deathRecoveryController,
         PotCycleTracker potCycleTracker,
         PotFallbackWindowEvaluator potFallbackWindowEvaluator,
+        PotFarmController potFarmController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -67,6 +69,7 @@ public sealed class FarmSessionController : IDisposable
         this.deathRecoveryController = deathRecoveryController;
         this.potCycleTracker = potCycleTracker;
         this.potFallbackWindowEvaluator = potFallbackWindowEvaluator;
+        this.potFarmController = potFarmController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -136,9 +139,9 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning)
         {
-            SetFailure("Stop CE/FATE automation and buff rotation before starting the farm session.");
+            SetFailure("Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.");
             return false;
         }
 
@@ -172,6 +175,11 @@ public sealed class FarmSessionController : IDisposable
         if (fateAutomationController.IsRunning)
         {
             fateAutomationController.Stop(reason);
+        }
+
+        if (potFarmController.IsRunning)
+        {
+            potFarmController.Stop(reason);
         }
 
         if (buffRotationController.IsRunning)
@@ -210,6 +218,14 @@ public sealed class FarmSessionController : IDisposable
             SetFailure(deathRecoveryController.LastError.Length == 0
                 ? "Death recovery failed during farm session."
                 : deathRecoveryController.LastError);
+            return;
+        }
+
+        if (potFarmController.State == PotFarmState.Failed)
+        {
+            SetFailure(potFarmController.LastError.Length == 0
+                ? "Pot farm control failed during farm session."
+                : potFarmController.LastError);
             return;
         }
 
@@ -252,6 +268,11 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case FarmSessionState.SelectingTarget:
                 TickSelectingTarget();
+                break;
+            case FarmSessionState.WaitingForPredictedPotWindow:
+            case FarmSessionState.WaitingAtPotSpawn:
+            case FarmSessionState.RunningPots:
+                TickPotRun();
                 break;
             case FarmSessionState.RunningCe:
                 TickCeRun();
@@ -478,6 +499,11 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryStartOrResumePotControl(now))
+        {
+            return;
+        }
+
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
@@ -619,6 +645,12 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryStartOrResumePotControl(now))
+        {
+            logger.ResetThrottle("farm-idle-waiting");
+            return;
+        }
+
         var startDecision = EvaluateEffectiveTargetStart(snapshot, potCycleSnapshot, now);
         if (startDecision?.AllowStart == true)
         {
@@ -638,6 +670,37 @@ public sealed class FarmSessionController : IDisposable
         }
     }
 
+    private void TickPotRun()
+    {
+        if (!potFarmController.IsRunning)
+        {
+            switch (potFarmController.LastResult)
+            {
+                case PotFarmRunResult.Completed:
+                case PotFarmRunResult.TreasurePending:
+                    StartPostFateFlow();
+                    return;
+                case PotFarmRunResult.Stopped when pendingStop:
+                    TransitionTo(FarmSessionState.Stopped, "Farm session stop completed.", "Stopped", clearError: false);
+                    return;
+                case PotFarmRunResult.None:
+                    TransitionTo(FarmSessionState.SelectingTarget, potFarmController.LastTransition, "Selecting target");
+                    return;
+                default:
+                    SetFailure(potFarmController.LastError.Length == 0
+                        ? potFarmController.LastTransition
+                        : potFarmController.LastError);
+                    return;
+            }
+        }
+
+        var mappedState = MapPotFarmState(potFarmController.State);
+        if (mappedState != State)
+        {
+            TransitionTo(mappedState, potFarmController.LastTransition, MapPotFarmActivity(mappedState));
+        }
+    }
+
     private PotFallbackStartDecision? EvaluateEffectiveTargetStart(ScannerSnapshot snapshot, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
         => snapshot.EffectiveTarget.Kind switch
         {
@@ -646,6 +709,44 @@ public sealed class FarmSessionController : IDisposable
             SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null
                 => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now),
             _ => null,
+        };
+
+    private bool TryStartOrResumePotControl(DateTimeOffset now)
+    {
+        if (!potFarmController.NeedsControlNow(now, out var reason))
+        {
+            return false;
+        }
+
+        if (!potFarmController.IsRunning && !potFarmController.Start())
+        {
+            SetFailure(potFarmController.LastError.Length == 0
+                ? "Failed to start pot farm control."
+                : potFarmController.LastError);
+            return true;
+        }
+
+        var mappedState = MapPotFarmState(potFarmController.State);
+        TransitionTo(mappedState, reason, MapPotFarmActivity(mappedState));
+        return true;
+    }
+
+    private static FarmSessionState MapPotFarmState(PotFarmState state)
+        => state switch
+        {
+            PotFarmState.WaitingForPredictedWindow or PotFarmState.Bootstrapping => FarmSessionState.WaitingForPredictedPotWindow,
+            PotFarmState.TravelingToSpawn or PotFarmState.WaitingAtSpawn => FarmSessionState.WaitingAtPotSpawn,
+            PotFarmState.RunningPotFate or PotFarmState.RecoveringToBase => FarmSessionState.RunningPots,
+            _ => FarmSessionState.RunningPots,
+        };
+
+    private static string MapPotFarmActivity(FarmSessionState state)
+        => state switch
+        {
+            FarmSessionState.WaitingForPredictedPotWindow => "Waiting for predicted pot window",
+            FarmSessionState.WaitingAtPotSpawn => "Waiting at pot spawn",
+            FarmSessionState.RunningPots => "Running pots",
+            _ => "Running pots",
         };
 
     private void TransitionTo(FarmSessionState nextState, string reason, string activity, bool clearError = true)
@@ -667,6 +768,11 @@ public sealed class FarmSessionController : IDisposable
 
     private void SetFailure(string reason)
     {
+        if (potFarmController.IsRunning)
+        {
+            potFarmController.Stop(reason);
+        }
+
         movementController.Stop(reason);
         autorotationController.ReleaseOwnership(reason);
 
