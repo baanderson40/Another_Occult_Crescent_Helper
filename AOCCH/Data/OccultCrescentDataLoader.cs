@@ -41,7 +41,8 @@ public static class OccultCrescentDataLoader
             var data = JsonSerializer.Deserialize<OccultCrescentData>(json, SerializerOptions) ?? new OccultCrescentData();
             logger.Info(
                 $"Loaded Occult Crescent data: {data.Aethernets.Count} aethernets, " +
-                $"{data.CriticalEncounters.Count} CEs, {data.Fates.Count} FATEs.");
+                $"{data.CriticalEncounters.Count} CEs, {data.Fates.Count} FATEs, " +
+                $"{data.PotFates.Count} pot FATEs, {data.TreasureCofferGroups.Count} treasure coffer groups.");
 
             return data;
         }

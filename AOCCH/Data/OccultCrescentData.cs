@@ -12,6 +12,8 @@ public sealed class OccultCrescentData
     public List<AethernetData> Aethernets { get; init; } = [];
     public List<CriticalEncounterData> CriticalEncounters { get; init; } = [];
     public List<FateData> Fates { get; init; } = [];
+    public List<PotFateData> PotFates { get; init; } = [];
+    public List<TreasureCofferGroupData> TreasureCofferGroups { get; init; } = [];
     public List<FateAethernetPreference> FateAethernetPreferences { get; init; } = [];
     public List<DropData> Drops { get; init; } = [];
 }
@@ -46,6 +48,36 @@ public sealed class FateData
     public string? Note { get; init; }
     public string? Aethernet { get; init; }
     public Vector3Data StartPosition { get; init; } = new();
+}
+
+public sealed class PotFateData
+{
+    public uint FateId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string PreferredAethernet { get; init; } = string.Empty;
+    public Vector3Data CenterPosition { get; init; } = new();
+    public Vector3Data? StagingPosition { get; init; }
+}
+
+public sealed class TreasureCofferGroupData
+{
+    public uint FateId { get; init; }
+    public string GroupKey { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public List<TreasureCofferCandidateData> Candidates { get; init; } = [];
+}
+
+public sealed class TreasureCofferCandidateData
+{
+    public uint FateId { get; init; }
+    public string GroupKey { get; init; } = string.Empty;
+    public string CandidateKey { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public Vector3Data Position { get; init; } = new();
+    public int AggroLevel { get; init; }
+    public int? HideThresholdDistance { get; init; }
+    public int? TravelTimeoutSeconds { get; init; }
+    public string? Notes { get; init; }
 }
 
 public sealed class FateAethernetPreference

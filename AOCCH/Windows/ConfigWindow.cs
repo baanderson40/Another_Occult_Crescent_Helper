@@ -13,13 +13,14 @@ namespace AOCCH.Windows;
 public class ConfigWindow : Window, IDisposable
 {
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
-    private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (South)", "Pleading Pots (North)"];
+    private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (North)", "Pleading Pots (South)"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly Configuration configuration;
     private readonly OccultCrescentData data;
     private readonly OccultCrescentNameResolver nameResolver;
     private readonly AocchLogger logger;
+    private readonly HashSet<uint> potFateIds;
 
     // We give this window a constant ID using ###.
     // This allows for labels to be dynamic, like "{FPS Counter}fps###XYZ counter window",
@@ -39,6 +40,7 @@ public class ConfigWindow : Window, IDisposable
         this.data = data;
         this.nameResolver = nameResolver;
         this.logger = logger;
+        potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
     }
 
     public void Dispose() { }
@@ -384,13 +386,13 @@ public class ConfigWindow : Window, IDisposable
 
     private List<(uint Id, string Label)> GetDirectFarmFateEntries()
         => data.Fates
-            .Where(fate => !IsPotFate(fate))
+            .Where(fate => !IsPotFate(fate.Id))
             .Select(fate => (
                 fate.Id,
                 nameResolver.GetFateName(fate.Id, fate.Name)))
             .OrderBy(entry => entry.Item2, StringComparer.Ordinal)
             .ToList();
 
-    private static bool IsPotFate(FateData fate)
-        => string.Equals(fate.Note, "PersistentPots", StringComparison.Ordinal);
+    private bool IsPotFate(uint fateId)
+        => potFateIds.Contains(fateId);
 }

@@ -21,6 +21,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private readonly OccultCrescentData data;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
+    private readonly HashSet<uint> potFateIds;
     private readonly object gate = new();
 
     private ScannerSnapshot snapshot = new()
@@ -49,6 +50,7 @@ public sealed class OccultCrescentScanner : IDisposable
         this.data = data;
         this.configuration = configuration;
         this.logger = logger;
+        potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
 
         framework.Update += OnFrameworkUpdate;
         clientState.TerritoryChanged += OnTerritoryChanged;
@@ -241,7 +243,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var metadata = data.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
             var isExcluded = metadata == null
-                || IsPotFate(metadata)
+                || IsPotFate(fate.FateId)
                 || !configuration.EnableFateFarming
                 || !configuration.IsFateEnabled(fate.FateId);
             var distanceToPlayer = playerPosition.HasValue
@@ -418,8 +420,8 @@ public sealed class OccultCrescentScanner : IDisposable
         }
     }
 
-    private static bool IsPotFate(FateData fate)
-        => string.Equals(fate.Note, "PersistentPots", StringComparison.Ordinal);
+    private bool IsPotFate(uint fateId)
+        => potFateIds.Contains(fateId);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

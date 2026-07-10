@@ -108,8 +108,9 @@ public class Configuration : IPluginConfiguration
             var excludedNames = LegacyExcludedFates
                 .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
 
-            foreach (var fate in data.Fates.Where(fate => !string.Equals(fate.Note, "PersistentPots", StringComparison.Ordinal)))
+            foreach (var fate in data.Fates.Where(fate => !potFateIds.Contains(fate.Id)))
             {
                 if (excludedNames.Contains(fate.Name))
                 {
