@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using AOCCH.Data;
 using AOCCH.Logging;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
@@ -13,6 +14,8 @@ namespace AOCCH.Scanning;
 public sealed class OccultCrescentScanner : IDisposable
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly HashSet<uint> VisibleCofferDataIds = [2014741u, 2014742u, 2014743u];
+    private const uint TreasureBuffStatusId = 1531;
 
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
@@ -20,8 +23,10 @@ public sealed class OccultCrescentScanner : IDisposable
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentData data;
     private readonly Configuration configuration;
+    private readonly CofferNameResolver cofferNameResolver;
     private readonly AocchLogger logger;
     private readonly HashSet<uint> potFateIds;
+    private readonly Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
 
     private ScannerSnapshot snapshot = new()
@@ -32,6 +37,9 @@ public sealed class OccultCrescentScanner : IDisposable
     private DateTimeOffset lastScanAt = DateTimeOffset.MinValue;
     private bool? lastSouthHornState;
     private string lastSelectionKey = string.Empty;
+    private PotAnchorObservation? lastPotAnchor;
+    private uint lastActivePotFateId;
+    private bool? lastTreasureBuffState;
     private bool pendingForceRefresh = true;
 
     public OccultCrescentScanner(
@@ -41,6 +49,7 @@ public sealed class OccultCrescentScanner : IDisposable
         IObjectTable objectTable,
         OccultCrescentData data,
         Configuration configuration,
+        CofferNameResolver cofferNameResolver,
         AocchLogger logger)
     {
         this.clientState = clientState;
@@ -49,8 +58,10 @@ public sealed class OccultCrescentScanner : IDisposable
         this.objectTable = objectTable;
         this.data = data;
         this.configuration = configuration;
+        this.cofferNameResolver = cofferNameResolver;
         this.logger = logger;
         potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
+        potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
 
         framework.Update += OnFrameworkUpdate;
         clientState.TerritoryChanged += OnTerritoryChanged;
@@ -119,21 +130,34 @@ public sealed class OccultCrescentScanner : IDisposable
             var criticalEncounters = new List<ActiveCriticalEncounter>();
             var unknownCriticalEncounters = new List<ActiveCriticalEncounter>();
             var fates = new List<ActiveFate>();
+            var potFates = new List<ActivePotFate>();
+            var visibleCoffers = new List<VisibleCoffer>();
             uint currentCriticalEncounterId = 0;
             ActiveCriticalEncounter? currentCriticalEncounter = null;
             ActiveCriticalEncounter? selectedCriticalEncounter = null;
             ActiveFate? selectedFate = null;
+            ActivePotFate? activePotFate = null;
+            PotAnchorObservation? potAnchor = lastPotAnchor;
+            var hasTreasureBuff = false;
+            var treasureBuffRemainingSeconds = 0f;
             var effectiveTarget = TargetSelection.None;
 
             if (isInSouthHorn)
             {
                 currentCriticalEncounterId = ScanCriticalEncounters(criticalEncounters, unknownCriticalEncounters);
-                ScanFates(fates);
+                ScanFates(now, fates, potFates, out activePotFate, out potAnchor);
                 currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
                     ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
                 selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
                 selectedFate = SelectFate(fates);
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
+                ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
+                ScanVisibleCoffers(visibleCoffers);
+            }
+            else
+            {
+                lastActivePotFateId = 0;
+                TrackTreasureBuffState(false);
             }
 
             var nextSnapshot = new ScannerSnapshot
@@ -146,9 +170,15 @@ public sealed class OccultCrescentScanner : IDisposable
                 CriticalEncounters = criticalEncounters,
                 UnknownCriticalEncounters = unknownCriticalEncounters,
                 Fates = fates,
+                PotFates = potFates,
                 CurrentCriticalEncounter = currentCriticalEncounter,
                 SelectedCriticalEncounter = selectedCriticalEncounter,
                 SelectedFate = selectedFate,
+                ActivePotFate = activePotFate,
+                PotAnchor = potAnchor,
+                HasTreasureBuff = hasTreasureBuff,
+                TreasureBuffRemainingSeconds = treasureBuffRemainingSeconds,
+                VisibleCoffers = visibleCoffers,
                 EffectiveTarget = effectiveTarget,
             };
 
@@ -220,10 +250,17 @@ public sealed class OccultCrescentScanner : IDisposable
         return currentCriticalEncounterId;
     }
 
-    private void ScanFates(List<ActiveFate> fates)
+    private void ScanFates(
+        DateTimeOffset now,
+        List<ActiveFate> fates,
+        List<ActivePotFate> potFates,
+        out ActivePotFate? activePotFate,
+        out PotAnchorObservation? potAnchor)
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
         var joinedFateId = GetJoinedFateId();
+        activePotFate = null;
+        potAnchor = lastPotAnchor;
 
         foreach (var fate in fateTable)
         {
@@ -242,13 +279,42 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var metadata = data.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
+            var isPotFate = IsPotFate(fate.FateId);
             var isExcluded = metadata == null
-                || IsPotFate(fate.FateId)
+                || isPotFate
                 || !configuration.EnableFateFarming
                 || !configuration.IsFateEnabled(fate.FateId);
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, fate.Position)
                 : float.MaxValue;
+
+            if (isPotFate)
+            {
+                potFatesById.TryGetValue(fate.FateId, out var potMetadata);
+                var activePot = new ActivePotFate
+                {
+                    Id = fate.FateId,
+                    Name = name,
+                    State = stateText,
+                    StateCode = stateCode,
+                    IsInFate = joinedFateId != 0 && joinedFateId == fate.FateId,
+                    Progress = fate.Progress,
+                    Radius = fate.Radius,
+                    Position = fate.Position,
+                    DistanceToPlayer = distanceToPlayer,
+                    PreferredAethernet = potMetadata?.PreferredAethernet ?? string.Empty,
+                    CenterPosition = potMetadata?.CenterPosition.ToVector3() ?? fate.Position,
+                    StagingPosition = potMetadata?.StagingPosition?.ToVector3(),
+                };
+
+                potFates.Add(activePot);
+                if (activePotFate == null)
+                {
+                    activePotFate = activePot;
+                }
+
+                continue;
+            }
 
             fates.Add(new ActiveFate
             {
@@ -271,6 +337,113 @@ public sealed class OccultCrescentScanner : IDisposable
         }
 
         fates.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
+        potFates.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
+
+        if (activePotFate != null)
+        {
+            if (lastActivePotFateId != activePotFate.Id)
+            {
+                potAnchor = new PotAnchorObservation
+                {
+                    FateId = activePotFate.Id,
+                    FateName = activePotFate.Name,
+                    ObservedAt = now,
+                };
+                lastPotAnchor = potAnchor;
+                lastActivePotFateId = activePotFate.Id;
+                logger.Info($"Pot anchor observed: {activePotFate.Name} ({activePotFate.Id}) at {now:O}.");
+            }
+
+            return;
+        }
+
+        lastActivePotFateId = 0;
+    }
+
+    private void ScanTreasureBuff(out bool hasTreasureBuff, out float remainingTime)
+    {
+        hasTreasureBuff = false;
+        remainingTime = 0f;
+
+        var player = objectTable.LocalPlayer;
+        if (player == null)
+        {
+            TrackTreasureBuffState(false);
+            return;
+        }
+
+        foreach (var status in player.StatusList)
+        {
+            if (status.StatusId != TreasureBuffStatusId)
+            {
+                continue;
+            }
+
+            hasTreasureBuff = true;
+            remainingTime = status.RemainingTime;
+            break;
+        }
+
+        TrackTreasureBuffState(hasTreasureBuff);
+    }
+
+    private void ScanVisibleCoffers(List<VisibleCoffer> visibleCoffers)
+    {
+        var playerPosition = objectTable.LocalPlayer?.Position;
+
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is not IGameObject objectEntry)
+            {
+                continue;
+            }
+
+            var isKnownBaseId = VisibleCofferDataIds.Contains(objectEntry.BaseId);
+            var isLocalizedFallbackMatch = !isKnownBaseId
+                && IsEventObject(objectEntry)
+                && cofferNameResolver.IsKnownLocalizedName(objectEntry.Name.ToString());
+            if (!isKnownBaseId && !isLocalizedFallbackMatch)
+            {
+                continue;
+            }
+
+            var distanceToPlayer = playerPosition.HasValue
+                ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position)
+                : float.MaxValue;
+
+            visibleCoffers.Add(new VisibleCoffer
+            {
+                GameObjectId = objectEntry.GameObjectId,
+                DataId = objectEntry.BaseId,
+                Name = objectEntry.Name.ToString(),
+                Position = objectEntry.Position,
+                DistanceToPlayer = distanceToPlayer,
+            });
+        }
+
+        visibleCoffers.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
+    }
+
+    private static bool IsEventObject(IGameObject gameObject)
+        => string.Equals(gameObject.ObjectKind.ToString(), "EventObj", StringComparison.OrdinalIgnoreCase);
+
+    private void TrackTreasureBuffState(bool hasTreasureBuff)
+    {
+        if (lastTreasureBuffState == hasTreasureBuff)
+        {
+            return;
+        }
+
+        if (!lastTreasureBuffState.HasValue)
+        {
+            lastTreasureBuffState = hasTreasureBuff;
+            return;
+        }
+
+        lastTreasureBuffState = hasTreasureBuff;
+        logger.Info(hasTreasureBuff
+            ? "Treasure buff detected: Cache Me If You Can (1531)."
+            : "Treasure buff cleared: Cache Me If You Can (1531).");
     }
 
     private ActiveCriticalEncounter? SelectCriticalEncounter(IReadOnlyList<ActiveCriticalEncounter> criticalEncounters)

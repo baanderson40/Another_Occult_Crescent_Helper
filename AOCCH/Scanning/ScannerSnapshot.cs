@@ -14,9 +14,15 @@ public sealed class ScannerSnapshot
     public IReadOnlyList<ActiveCriticalEncounter> CriticalEncounters { get; init; } = [];
     public IReadOnlyList<ActiveCriticalEncounter> UnknownCriticalEncounters { get; init; } = [];
     public IReadOnlyList<ActiveFate> Fates { get; init; } = [];
+    public IReadOnlyList<ActivePotFate> PotFates { get; init; } = [];
     public ActiveCriticalEncounter? CurrentCriticalEncounter { get; init; }
     public ActiveCriticalEncounter? SelectedCriticalEncounter { get; init; }
     public ActiveFate? SelectedFate { get; init; }
+    public ActivePotFate? ActivePotFate { get; init; }
+    public PotAnchorObservation? PotAnchor { get; init; }
+    public bool HasTreasureBuff { get; init; }
+    public float TreasureBuffRemainingSeconds { get; init; }
+    public IReadOnlyList<VisibleCoffer> VisibleCoffers { get; init; } = [];
     public TargetSelection EffectiveTarget { get; init; } = TargetSelection.None;
 
     public ActiveCriticalEncounter? FindCriticalEncounter(uint id)
@@ -29,4 +35,9 @@ public sealed class ScannerSnapshot
         => id == 0
             ? null
             : Fates.FirstOrDefault(fate => fate.Id == id);
+
+    public ActivePotFate? FindPotFate(uint id)
+        => id == 0
+            ? null
+            : PotFates.FirstOrDefault(fate => fate.Id == id);
 }

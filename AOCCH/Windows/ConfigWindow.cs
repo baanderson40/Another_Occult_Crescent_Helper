@@ -134,6 +134,17 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawPotsTab()
     {
+        var enablePotFarming = configuration.EnablePotFarming;
+        if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
+        {
+            logger.Info($"Setting changed: EnablePotFarming: {configuration.EnablePotFarming} -> {enablePotFarming}.");
+            configuration.EnablePotFarming = enablePotFarming;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("Disabling pot farming keeps passive pot scanning active in South Horn, but blocks pot staging, treasure flow, and pot-based fallback gating.");
+
+        ImGui.Separator();
         ImGui.TextUnformatted("Pot Cycle");
 
         var startingPotFate = (int)configuration.StartingPotFate;

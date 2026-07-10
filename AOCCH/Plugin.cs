@@ -34,6 +34,7 @@ public sealed class Plugin : IDalamudPlugin
     public AocchLogger Logger { get; init; }
     public OccultCrescentData OccultCrescentData { get; init; }
     public OccultCrescentNameResolver OccultCrescentNameResolver { get; init; }
+    public CofferNameResolver CofferNameResolver { get; init; }
     public OccultCrescentScanner Scanner { get; init; }
     public VNavmeshIpc VNavmesh { get; init; }
     public LifestreamIpc Lifestream { get; init; }
@@ -67,7 +68,8 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData);
-        Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
+        CofferNameResolver = new CofferNameResolver(DataManager, [2014741u, 2014742u, 2014743u]);
+        Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, CofferNameResolver, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);

@@ -36,6 +36,7 @@ public class Configuration : IPluginConfiguration
     public bool EnableBuffRotation { get; set; } = true;
     public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
+    public bool EnablePotFarming { get; set; } = true;
     public StartingPotFateMode StartingPotFate { get; set; } = StartingPotFateMode.Auto;
     public int SpawnLeadMinutes { get; set; } = 5;
     public bool ManageInstanceTime { get; set; } = true;
