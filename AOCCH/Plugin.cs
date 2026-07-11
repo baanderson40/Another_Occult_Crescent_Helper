@@ -431,6 +431,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         var reason = $"Left South Horn for territory {territoryType}; resetting instance state.";
 
+        ResetAutomationState(reason);
+    }
+
+    private void ResetAutomationState(string reason)
+    {
         if (FarmSessionController.IsRunning)
         {
             FarmSessionController.Stop(reason);
@@ -561,6 +566,7 @@ public sealed class Plugin : IDalamudPlugin
         MovementController.Stop(reason);
         Logger.Info("Panic stop: releasing autorotation ownership.");
         AutorotationController.ReleaseOwnership(reason);
+        ResetAutomationState(reason);
         Logger.Info("Global panic stop completed.");
     }
 }

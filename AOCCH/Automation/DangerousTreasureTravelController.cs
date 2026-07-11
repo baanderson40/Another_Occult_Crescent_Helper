@@ -36,6 +36,9 @@ public enum DangerousTreasureTravelResult
 public sealed class DangerousTreasureTravelController : IDisposable
 {
     private static readonly TimeSpan GearsetEquipTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan GearsetRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan GearsetPostElixirDelay = TimeSpan.FromSeconds(2);
+    private const int MaximumGearsetEquipAttempts = 2;
     private static readonly TimeSpan DismountTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
@@ -55,10 +58,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private string lastError = string.Empty;
     private string activeCandidateLabel = string.Empty;
     private Vector3 finalDestination;
+    private Vector3 hideThresholdPoint;
     private float arrivalTolerance;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private bool hideThresholdTravelRequired;
     private bool ninjaGearsetEquippedByController;
+    private bool gearsetAttemptInFlight;
+    private int gearsetAttemptCount;
+    private int activeGearsetNumber;
+    private uint activeGearsetTargetClassJobId;
+    private string activeGearsetName = string.Empty;
+    private DateTimeOffset gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
 
     public DangerousTreasureTravelController(
         IFramework framework,
@@ -134,10 +144,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lastError = string.Empty;
             activeCandidateLabel = string.Empty;
             finalDestination = Vector3.Zero;
+            hideThresholdPoint = Vector3.Zero;
             arrivalTolerance = 0f;
             stateEnteredAt = DateTimeOffset.MinValue;
             hideThresholdTravelRequired = false;
             ninjaGearsetEquippedByController = false;
+            gearsetAttemptInFlight = false;
+            gearsetAttemptCount = 0;
+            activeGearsetNumber = 0;
+            activeGearsetTargetClassJobId = 0;
+            activeGearsetName = string.Empty;
+            gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
         }
 
         logger.Info($"Dangerous treasure travel reset: {reason}");
@@ -196,39 +213,20 @@ public sealed class DangerousTreasureTravelController : IDisposable
         {
             activeCandidateLabel = candidate.Label;
             finalDestination = destination;
+            hideThresholdPoint = thresholdPoint;
             arrivalTolerance = finalArrivalTolerance;
             hideThresholdTravelRequired = CalculateFlatDistance(playerPosition.Value, thresholdPoint) > arrivalTolerance;
             lastError = string.Empty;
             lastResult = DangerousTreasureTravelResult.None;
-        }
-
-        if (!gameActionController.TryEquipGearset(configuration.NinjaGearsetNumber, $"dangerous treasure travel for {candidate.Label}"))
-        {
-            SkipCandidate($"Failed to equip Ninja gearset {configuration.NinjaGearsetNumber} for dangerous treasure candidate {candidate.Label}.");
-            return false;
-        }
-
-        lock (gate)
-        {
-            ninjaGearsetEquippedByController = true;
+            gearsetAttemptInFlight = false;
+            gearsetAttemptCount = 0;
+            activeGearsetNumber = configuration.NinjaGearsetNumber;
+            activeGearsetTargetClassJobId = 0;
+            activeGearsetName = string.Empty;
+            gearsetAttemptAvailableAt = DateTimeOffset.UtcNow + GearsetPostElixirDelay;
         }
 
         TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous treasure candidate {candidate.Label}.");
-
-        if (!hideThresholdTravelRequired)
-        {
-            return true;
-        }
-
-        if (!movementController.StartDirectMove($"Dangerous treasure threshold for {candidate.Label}", thresholdPoint, arrivalTolerance, shouldMountBeforeStep: true))
-        {
-            SkipCandidate(movementController.LastError.Length == 0
-                ? $"Failed to start mounted travel to the hide threshold for dangerous treasure candidate {candidate.Label}."
-                : movementController.LastError);
-            return false;
-        }
-
-        TransitionTo(DangerousTreasureTravelState.TravelingToHideThreshold, $"Traveling to the hide threshold for dangerous treasure candidate {candidate.Label}.");
         return true;
     }
 
@@ -260,9 +258,15 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return true;
         }
 
-        if (!gameActionController.TryEquipGearset(configuration.FateGearsetNumber, reason))
+        var result = gameActionController.TryEquipGearsetReliably(
+            configuration.FateGearsetNumber,
+            reason,
+            GearsetEquipTimeout,
+            MaximumGearsetEquipAttempts,
+            GearsetRetryDelay);
+        if (!result.Success)
         {
-            logger.Warning($"Failed to restore FATE gearset {configuration.FateGearsetNumber} after {reason}.");
+            logger.Warning($"Failed to restore FATE gearset {configuration.FateGearsetNumber} after {reason}: {result.Error}");
             return false;
         }
 
@@ -271,7 +275,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             ninjaGearsetEquippedByController = false;
         }
 
-        logger.Info($"Restored FATE gearset {configuration.FateGearsetNumber} after {reason}.");
+        logger.Info($"Restored FATE gearset {configuration.FateGearsetNumber} after {reason}. gearset={(result.Gearset?.Name ?? "unknown")} targetClassJob={(result.TargetClassJobId?.ToString() ?? "unknown")} currentClassJob={gameActionController.CurrentClassJobId}.");
         return true;
     }
 
@@ -330,11 +334,18 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     private void TickGearsetEquip()
     {
+        var now = DateTimeOffset.UtcNow;
         if (gameActionController.IsOnClassJob(GameActionController.NinjaClassJobId))
         {
+            lock (gate)
+            {
+                ninjaGearsetEquippedByController = true;
+                gearsetAttemptInFlight = false;
+            }
+
             if (!gameActionController.CanUseHide())
             {
-                SkipCandidate($"Ninja gearset was equipped for dangerous treasure candidate {activeCandidateLabel}, but Hide is still unavailable.");
+                SkipCandidate($"Ninja gearset {activeGearsetNumber} ({activeGearsetName}) was equipped for dangerous treasure candidate {activeCandidateLabel}, but Hide is still unavailable. currentClassJob={gameActionController.CurrentClassJobId} targetClassJob={activeGearsetTargetClassJobId}.");
                 return;
             }
 
@@ -345,19 +356,99 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
 
             TransitionTo(DangerousTreasureTravelState.TravelingToHideThreshold, $"Confirmed Ninja gearset for dangerous treasure candidate {activeCandidateLabel}; continuing to the hide threshold.");
+            if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", hideThresholdPoint, arrivalTolerance, shouldMountBeforeStep: true))
+            {
+                SkipCandidate(movementController.LastError.Length == 0
+                    ? $"Failed to start mounted travel to the hide threshold for dangerous treasure candidate {activeCandidateLabel}."
+                    : movementController.LastError);
+            }
             return;
         }
 
-        if (DateTimeOffset.UtcNow - stateEnteredAt >= GearsetEquipTimeout)
+        if (gearsetAttemptInFlight)
         {
-            SkipCandidate($"Timed out waiting for Ninja gearset equip confirmation for dangerous treasure candidate {activeCandidateLabel}.");
+            if (now - stateEnteredAt >= GearsetEquipTimeout)
+            {
+                gearsetAttemptInFlight = false;
+                if (gearsetAttemptCount >= MaximumGearsetEquipAttempts)
+                {
+                    SkipCandidate($"Timed out waiting for Ninja gearset {activeGearsetNumber} ({activeGearsetName}) equip confirmation for dangerous treasure candidate {activeCandidateLabel}. currentClassJob={gameActionController.CurrentClassJobId} targetClassJob={activeGearsetTargetClassJobId}.");
+                    return;
+                }
+
+                gearsetAttemptAvailableAt = now + GearsetRetryDelay;
+                logger.Warning($"Ninja gearset equip attempt {gearsetAttemptCount}/{MaximumGearsetEquipAttempts} timed out for dangerous treasure candidate {activeCandidateLabel}; retrying in {GearsetRetryDelay.TotalSeconds:0.0}s.");
+                stateEnteredAt = now;
+            }
+
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-gearset",
+                WaitLogInterval,
+                $"Dangerous treasure travel is waiting for Ninja gearset confirmation on {activeCandidateLabel}. requestedGearset={activeGearsetNumber} gearsetName={activeGearsetName} currentClassJob={gameActionController.CurrentClassJobId} targetClassJob={activeGearsetTargetClassJobId} canUseHide={gameActionController.CanUseHide()}.");
             return;
         }
+
+        if (gearsetAttemptCount == 0 && now < gearsetAttemptAvailableAt)
+        {
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-gearset-delay",
+                TimeSpan.FromMilliseconds(250),
+                $"Dangerous treasure travel is waiting {Math.Max(0, (gearsetAttemptAvailableAt - now).TotalSeconds):0.0}s before the first Ninja gearset attempt on {activeCandidateLabel} to respect the post-elixir lock window.");
+            return;
+        }
+
+        if (now - stateEnteredAt >= GearsetEquipTimeout)
+        {
+            SkipCandidate($"Timed out waiting for a changeable state before equipping Ninja gearset {activeGearsetNumber} for dangerous treasure candidate {activeCandidateLabel}. {gameActionController.GetChangeableStateSummary()}");
+            return;
+        }
+
+        if (!gameActionController.IsPlayerInChangeableState())
+        {
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-gearset-ready",
+                WaitLogInterval,
+                $"Dangerous treasure travel is waiting for a changeable state before equipping Ninja gearset {activeGearsetNumber} on {activeCandidateLabel}. {gameActionController.GetChangeableStateSummary()}");
+            return;
+        }
+
+        if (now < gearsetAttemptAvailableAt)
+        {
+            return;
+        }
+
+        gearsetAttemptCount++;
+        var result = gameActionController.TryEquipGearset(activeGearsetNumber, $"dangerous treasure travel for {activeCandidateLabel}");
+        if (!result.Success)
+        {
+            if (gearsetAttemptCount >= MaximumGearsetEquipAttempts)
+            {
+                SkipCandidate($"Failed to equip Ninja gearset {activeGearsetNumber} for dangerous treasure candidate {activeCandidateLabel}: {result.Error}");
+                return;
+            }
+
+            gearsetAttemptAvailableAt = now + GearsetRetryDelay;
+            logger.Warning($"Ninja gearset equip attempt {gearsetAttemptCount}/{MaximumGearsetEquipAttempts} failed for dangerous treasure candidate {activeCandidateLabel}; retrying in {GearsetRetryDelay.TotalSeconds:0.0}s. {result.Error}");
+            stateEnteredAt = now;
+            return;
+        }
+
+        activeGearsetName = result.Gearset?.Name ?? $"Gearset {activeGearsetNumber}";
+        activeGearsetTargetClassJobId = result.TargetClassJobId ?? GameActionController.NinjaClassJobId;
+
+        if (gameActionController.IsOnClassJob(activeGearsetTargetClassJobId))
+        {
+            logger.Info($"Ninja gearset {activeGearsetNumber} ({activeGearsetName}) was already active for dangerous treasure candidate {activeCandidateLabel}. targetClassJob={activeGearsetTargetClassJobId}.");
+            return;
+        }
+
+        gearsetAttemptInFlight = true;
+        stateEnteredAt = now;
 
         logger.DebugThrottled(
             "dangerous-treasure-travel-gearset",
             WaitLogInterval,
-            $"Dangerous treasure travel is waiting for Ninja gearset confirmation on {activeCandidateLabel}. currentClassJob={gameActionController.CurrentClassJobId} canUseHide={gameActionController.CanUseHide()}.");
+            $"Dangerous treasure travel sent Ninja gearset equip attempt {gearsetAttemptCount}/{MaximumGearsetEquipAttempts} on {activeCandidateLabel}. requestedGearset={activeGearsetNumber} gearsetName={activeGearsetName} currentClassJob={gameActionController.CurrentClassJobId} targetClassJob={activeGearsetTargetClassJobId}.");
     }
 
     private void TickTravelToHideThreshold()

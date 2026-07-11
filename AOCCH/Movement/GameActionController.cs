@@ -1,5 +1,5 @@
 using System;
-
+using System.Threading;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -7,12 +7,27 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace AOCCH.Movement;
 
 public sealed class GameActionController
 {
+    public readonly record struct GearsetInfo(int RequestedGearsetNumber, int RequestedGearsetIndex, string Name, uint ClassJobId);
+
+    public readonly record struct GearsetEquipAttemptResult(bool Success, string Error, GearsetInfo? Gearset, uint CurrentClassJobId, int? EquipReturnCode)
+    {
+        public uint? TargetClassJobId => Gearset?.ClassJobId;
+    }
+
+    public enum MagicalElixirUseMethod
+    {
+        Slot,
+        Inventory,
+        Command,
+    }
+
     public const uint ReturnActionId = 8;
     public const uint MountActionId = 9;
     public const uint DismountActionId = 23;
@@ -20,6 +35,9 @@ public sealed class GameActionController
     public const uint NinjaClassJobId = 30;
     public const uint MagicalElixirEventItemId = 2003296;
     public const string MagicalElixirKeyItemName = "Magical Elixir";
+
+    private static readonly TimeSpan ReliableGearsetReadyTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ReliableGearsetPollInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly ICommandManager commandManager;
     private readonly ICondition condition;
@@ -144,22 +162,206 @@ public sealed class GameActionController
     public bool CanUseHide()
         => CanUseAction(HideActionId);
 
-    public bool TryEquipGearset(int gearsetNumber, string description)
+    public bool IsPlayerInChangeableState()
+        => playerState.IsLoaded
+            && !condition[ConditionFlag.InCombat]
+            && !condition[ConditionFlag.Casting]
+            && !condition[ConditionFlag.Mounted]
+            && !condition[ConditionFlag.BetweenAreas]
+            && !condition[ConditionFlag.Occupied]
+            && !condition[ConditionFlag.OccupiedInQuestEvent];
+
+    public string GetChangeableStateSummary()
+        => $"playerLoaded={playerState.IsLoaded} currentClassJob={CurrentClassJobId} inCombat={condition[ConditionFlag.InCombat]} casting={condition[ConditionFlag.Casting]} mounted={condition[ConditionFlag.Mounted]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupied={condition[ConditionFlag.Occupied]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]}";
+
+    public bool WaitForChangeableState(TimeSpan timeout, out string error)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (!IsPlayerInChangeableState())
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                error = $"Timed out waiting for a changeable state. {GetChangeableStateSummary()}";
+                return false;
+            }
+
+            Thread.Sleep(ReliableGearsetPollInterval);
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    public unsafe bool TryGetGearsetInfo(int gearsetNumber, out GearsetInfo info, out string error)
+    {
+        info = default;
+        if (!TryResolveGearset(gearsetNumber, out var gearsetIndex, out error))
+        {
+            return false;
+        }
+
+        var module = RaptureGearsetModule.Instance();
+        if (module == null)
+        {
+            error = "RaptureGearsetModule is unavailable.";
+            return false;
+        }
+
+        var gearset = module->GetGearset(gearsetIndex);
+        if (gearset == null)
+        {
+            error = $"Gearset number {gearsetNumber} resolved to slot {gearsetIndex}, but the gearset entry pointer was null.";
+            return false;
+        }
+
+        var classJobId = gearset->ClassJob;
+        if (classJobId == 0)
+        {
+            error = $"Gearset number {gearsetNumber} resolved to slot {gearsetIndex}, but the gearset has no readable ClassJob id.";
+            return false;
+        }
+
+        var name = string.IsNullOrWhiteSpace(gearset->NameString)
+            ? $"Gearset {gearsetNumber}"
+            : gearset->NameString;
+
+        info = new GearsetInfo(gearsetNumber, gearsetIndex, name, classJobId);
+        error = string.Empty;
+        return true;
+    }
+
+    public unsafe GearsetEquipAttemptResult TryEquipGearset(int gearsetNumber, string description)
     {
         if (gearsetNumber <= 0)
         {
-            logger.Warning($"Cannot equip an unconfigured gearset for {description}.");
-            return false;
+            var error = $"Cannot equip an unconfigured gearset for {description}.";
+            logger.Warning(error);
+            return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
         }
 
-        var command = $"/gearset change {gearsetNumber}";
-        if (!commandManager.ProcessCommand(command))
+        if (!IsPlayerInChangeableState())
         {
-            logger.Warning($"Failed to dispatch gearset command '{command}' for {description}.");
+            var error = $"Cannot equip gearset {gearsetNumber} for {description} because the player is not in a changeable state. {GetChangeableStateSummary()}";
+            logger.Warning(error);
+            return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
+        }
+
+        if (!TryGetGearsetInfo(gearsetNumber, out var gearsetInfo, out var resolveError))
+        {
+            var error = $"Failed to resolve gearset {gearsetNumber} for {description}: {resolveError}";
+            logger.Warning(error);
+            return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
+        }
+
+        if (CurrentClassJobId == gearsetInfo.ClassJobId)
+        {
+            logger.Info($"Gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) is already active for {description}. currentClassJob={CurrentClassJobId}.");
+            return new GearsetEquipAttemptResult(true, string.Empty, gearsetInfo, CurrentClassJobId, null);
+        }
+
+        var module = RaptureGearsetModule.Instance();
+        if (module == null)
+        {
+            var error = $"RaptureGearsetModule is unavailable while equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}.";
+            logger.Warning(error);
+            return new GearsetEquipAttemptResult(false, error, gearsetInfo, CurrentClassJobId, null);
+        }
+
+        logger.Info($"Equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId} slot={gearsetInfo.RequestedGearsetIndex}.");
+
+        var equipResult = module->EquipGearset(gearsetInfo.RequestedGearsetIndex);
+        if (equipResult != 0)
+        {
+            var error = $"EquipGearset returned {equipResult} while equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId}.";
+            logger.Warning(error);
+            return new GearsetEquipAttemptResult(false, error, gearsetInfo, CurrentClassJobId, equipResult);
+        }
+
+        logger.Info($"EquipGearset accepted gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId}." );
+        return new GearsetEquipAttemptResult(true, string.Empty, gearsetInfo, CurrentClassJobId, equipResult);
+    }
+
+    public GearsetEquipAttemptResult TryEquipGearsetReliably(int gearsetNumber, string description, TimeSpan verifyTimeout, int maxAttempts, TimeSpan retryDelay, TimeSpan? postActionLockDelay = null)
+    {
+        if (postActionLockDelay is { } delay && delay > TimeSpan.Zero)
+        {
+            logger.Info($"Waiting {delay.TotalSeconds:0.0}s before equipping gearset {gearsetNumber} for {description} to respect the action-lock window.");
+            Thread.Sleep(delay);
+        }
+
+        GearsetEquipAttemptResult lastResult = new(false, string.Empty, null, CurrentClassJobId, null);
+        for (var attempt = 1; attempt <= Math.Max(1, maxAttempts); attempt++)
+        {
+            if (!WaitForChangeableState(ReliableGearsetReadyTimeout, out var readyError))
+            {
+                lastResult = new GearsetEquipAttemptResult(false, $"Gearset equip attempt {attempt}/{Math.Max(1, maxAttempts)} for {description} failed while waiting for a changeable state: {readyError}", null, CurrentClassJobId, null);
+                logger.Warning(lastResult.Error);
+            }
+            else
+            {
+                lastResult = TryEquipGearset(gearsetNumber, description);
+                if (lastResult.Success)
+                {
+                    var targetClassJobId = lastResult.TargetClassJobId;
+                    if (!targetClassJobId.HasValue || CurrentClassJobId == targetClassJobId.Value)
+                    {
+                        return lastResult;
+                    }
+
+                    var verifyDeadline = DateTimeOffset.UtcNow + verifyTimeout;
+                    while (DateTimeOffset.UtcNow < verifyDeadline)
+                    {
+                        if (CurrentClassJobId == targetClassJobId.Value)
+                        {
+                            return lastResult with { CurrentClassJobId = CurrentClassJobId };
+                        }
+
+                        Thread.Sleep(ReliableGearsetPollInterval);
+                    }
+
+                    lastResult = lastResult with
+                    {
+                        Success = false,
+                        Error = $"Gearset equip attempt {attempt}/{Math.Max(1, maxAttempts)} for {description} did not activate ClassJob {targetClassJobId.Value} within {verifyTimeout.TotalSeconds:0.0}s. currentClassJob={CurrentClassJobId}."
+                    };
+                    logger.Warning(lastResult.Error);
+                }
+            }
+
+            if (attempt < Math.Max(1, maxAttempts))
+            {
+                logger.Info($"Retrying gearset {gearsetNumber} for {description} in {retryDelay.TotalSeconds:0.0}s after attempt {attempt}/{Math.Max(1, maxAttempts)} failed.");
+                Thread.Sleep(retryDelay);
+            }
+        }
+
+        return lastResult;
+    }
+
+    private unsafe bool TryResolveGearset(int gearsetNumber, out int gearsetIndex, out string error)
+    {
+        gearsetIndex = -1;
+        if (gearsetNumber <= 0)
+        {
+            error = "Gearset number must be greater than zero.";
             return false;
         }
 
-        logger.Info($"Dispatched gearset command '{command}' for {description}.");
+        var module = RaptureGearsetModule.Instance();
+        if (module == null)
+        {
+            error = "RaptureGearsetModule is unavailable.";
+            return false;
+        }
+
+        gearsetIndex = gearsetNumber - 1;
+        if (!module->IsValidGearset(gearsetIndex))
+        {
+            error = $"Gearset number {gearsetNumber} resolved to slot {gearsetIndex}, but the slot is invalid or unavailable.";
+            return false;
+        }
+
+        error = string.Empty;
         return true;
     }
 
@@ -290,4 +492,63 @@ public sealed class GameActionController
 
     public bool TryUseMagicalElixir(string description)
         => TryUseKeyInventoryItem(MagicalElixirEventItemId, MagicalElixirKeyItemName, description);
+
+    public unsafe bool HasInventoryItem(uint itemId, bool isHighQuality = false)
+    {
+        var inventoryManager = InventoryManager.Instance();
+        return inventoryManager != null && inventoryManager->GetInventoryItemCount(itemId, isHighQuality) > 0;
+    }
+
+    public bool HasMagicalElixir()
+        => HasInventoryItem(MagicalElixirEventItemId);
+
+    public bool TryUseMagicalElixirViaInventory(string description)
+        => TryUseInventoryItem(MagicalElixirEventItemId, isHighQuality: false, description);
+
+    public bool TryUseMagicalElixirViaCommand(string description)
+        => TryUseKeyItem(MagicalElixirKeyItemName, description);
+
+    public bool TryUseMagicalElixir(MagicalElixirUseMethod method, string description)
+        => method switch
+        {
+            MagicalElixirUseMethod.Slot => TryUseMagicalElixir(description),
+            MagicalElixirUseMethod.Inventory => TryUseMagicalElixirViaInventory(description),
+            MagicalElixirUseMethod.Command => TryUseMagicalElixirViaCommand(description),
+            _ => false,
+        };
+
+    public unsafe string DescribeMagicalElixirState()
+    {
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            return "InventoryManager unavailable.";
+        }
+
+        var generalCount = inventoryManager->GetInventoryItemCount(MagicalElixirEventItemId, false);
+        var keyItemContainer = inventoryManager->GetInventoryContainer(InventoryType.KeyItems);
+        if (keyItemContainer == null)
+        {
+            return $"generalCount={generalCount} keyItemContainer=null";
+        }
+
+        InventoryItem* itemSlot = null;
+        for (var i = 0; i < keyItemContainer->Size; i++)
+        {
+            var candidate = keyItemContainer->GetInventorySlot(i);
+            if (candidate == null || candidate->IsEmpty() || candidate->ItemId != MagicalElixirEventItemId)
+            {
+                continue;
+            }
+
+            itemSlot = candidate;
+            break;
+        }
+
+        var slotSummary = itemSlot == null
+            ? "missing"
+            : $"itemId={itemSlot->ItemId} container={InventoryType.KeyItems} slot={itemSlot->Slot} quantity={itemSlot->Quantity} spiritbond={itemSlot->SpiritbondOrCollectability} condition={itemSlot->Condition}";
+
+        return $"generalCount={generalCount} keyItemsLoaded={keyItemContainer->IsLoaded} keyItemsSize={keyItemContainer->Size} keyItemsItemsNull={keyItemContainer->Items == null} slotInfo={slotSummary}";
+    }
 }
