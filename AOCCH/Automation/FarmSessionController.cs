@@ -9,6 +9,14 @@ namespace AOCCH.Automation;
 
 public sealed class FarmSessionController : IDisposable
 {
+    private enum InterruptedActivityKind
+    {
+        None,
+        Ce,
+        Fate,
+        PotFate,
+    }
+
     private static readonly TimeSpan IdleRescanInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
@@ -39,6 +47,9 @@ public sealed class FarmSessionController : IDisposable
     private bool pendingStop;
     private bool recoverAfterBuffRotation;
     private bool runBuffRotationAfterRecovery;
+    private InterruptedActivityKind interruptedActivity;
+    private uint interruptedTargetId;
+    private string interruptedTargetName = string.Empty;
 
     public FarmSessionController(
         IFramework framework,
@@ -153,6 +164,9 @@ public sealed class FarmSessionController : IDisposable
             lastIdleScanAt = DateTimeOffset.MinValue;
             recoverAfterBuffRotation = false;
             runBuffRotationAfterRecovery = false;
+            interruptedActivity = InterruptedActivityKind.None;
+            interruptedTargetId = 0;
+            interruptedTargetName = string.Empty;
         }
 
         logger.Info($"Farm session configuration: ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
@@ -165,6 +179,9 @@ public sealed class FarmSessionController : IDisposable
         lock (gate)
         {
             pendingStop = true;
+            interruptedActivity = InterruptedActivityKind.None;
+            interruptedTargetId = 0;
+            interruptedTargetName = string.Empty;
         }
 
         if (criticalEngagementAutomationController.IsRunning)
@@ -210,6 +227,9 @@ public sealed class FarmSessionController : IDisposable
             pendingStop = false;
             recoverAfterBuffRotation = false;
             runBuffRotationAfterRecovery = false;
+            interruptedActivity = InterruptedActivityKind.None;
+            interruptedTargetId = 0;
+            interruptedTargetName = string.Empty;
         }
 
         logger.Info($"Farm session reset: {reason}");
@@ -252,6 +272,7 @@ public sealed class FarmSessionController : IDisposable
         {
             if (currentState != FarmSessionState.WaitingForDeathRecovery)
             {
+                CaptureInterruptedActivity(currentState);
                 TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
             }
 
@@ -262,10 +283,22 @@ public sealed class FarmSessionController : IDisposable
         {
             if (!scanner.Snapshot.IsInSouthHorn)
             {
+                ClearInterruptedActivity();
                 TransitionTo(FarmSessionState.WaitingForSouthHorn, "Death recovery completed outside South Horn.", "Waiting for South Horn");
                 return;
             }
 
+            if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised && TryResumeInterruptedActivityAfterRaise())
+            {
+                return;
+            }
+
+            if (IsInterruptedPotFate() && potFarmController.IsRunning)
+            {
+                potFarmController.Stop("Death recovery completed without resuming interrupted pot FATE.");
+            }
+
+            ClearInterruptedActivity();
             StartRecoveryToBase("Death recovery completed; returning to Base Camp.");
             return;
         }
@@ -736,6 +769,130 @@ public sealed class FarmSessionController : IDisposable
             _ => null,
         };
 
+    private void CaptureInterruptedActivity(FarmSessionState currentState)
+    {
+        var activity = InterruptedActivityKind.None;
+        var targetId = 0u;
+        var targetName = string.Empty;
+
+        switch (currentState)
+        {
+            case FarmSessionState.RunningCe when criticalEngagementAutomationController.TargetCeId != 0:
+                activity = InterruptedActivityKind.Ce;
+                targetId = criticalEngagementAutomationController.TargetCeId;
+                targetName = criticalEngagementAutomationController.TargetCeName;
+                break;
+            case FarmSessionState.RunningFate when fateAutomationController.TargetFateId != 0:
+                activity = fateAutomationController.TargetIsPot ? InterruptedActivityKind.PotFate : InterruptedActivityKind.Fate;
+                targetId = fateAutomationController.TargetFateId;
+                targetName = fateAutomationController.TargetFateName;
+                break;
+            case FarmSessionState.RunningPots when potFarmController.State == PotFarmState.RunningPotFate && fateAutomationController.TargetFateId != 0:
+                activity = InterruptedActivityKind.PotFate;
+                targetId = fateAutomationController.TargetFateId;
+                targetName = fateAutomationController.TargetFateName;
+                break;
+        }
+
+        lock (gate)
+        {
+            interruptedActivity = activity;
+            interruptedTargetId = targetId;
+            interruptedTargetName = targetName;
+        }
+
+        if (activity != InterruptedActivityKind.None)
+        {
+            logger.Info($"[Farm {currentRunId}] captured interrupted {activity} target {targetName} ({targetId}) for death recovery.");
+        }
+    }
+
+    private bool TryResumeInterruptedActivityAfterRaise()
+    {
+        var snapshot = scanner.Snapshot;
+        InterruptedActivityKind activity;
+        uint targetId;
+        string targetName;
+
+        lock (gate)
+        {
+            activity = interruptedActivity;
+            targetId = interruptedTargetId;
+            targetName = interruptedTargetName;
+        }
+
+        if (activity == InterruptedActivityKind.None || targetId == 0)
+        {
+            return false;
+        }
+
+        switch (activity)
+        {
+            case InterruptedActivityKind.Ce:
+                var ceTarget = snapshot.FindCriticalEncounter(targetId);
+                if (ceTarget == null)
+                {
+                    logger.Info($"[Farm {currentRunId}] interrupted CE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    return false;
+                }
+
+                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted CE {ceTarget.Name} ({ceTarget.Id}) after raise.");
+                if (!criticalEngagementAutomationController.Start(ceTarget))
+                {
+                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted CE {ceTarget.Name} ({ceTarget.Id}) after raise: {criticalEngagementAutomationController.LastError}");
+                    return false;
+                }
+
+                ClearInterruptedActivity();
+                TransitionTo(FarmSessionState.RunningCe, $"Resumed CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}) after raise.", "Critical Engagement");
+                return true;
+            case InterruptedActivityKind.Fate:
+                var fateTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: false);
+                if (fateTarget == null)
+                {
+                    logger.Info($"[Farm {currentRunId}] interrupted FATE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    return false;
+                }
+
+                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted FATE {fateTarget.Name} ({fateTarget.Id}) after raise.");
+                if (!fateAutomationController.Start(fateTarget, FateRunCompletionBehavior.RecoverToBase))
+                {
+                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted FATE {fateTarget.Name} ({fateTarget.Id}) after raise: {fateAutomationController.LastError}");
+                    return false;
+                }
+
+                ClearInterruptedActivity();
+                TransitionTo(FarmSessionState.RunningFate, $"Resumed FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise.", "FATE");
+                return true;
+            case InterruptedActivityKind.PotFate:
+                if (!potFarmController.IsRunning || potFarmController.State != PotFarmState.RunningPotFate)
+                {
+                    logger.Info($"[Farm {currentRunId}] interrupted pot FATE {targetName} ({targetId}) can no longer resume in pot state {potFarmController.State}; falling back to Base Camp recovery.");
+                    return false;
+                }
+
+                var potTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: true);
+                if (potTarget == null)
+                {
+                    logger.Info($"[Farm {currentRunId}] interrupted pot FATE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    return false;
+                }
+
+                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted pot FATE {potTarget.Name} ({potTarget.Id}) after raise.");
+                if (!fateAutomationController.Start(potTarget, FateRunCompletionBehavior.CompleteInPlace))
+                {
+                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted pot FATE {potTarget.Name} ({potTarget.Id}) after raise: {fateAutomationController.LastError}");
+                    return false;
+                }
+
+                ClearInterruptedActivity();
+                TransitionTo(FarmSessionState.RunningPots, $"Resumed pot FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise.", "Running pots");
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private bool TryStartOrResumePotControl(DateTimeOffset now)
     {
         if (!potFarmController.NeedsControlNow(now, out _, out var reason))
@@ -813,8 +970,29 @@ public sealed class FarmSessionController : IDisposable
             pendingStop = false;
             recoverAfterBuffRotation = false;
             runBuffRotationAfterRecovery = false;
+            interruptedActivity = InterruptedActivityKind.None;
+            interruptedTargetId = 0;
+            interruptedTargetName = string.Empty;
         }
 
         logger.Warning($"[Farm {currentRunId}] {reason}");
+    }
+
+    private void ClearInterruptedActivity()
+    {
+        lock (gate)
+        {
+            interruptedActivity = InterruptedActivityKind.None;
+            interruptedTargetId = 0;
+            interruptedTargetName = string.Empty;
+        }
+    }
+
+    private bool IsInterruptedPotFate()
+    {
+        lock (gate)
+        {
+            return interruptedActivity == InterruptedActivityKind.PotFate;
+        }
     }
 }

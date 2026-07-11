@@ -100,6 +100,17 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
+    public bool TargetIsPot
+    {
+        get
+        {
+            lock (gate)
+            {
+                return targetIsPot;
+            }
+        }
+    }
+
     public string LastError
     {
         get

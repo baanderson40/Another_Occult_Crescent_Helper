@@ -1,4 +1,7 @@
-﻿using AOCCH.Data;
+﻿using System;
+using System.Threading;
+
+using AOCCH.Data;
 using AOCCH.Automation;
 using AOCCH.IPC;
 using AOCCH.Logging;
@@ -10,6 +13,7 @@ using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using AOCCH.Windows;
+using Dalamud.Game.ClientState.Conditions;
 
 namespace AOCCH;
 
@@ -103,7 +107,7 @@ public sealed class Plugin : IDalamudPlugin
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
@@ -118,7 +122,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, panic, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, panic, testkeyitem, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -228,6 +232,12 @@ public sealed class Plugin : IDalamudPlugin
                 PanicStopAll();
                 break;
             default:
+                if (normalizedArgs.StartsWith("testkeyitem", StringComparison.Ordinal))
+                {
+                    HandleTestKeyItemCommand(args);
+                    break;
+                }
+
                 Logger.Warning($"Unknown command argument: {args}");
                 PrintCommandHelp();
                 break;
@@ -245,7 +255,110 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
         ChatGui.Print("/aocch stop - Stop unified CE/FATE farm session");
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
+        ChatGui.Print("/aocch testkeyitem [slot|inventory|command|both] [wait] - Test Magical Elixir usage with detailed logs");
         ChatGui.Print("/aocch help - Show this help");
+    }
+
+    private void HandleTestKeyItemCommand(string rawArgs)
+    {
+        var tokens = rawArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var method = GameActionController.MagicalElixirUseMethod.Inventory;
+        var runBoth = false;
+        var waitForReady = false;
+
+        for (var i = 1; i < tokens.Length; i++)
+        {
+            switch (tokens[i].ToLowerInvariant())
+            {
+                case "slot":
+                    method = GameActionController.MagicalElixirUseMethod.Slot;
+                    break;
+                case "inventory":
+                    method = GameActionController.MagicalElixirUseMethod.Inventory;
+                    break;
+                case "command":
+                    method = GameActionController.MagicalElixirUseMethod.Command;
+                    break;
+                case "both":
+                    runBoth = true;
+                    break;
+                case "wait":
+                    waitForReady = true;
+                    break;
+                default:
+                    Logger.Warning($"Unknown testkeyitem option: {tokens[i]}");
+                    break;
+            }
+        }
+
+        Logger.Info($"Slash command action: test Magical Elixir use. mode={(runBoth ? "both" : method.ToString().ToLowerInvariant())} wait={waitForReady}.");
+        LogMagicalElixirDebugSnapshot("preflight");
+
+        if (waitForReady && !WaitForMagicalElixirReady())
+        {
+            Logger.Warning("Manual Magical Elixir test readiness wait timed out; continuing with the requested method(s).");
+            LogMagicalElixirDebugSnapshot("post-wait-timeout");
+        }
+        else if (waitForReady)
+        {
+            Logger.Info("Manual Magical Elixir test readiness conditions are satisfied.");
+            LogMagicalElixirDebugSnapshot("post-wait-ready");
+        }
+
+        if (runBoth)
+        {
+            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Slot, "manual test slot attempt");
+            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Inventory, "manual test inventory attempt");
+            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Command, "manual test command attempt");
+            return;
+        }
+
+        RunMagicalElixirDebugAttempt(method, $"manual test {method.ToString().ToLowerInvariant()} attempt");
+    }
+
+    private void RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod method, string description)
+    {
+        Logger.Info($"Manual Magical Elixir test attempt starting. method={method.ToString().ToLowerInvariant()} description={description}.");
+        LogMagicalElixirDebugSnapshot($"before-{method.ToString().ToLowerInvariant()}");
+        var success = GameActionController.TryUseMagicalElixir(method, description);
+        Logger.Info($"Manual Magical Elixir test attempt finished. method={method.ToString().ToLowerInvariant()} success={success}.");
+        LogMagicalElixirDebugSnapshot($"after-{method.ToString().ToLowerInvariant()}");
+    }
+
+    private bool WaitForMagicalElixirReady()
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (!Condition[ConditionFlag.InCombat]
+                && !Condition[ConditionFlag.Casting]
+                && !Condition[ConditionFlag.BetweenAreas]
+                && !Condition[ConditionFlag.OccupiedInQuestEvent])
+            {
+                return true;
+            }
+
+            Thread.Sleep(100);
+        }
+
+        return false;
+    }
+
+    private void LogMagicalElixirDebugSnapshot(string label)
+    {
+        var snapshot = Scanner.Snapshot;
+        var treasureSnapshot = TreasureHintTracker.Snapshot;
+        var player = ObjectTable.LocalPlayer;
+        var position = player?.Position;
+        var positionText = position == null
+            ? "unavailable"
+            : $"<{position.Value.X:0.0}, {position.Value.Y:0.0}, {position.Value.Z:0.0}>";
+
+        Logger.Info($"Magical Elixir debug [{label}] time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} hp={player?.CurrentHp ?? 0}.");
+        Logger.Info($"Magical Elixir debug [{label}] conditions: inCombat={Condition[ConditionFlag.InCombat]} casting={Condition[ConditionFlag.Casting]} betweenAreas={Condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={Condition[ConditionFlag.OccupiedInQuestEvent]} mounted={Condition[ConditionFlag.Mounted]} occupied={Condition[ConditionFlag.Occupied]}.");
+        Logger.Info($"Magical Elixir debug [{label}] controllers: movement={MovementController.State} fate={FateAutomationController.State} pot={PotFarmController.State} farm={FarmSessionController.State} treasureSearch={TreasureSearchController.State} cofferRunning={CofferInteractionController.IsRunning}.");
+        Logger.Info($"Magical Elixir debug [{label}] treasure: buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s activePot={(snapshot.ActivePotFate == null ? "none" : $"{snapshot.ActivePotFate.Name} ({snapshot.ActivePotFate.Id})")} sessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
+        Logger.Info($"Magical Elixir debug [{label}] inventory: {GameActionController.DescribeMagicalElixirState()}");
     }
     
     public void ToggleConfigUi()

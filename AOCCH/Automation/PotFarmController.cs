@@ -18,6 +18,7 @@ public sealed class PotFarmController : IDisposable
     private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TreasureHintWaitTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TreasureElixirRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan TreasureCenterSettleDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LeaveTransitionTimeout = TimeSpan.FromSeconds(15);
     private const int MaximumTreasureElixirAttempts = 3;
     private const int PotWaitPointCandidateCount = 10;
@@ -29,6 +30,7 @@ public sealed class PotFarmController : IDisposable
     private readonly MovementController movementController;
     private readonly GameActionController gameActionController;
     private readonly FateAutomationController fateAutomationController;
+    private readonly DeathRecoveryController deathRecoveryController;
     private readonly InstancedContentController instancedContentController;
     private readonly PotCycleTracker potCycleTracker;
     private readonly TreasureHintTracker treasureHintTracker;
@@ -57,9 +59,12 @@ public sealed class PotFarmController : IDisposable
     private DateTimeOffset treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset treasureHintDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+    private DateTimeOffset treasureCenterArrivedAt = DateTimeOffset.MinValue;
     private DateTimeOffset leaveRequestedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private int treasureElixirAttemptCount;
+    private int treasureAttemptBaselineSessionId;
+    private int treasureAttemptBaselineRevision;
     private bool leavePending;
     private bool pendingStop;
     private bool resumeBootstrapAfterRecovery;
@@ -72,6 +77,7 @@ public sealed class PotFarmController : IDisposable
         MovementController movementController,
         GameActionController gameActionController,
         FateAutomationController fateAutomationController,
+        DeathRecoveryController deathRecoveryController,
         InstancedContentController instancedContentController,
         PotCycleTracker potCycleTracker,
         TreasureHintTracker treasureHintTracker,
@@ -88,6 +94,7 @@ public sealed class PotFarmController : IDisposable
         this.movementController = movementController;
         this.gameActionController = gameActionController;
         this.fateAutomationController = fateAutomationController;
+        this.deathRecoveryController = deathRecoveryController;
         this.instancedContentController = instancedContentController;
         this.potCycleTracker = potCycleTracker;
         this.treasureHintTracker = treasureHintTracker;
@@ -327,9 +334,12 @@ public sealed class PotFarmController : IDisposable
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
             treasureHintDeadlineAt = DateTimeOffset.MinValue;
             lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            treasureCenterArrivedAt = DateTimeOffset.MinValue;
             leaveRequestedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
             treasureElixirAttemptCount = 0;
+            treasureAttemptBaselineSessionId = 0;
+            treasureAttemptBaselineRevision = 0;
             leavePending = false;
             lastError = string.Empty;
             lastResult = PotFarmRunResult.None;
@@ -391,9 +401,12 @@ public sealed class PotFarmController : IDisposable
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
             treasureHintDeadlineAt = DateTimeOffset.MinValue;
             lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            treasureCenterArrivedAt = DateTimeOffset.MinValue;
             leaveRequestedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
             treasureElixirAttemptCount = 0;
+            treasureAttemptBaselineSessionId = 0;
+            treasureAttemptBaselineRevision = 0;
             leavePending = false;
             pendingStop = false;
             resumeBootstrapAfterRecovery = false;
@@ -420,6 +433,17 @@ public sealed class PotFarmController : IDisposable
         {
             return;
         }
+
+        if (currentState == PotFarmState.RunningPotFate
+            && !fateAutomationController.IsRunning
+            && (deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed
+                || deathRecoveryController.LastRecoveryMethod != DeathRecoveryMethod.None))
+        {
+            logger.DebugThrottled("pot-death-recovery-hold", WaitLogInterval, "Pot farm is holding the interrupted pot FATE while death recovery completes.");
+            return;
+        }
+
+        logger.ResetThrottle("pot-death-recovery-hold");
 
         var scannerSnapshot = scanner.Snapshot;
         if (leavePending)
@@ -693,11 +717,14 @@ public sealed class PotFarmController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached completed pot FATE center.");
-                if (!TryUseMagicalElixir($"Moved near completed FATE center for {treasurePotName} ({treasurePotId}) at <{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}>."))
+                lock (gate)
                 {
-                    return;
+                    treasureCenterArrivedAt = DateTimeOffset.UtcNow;
                 }
 
+                logger.ResetThrottle("pot-treasure-settle");
+                TransitionTo(PotFarmState.TreasurePending, $"Reached completed FATE center for {treasurePotName} ({treasurePotId}); settling before the initial Magical Elixir use.");
+                
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
@@ -748,8 +775,16 @@ public sealed class PotFarmController : IDisposable
         }
 
         var treasureSnapshot = treasureHintTracker.Snapshot;
-        if (!treasureSearchController.IsRunning && treasureSnapshot.HasInitialHint)
+        if (!treasureSearchController.IsRunning
+            && treasureHintTracker.TryGetLatestEventSince(treasureAttemptBaselineSessionId, treasureAttemptBaselineRevision, out var latestEvent)
+            && latestEvent != null)
         {
+            if (latestEvent.Kind != TreasureHintKind.Hint)
+            {
+                logger.Info($"Treasure startup observed event kind {latestEvent.Kind} after Magical Elixir attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}; waiting for follow-up handling through treasure tracking.");
+                return;
+            }
+
             if (!treasureSearchController.Start(treasurePotId, treasurePotName))
             {
                 if (treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted)
@@ -775,6 +810,15 @@ public sealed class PotFarmController : IDisposable
 
         if (treasureElixirAttemptCount == 0)
         {
+            if (treasureCenterArrivedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - treasureCenterArrivedAt < TreasureCenterSettleDelay)
+            {
+                logger.DebugThrottled(
+                    "pot-treasure-settle",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Pot treasure startup is settling at the completed FATE center for {treasurePotName} ({treasurePotId}) before the initial Magical Elixir use. elapsed={(DateTimeOffset.UtcNow - treasureCenterArrivedAt).TotalSeconds:0.00}s required={TreasureCenterSettleDelay.TotalSeconds:0.00}s.");
+                return;
+            }
+
             if (!TryUseMagicalElixir($"Treasure phase is active for {treasurePotName} ({treasurePotId}) but no Magical Elixir attempt has been recorded yet."))
             {
                 return;
@@ -810,7 +854,7 @@ public sealed class PotFarmController : IDisposable
         logger.DebugThrottled(
             "pot-treasure-pending",
             WaitLogInterval,
-            $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. elixirAttempts={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} hintDeadline={treasureHintDeadlineAt:O} session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
+            $"Treasure phase is holding farm-session fallback. Cache Me If You Can remains active for {scannerSnapshot.TreasureBuffRemainingSeconds:0}s. elixirAttempts={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} hintDeadline={treasureHintDeadlineAt:O} session={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} baselineSession={treasureAttemptBaselineSessionId} baselineRevision={treasureAttemptBaselineRevision} hint={treasureSnapshot.GetHintSummary()}.");
     }
 
     private void TickRunningTreasureSearch()
@@ -1177,7 +1221,10 @@ public sealed class PotFarmController : IDisposable
             treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
             treasureHintDeadlineAt = DateTimeOffset.MinValue;
             lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            treasureCenterArrivedAt = DateTimeOffset.MinValue;
             treasureElixirAttemptCount = 0;
+            treasureAttemptBaselineSessionId = 0;
+            treasureAttemptBaselineRevision = 0;
         }
     }
 
@@ -1193,24 +1240,31 @@ public sealed class PotFarmController : IDisposable
             return true;
         }
 
-        if (!gameActionController.TryUseMagicalElixir("pot treasure startup"))
+        if (!gameActionController.HasMagicalElixir())
         {
-            SetFailure($"Failed to use Magical Elixir during pot treasure startup.");
+            SetFailure("Failed to use Magical Elixir during pot treasure startup because the item is unavailable.");
             return false;
         }
+
+        var treasureSnapshot = treasureHintTracker.Snapshot;
+        var used = gameActionController.TryUseMagicalElixirViaInventory("pot treasure startup");
 
         lock (gate)
         {
             treasureElixirAttemptCount++;
             lastTreasureElixirAttemptAt = now;
             treasureHintDeadlineAt = now + TreasureHintWaitTimeout;
+            treasureAttemptBaselineSessionId = treasureSnapshot.SessionId;
+            treasureAttemptBaselineRevision = treasureSnapshot.Revision;
+            treasureCenterArrivedAt = DateTimeOffset.MinValue;
         }
 
         logger.ResetThrottle("pot-treasure-pending");
         logger.ResetThrottle("pot-treasure-elixir-retry");
+        logger.Info($"Treasure startup Magical Elixir attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}: inventoryUseAccepted={used} baselineSession={treasureAttemptBaselineSessionId} baselineRevision={treasureAttemptBaselineRevision} hintDeadline={treasureHintDeadlineAt:O}.");
         TransitionTo(
             PotFarmState.TreasurePending,
-            $"{reason} Used Magical Elixir; waiting for an initial treasure hint (attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}).");
+            $"{reason} Attempted Magical Elixir use; waiting for a new treasure event after baseline revision {treasureAttemptBaselineRevision} in session {treasureAttemptBaselineSessionId} (attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}).");
         return true;
     }
 

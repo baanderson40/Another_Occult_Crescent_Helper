@@ -29,6 +29,7 @@ public sealed class DeathRecoveryController : IDisposable
     private DeathRecoveryState state = DeathRecoveryState.Idle;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
+    private DeathRecoveryMethod lastRecoveryMethod = DeathRecoveryMethod.None;
     private bool raiseDetected;
     private bool cleanupApplied;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
@@ -104,6 +105,17 @@ public sealed class DeathRecoveryController : IDisposable
         }
     }
 
+    public DeathRecoveryMethod LastRecoveryMethod
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRecoveryMethod;
+            }
+        }
+    }
+
     public TimeSpan Elapsed
     {
         get
@@ -127,6 +139,7 @@ public sealed class DeathRecoveryController : IDisposable
             state = DeathRecoveryState.Idle;
             lastTransition = "Idle";
             lastError = string.Empty;
+            lastRecoveryMethod = DeathRecoveryMethod.None;
             raiseDetected = false;
             cleanupApplied = false;
             stateEnteredAt = DateTimeOffset.MinValue;
@@ -145,6 +158,7 @@ public sealed class DeathRecoveryController : IDisposable
         {
             state = DeathRecoveryState.Stopped;
             lastTransition = "Death recovery disposed.";
+            lastRecoveryMethod = DeathRecoveryMethod.None;
         }
     }
 
@@ -160,7 +174,11 @@ public sealed class DeathRecoveryController : IDisposable
 
             if (State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped)
             {
-                FinishRecovery("Player revived.");
+                FinishRecovery(
+                    "Player revived.",
+                    State == DeathRecoveryState.Releasing
+                        ? DeathRecoveryMethod.Released
+                        : DeathRecoveryMethod.Raised);
             }
 
             return;
@@ -201,6 +219,7 @@ public sealed class DeathRecoveryController : IDisposable
             deathDetectedAt = DateTimeOffset.UtcNow;
             raiseDetectedAt = DateTimeOffset.MinValue;
             actionStartedAt = DateTimeOffset.MinValue;
+            lastRecoveryMethod = DeathRecoveryMethod.None;
             raiseDetected = false;
             cleanupApplied = false;
             lastError = string.Empty;
@@ -277,7 +296,7 @@ public sealed class DeathRecoveryController : IDisposable
         if (!IsPlayerDead())
         {
             logger.ResetThrottle("death-accepting-raise");
-            FinishRecovery("Raised successfully.");
+            FinishRecovery("Raised successfully.", DeathRecoveryMethod.Raised);
             return;
         }
 
@@ -324,7 +343,7 @@ public sealed class DeathRecoveryController : IDisposable
         if (!IsPlayerDead())
         {
             logger.ResetThrottle("death-releasing");
-            FinishRecovery("Released successfully.");
+            FinishRecovery("Released successfully.", DeathRecoveryMethod.Released);
             return;
         }
 
@@ -351,11 +370,12 @@ public sealed class DeathRecoveryController : IDisposable
         logger.Info("Death recovery detected raise status.");
     }
 
-    private void FinishRecovery(string reason)
+    private void FinishRecovery(string reason, DeathRecoveryMethod recoveryMethod)
     {
         TransitionTo(DeathRecoveryState.Recovered, reason);
         lock (gate)
         {
+            lastRecoveryMethod = recoveryMethod;
             raiseDetected = false;
             cleanupApplied = false;
             deathDetectedAt = DateTimeOffset.MinValue;
