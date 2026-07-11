@@ -16,6 +16,9 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReturnCombatSettleTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
@@ -57,6 +60,8 @@ public sealed class MovementController : IDisposable
     private bool transitionObserved;
     private bool startedAwayFromTransitionDestination;
     private bool returnPromptHandled;
+    private DateTimeOffset returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastReturnReadyPollAt = DateTimeOffset.MinValue;
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
     private MovementState state = MovementState.Idle;
@@ -186,6 +191,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
             state = MovementState.Idle;
@@ -291,6 +298,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
             state = plannedRoute.Steps[0].Kind == RouteStepKind.Return
@@ -336,6 +345,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
             state = route.Steps.Count > 0 && route.Steps[0].Kind == RouteStepKind.Return
@@ -385,6 +396,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
             state = MovementState.Pathfinding;
@@ -416,6 +429,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = reason;
         }
@@ -503,15 +518,63 @@ public sealed class MovementController : IDisposable
 
         if (!stepStarted)
         {
-            if (condition[ConditionFlag.InCombat])
-            {
-                SetFailure(MovementState.Failed, "Cannot use Return while in combat.");
-                return;
-            }
-
             if (objectTable.LocalPlayer?.CurrentHp == 0)
             {
                 SetFailure(MovementState.Failed, "Cannot use Return while dead.");
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (returnReadyWaitStartedAt == DateTimeOffset.MinValue)
+            {
+                lock (gate)
+                {
+                    if (returnReadyWaitStartedAt == DateTimeOffset.MinValue)
+                    {
+                        returnReadyWaitStartedAt = now;
+                        lastReturnReadyPollAt = DateTimeOffset.MinValue;
+                    }
+                }
+            }
+
+            var returnWaitElapsed = now - returnReadyWaitStartedAt;
+            if (condition[ConditionFlag.InCombat])
+            {
+                if (returnWaitElapsed < ReturnCombatSettleTimeout)
+                {
+                    logger.DebugThrottled(
+                        BuildStepLogKey("return-combat-settle"),
+                        TimeSpan.FromMilliseconds(250),
+                        $"Waiting for combat to clear before Return step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnCombatSettleTimeout.TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+                    return;
+                }
+
+                SetFailure(MovementState.Failed, $"Timed out waiting for combat to clear before Return for step: {step.Description}.");
+                return;
+            }
+
+            if (returnWaitElapsed >= ReturnReadyTimeout)
+            {
+                SetFailure(MovementState.Failed, $"Timed out waiting for Return to become available for step: {step.Description}.");
+                return;
+            }
+
+            if (lastReturnReadyPollAt != DateTimeOffset.MinValue && now - lastReturnReadyPollAt < ReturnReadyPollInterval)
+            {
+                return;
+            }
+
+            lock (gate)
+            {
+                lastReturnReadyPollAt = now;
+            }
+
+            if (!gameActionController.CanUseGeneralAction(step.GeneralActionId))
+            {
+                logger.DebugThrottled(
+                    BuildStepLogKey("return-ready"),
+                    ReturnReadyPollInterval,
+                    $"Waiting for Return to become available for step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnReadyTimeout.TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
                 return;
             }
 
@@ -536,6 +599,8 @@ public sealed class MovementController : IDisposable
                 startedAwayFromTransitionDestination = distance > TransitionCompletionDistance;
                 transitionObserved = false;
                 returnPromptHandled = false;
+                returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+                lastReturnReadyPollAt = DateTimeOffset.MinValue;
                 stableSince = DateTimeOffset.MinValue;
             }
 
@@ -930,6 +995,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             if (currentStepIndex >= (plannedRoute?.Steps.Count ?? 0))
             {
@@ -960,6 +1027,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
         }
@@ -989,6 +1058,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = reason;
             progressDistance = float.MaxValue;
@@ -1024,6 +1095,8 @@ public sealed class MovementController : IDisposable
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
+            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+            lastReturnReadyPollAt = DateTimeOffset.MinValue;
             stableSince = DateTimeOffset.MinValue;
             lastError = string.Empty;
             state = MovementState.Idle;
