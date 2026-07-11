@@ -124,6 +124,25 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = DangerousTreasureTravelState.Idle;
+            lastResult = DangerousTreasureTravelResult.None;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            activeCandidateLabel = string.Empty;
+            finalDestination = Vector3.Zero;
+            arrivalTolerance = 0f;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            hideThresholdTravelRequired = false;
+            ninjaGearsetEquippedByController = false;
+        }
+
+        logger.Info($"Dangerous treasure travel reset: {reason}");
+    }
+
     public bool IsRunning
         => State is not DangerousTreasureTravelState.Idle
             and not DangerousTreasureTravelState.Arrived

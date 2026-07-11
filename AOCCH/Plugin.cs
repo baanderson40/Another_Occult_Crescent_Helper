@@ -67,6 +67,7 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow MainWindow { get; init; }
     private DebugWindow DebugWindow { get; init; }
     private bool isDisposing;
+    private bool wasInSouthHorn;
 
     public Plugin()
     {
@@ -129,6 +130,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        wasInSouthHorn = ClientState.TerritoryType == SouthHornTerritoryTypeId;
         ClientState.TerritoryChanged += OnTerritoryChanged;
 
         Logger.Info($"{PluginInterface.Manifest.Name} loaded.");
@@ -286,6 +288,9 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        var leavingSouthHorn = wasInSouthHorn && territoryType != SouthHornTerritoryTypeId;
+        wasInSouthHorn = territoryType == SouthHornTerritoryTypeId;
+
         if (territoryType == SouthHornTerritoryTypeId)
         {
             if (!MainWindow.IsOpen)
@@ -302,6 +307,79 @@ public sealed class Plugin : IDalamudPlugin
             MainWindow.IsOpen = false;
             Logger.Info($"Main window auto-closed on territory change to {territoryType}.");
         }
+
+        if (leavingSouthHorn)
+        {
+            ResetInstanceStateForTerritoryExit(territoryType);
+        }
+    }
+
+    private void ResetInstanceStateForTerritoryExit(uint territoryType)
+    {
+        var reason = $"Left South Horn for territory {territoryType}; resetting instance state.";
+
+        if (FarmSessionController.IsRunning)
+        {
+            FarmSessionController.Stop(reason);
+        }
+
+        if (PotFarmController.IsRunning)
+        {
+            PotFarmController.Stop(reason);
+        }
+
+        if (CriticalEngagementAutomationController.IsRunning)
+        {
+            CriticalEngagementAutomationController.Stop(reason);
+        }
+
+        if (FateAutomationController.IsRunning)
+        {
+            FateAutomationController.Stop(reason);
+        }
+
+        if (BuffRotationController.IsRunning)
+        {
+            BuffRotationController.Stop(reason);
+        }
+
+        if (CofferInteractionController.IsRunning)
+        {
+            CofferInteractionController.Stop(reason);
+        }
+
+        if (TreasureSearchController.IsRunning)
+        {
+            TreasureSearchController.Stop(reason);
+        }
+
+        if (DangerousTreasureTravelController.IsRunning)
+        {
+            DangerousTreasureTravelController.Stop(reason);
+        }
+
+        if (MovementController.State is not MovementState.Idle and not MovementState.Stopped)
+        {
+            MovementController.Stop(reason);
+        }
+
+        AutorotationController.ReleaseOwnership(reason);
+
+        FarmSessionController.ResetInstanceState(reason);
+        PotFarmController.ResetInstanceState(reason);
+        CofferInteractionController.ResetInstanceState(reason);
+        TreasureSearchController.ResetInstanceState(reason);
+        DangerousTreasureTravelController.ResetInstanceState(reason);
+        TreasureHintTracker.ResetInstanceState(reason);
+        PotCycleTracker.ResetInstanceState(reason);
+        DeathRecoveryController.ResetInstanceState(reason);
+        FateAutomationController.ResetInstanceState(reason);
+        CriticalEngagementAutomationController.ResetInstanceState(reason);
+        BuffRotationController.ResetInstanceState(reason);
+        AutorotationController.ResetInstanceState(reason);
+        MovementController.ResetInstanceState(reason);
+
+        Logger.Info(reason);
     }
 
     public void PanicStopAll()

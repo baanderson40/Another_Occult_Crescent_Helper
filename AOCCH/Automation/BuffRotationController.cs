@@ -186,6 +186,32 @@ public sealed class BuffRotationController : IDisposable
             and not BuffRotationState.Failed
             and not BuffRotationState.CriticalFailed;
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = BuffRotationState.Idle;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            currentAction = string.Empty;
+            lastContext = string.Empty;
+            missingRequiredStatuses = string.Empty;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            originalSupportJob = 0;
+            currentSupportJob = 0;
+            pendingSupportJobRestore = null;
+            restoreRequested = false;
+            supportJobLevels = [];
+            currentEntryIndex = 0;
+            currentVerifyAttempt = 0;
+            dismountAttempt = 0;
+            moveAttemptIndex = 0;
+            moveTargets = [];
+        }
+
+        logger.Info($"Buff rotation reset: {reason}");
+    }
+
     public bool Start(string context = "manual")
     {
         if (IsRunning)

@@ -177,6 +177,23 @@ public sealed class CofferInteractionController : IDisposable
         TransitionTo(CofferInteractionState.Stopped, reason, error: reason, result: CofferInteractionResult.Stopped);
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = CofferInteractionState.Idle;
+            lastResult = CofferInteractionResult.None;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            activeMatch = null;
+            confirmationDeadlineAt = DateTimeOffset.MinValue;
+            interactionAttemptCount = 0;
+            missingConfirmationCount = 0;
+        }
+
+        logger.Info($"Coffer interaction reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

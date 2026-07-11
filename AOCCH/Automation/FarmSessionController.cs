@@ -196,6 +196,25 @@ public sealed class FarmSessionController : IDisposable
     public void PanicStop()
         => Stop("Farm panic stop requested.");
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = FarmSessionState.Idle;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            currentActivity = "None";
+            currentRunId = string.Empty;
+            lastIdleScanAt = DateTimeOffset.MinValue;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            pendingStop = false;
+            recoverAfterBuffRotation = false;
+            runBuffRotationAfterRecovery = false;
+        }
+
+        logger.Info($"Farm session reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

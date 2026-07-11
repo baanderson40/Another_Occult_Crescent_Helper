@@ -161,6 +161,39 @@ public sealed class MovementController : IDisposable
     public bool CanUseReturnAction
         => gameActionController.CanUseGeneralAction(GameActionController.ReturnActionId);
 
+    public void ResetInstanceState(string reason)
+    {
+        vnavmesh.Stop();
+        if (lifestreamOwned && lifestream.IsBusy())
+        {
+            lifestream.Abort();
+        }
+
+        lock (gate)
+        {
+            plannedRoute = null;
+            currentStepIndex = 0;
+            routeStartedAt = DateTimeOffset.MinValue;
+            stepStartedAt = DateTimeOffset.MinValue;
+            lastProgressAt = DateTimeOffset.MinValue;
+            lastDistance = float.MaxValue;
+            progressDistance = float.MaxValue;
+            stepStarted = false;
+            mountAttempted = false;
+            dismountAttempted = false;
+            stepAttemptCount = 0;
+            lifestreamOwned = false;
+            transitionObserved = false;
+            startedAwayFromTransitionDestination = false;
+            returnPromptHandled = false;
+            stableSince = DateTimeOffset.MinValue;
+            lastError = string.Empty;
+            state = MovementState.Idle;
+        }
+
+        logger.Info($"Movement reset: {reason}");
+    }
+
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 

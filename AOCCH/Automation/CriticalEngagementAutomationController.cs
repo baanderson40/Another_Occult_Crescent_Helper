@@ -191,6 +191,26 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         logger.Info($"CE automation stopped: {reason}");
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = CriticalEngagementAutomationState.Idle;
+            targetCeId = 0;
+            targetCeName = string.Empty;
+            lastError = string.Empty;
+            lastTransition = "Idle";
+            lastResult = AutomationRunResult.None;
+            lastCombatSeenAt = DateTimeOffset.MinValue;
+            returnTravelFallbackAttempted = false;
+            returnRecoveryFallbackAttempted = false;
+            ceWaitPoint = default;
+            ceWaitPointArrivalTolerance = 0f;
+        }
+
+        logger.Info($"CE automation reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

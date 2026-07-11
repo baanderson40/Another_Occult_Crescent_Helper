@@ -289,6 +289,22 @@ public sealed class AutorotationController : IDisposable
         ResetOwnershipState($"Cleared BossMod preset for {reason}.");
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            hasOwnership = false;
+            changedPreset = false;
+            initialPreset = string.Empty;
+            ownedPreset = string.Empty;
+            lastKnownActivePreset = string.Empty;
+            lastError = string.Empty;
+            lastStatus = "Idle";
+        }
+
+        logger.Info($"Autorotation reset: {reason}");
+    }
+
     private bool ProbeAvailability()
     {
         var available = bossMod.IsAvailable();

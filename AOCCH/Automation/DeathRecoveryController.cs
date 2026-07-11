@@ -120,6 +120,24 @@ public sealed class DeathRecoveryController : IDisposable
         }
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = DeathRecoveryState.Idle;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            raiseDetected = false;
+            cleanupApplied = false;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            deathDetectedAt = DateTimeOffset.MinValue;
+            raiseDetectedAt = DateTimeOffset.MinValue;
+            actionStartedAt = DateTimeOffset.MinValue;
+        }
+
+        logger.Info($"Death recovery reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

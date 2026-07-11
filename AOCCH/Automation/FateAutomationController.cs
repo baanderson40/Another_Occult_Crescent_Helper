@@ -210,6 +210,35 @@ public sealed class FateAutomationController : IDisposable
         logger.Info($"FATE automation stopped: {reason}");
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = FateAutomationState.Idle;
+            targetFateId = 0;
+            targetFateName = string.Empty;
+            targetIsPot = false;
+            completionBehavior = FateRunCompletionBehavior.RecoverToBase;
+            lastError = string.Empty;
+            lastTransition = "Idle";
+            lastCombatSeenAt = DateTimeOffset.MinValue;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            lastMonitorLogAt = DateTimeOffset.MinValue;
+            lastLoggedProgress = -1;
+            lastLoggedStateCode = -1;
+            returnTravelFallbackAttempted = false;
+            returnRecoveryFallbackAttempted = false;
+            lastObservedProgress = -1;
+            lastObservedStateCode = -1;
+            lastObservedState = string.Empty;
+            monitorStartedAt = DateTimeOffset.MinValue;
+            autorotationApplied = false;
+            lastResult = AutomationRunResult.None;
+        }
+
+        logger.Info($"FATE automation reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

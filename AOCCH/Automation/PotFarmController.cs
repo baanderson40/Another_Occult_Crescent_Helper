@@ -371,6 +371,39 @@ public sealed class PotFarmController : IDisposable
         logger.Info($"Pot farm stopped: {reason}");
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = PotFarmState.Idle;
+            lastResult = PotFarmRunResult.None;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            currentPotName = string.Empty;
+            currentPotId = 0;
+            currentPotCenter = Vector3.Zero;
+            hasCurrentPotCenter = false;
+            treasurePotName = string.Empty;
+            treasurePotId = 0;
+            treasurePotCenter = Vector3.Zero;
+            hasTreasurePotContext = false;
+            waitDeadlineAt = DateTimeOffset.MinValue;
+            treasureBuffWaitDeadlineAt = DateTimeOffset.MinValue;
+            treasureHintDeadlineAt = DateTimeOffset.MinValue;
+            lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
+            leaveRequestedAt = DateTimeOffset.MinValue;
+            stateEnteredAt = DateTimeOffset.MinValue;
+            treasureElixirAttemptCount = 0;
+            leavePending = false;
+            pendingStop = false;
+            resumeBootstrapAfterRecovery = false;
+            completionResultAfterRecovery = PotFarmRunResult.None;
+            lastInstanceTimeDecision = new();
+        }
+
+        logger.Info($"Pot farm reset: {reason}");
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

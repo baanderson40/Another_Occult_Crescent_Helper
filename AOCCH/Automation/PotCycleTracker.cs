@@ -71,6 +71,9 @@ public sealed class PotCycleTracker : IDisposable
         logger.Info($"Pot cycle tracker reset: {reason}");
     }
 
+    public void ResetInstanceState(string reason)
+        => Reset(reason);
+
     private void OnFrameworkUpdate(IFramework _)
     {
         var scannerSnapshot = scanner.Snapshot;

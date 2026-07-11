@@ -259,6 +259,30 @@ public sealed class TreasureSearchController : IDisposable
         TransitionTo(TreasureSearchState.Stopped, reason, error: reason, result: TreasureSearchRunResult.Stopped);
     }
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            state = TreasureSearchState.Idle;
+            lastResult = TreasureSearchRunResult.None;
+            lastTransition = "Idle";
+            lastError = string.Empty;
+            activeFateId = 0;
+            activeFateName = string.Empty;
+            activeGroupKey = string.Empty;
+            currentCandidateIndex = -1;
+            consumedHintRevision = 0;
+            lastHandoffReason = string.Empty;
+            candidateTravelDeadlineAt = DateTimeOffset.MinValue;
+            activeVisibleCofferMatch = null;
+            activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
+        }
+
+        logger.Info($"Treasure search reset: {reason}");
+    }
+
     public bool StartNextCandidateAfterInteractionLoss(string reason)
     {
         if (State != TreasureSearchState.ReadyForInteraction)

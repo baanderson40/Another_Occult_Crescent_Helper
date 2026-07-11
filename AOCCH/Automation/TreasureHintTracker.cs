@@ -81,6 +81,22 @@ public sealed class TreasureHintTracker : IDisposable
     public bool HasInitialHint
         => Snapshot.HasInitialHint;
 
+    public void ResetInstanceState(string reason)
+    {
+        lock (gate)
+        {
+            snapshot = new TreasureHintSnapshot
+            {
+                LastTransition = "Idle",
+                LastResetReason = reason,
+            };
+            lastTreasureBuffState = false;
+            lastProcessedScannerUpdate = DateTimeOffset.MinValue;
+        }
+
+        logger.Info($"Treasure hint tracker reset: {reason}");
+    }
+
     public void Dispose()
     {
         chatGui.ChatMessage -= OnChatMessage;
