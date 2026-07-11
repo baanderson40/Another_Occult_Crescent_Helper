@@ -4,6 +4,9 @@ public enum TreasureSearchState
 {
     Idle,
     TravelingToCandidate,
+    ProbingCandidate,
+    RefiningCandidate,
+    AcquiringRevealedCoffer,
     ReadyForInteraction,
     CandidatesExhausted,
     Stopped,

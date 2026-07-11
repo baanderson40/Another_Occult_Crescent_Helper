@@ -860,12 +860,22 @@ public sealed class PotFarmController : IDisposable
     private void TickRunningTreasureSearch()
     {
         var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.HasTreasureBuff)
+        var searchState = treasureSearchController.State;
+        var postRevealTreasureState = searchState is TreasureSearchState.AcquiringRevealedCoffer or TreasureSearchState.ReadyForInteraction;
+        if (!scannerSnapshot.HasTreasureBuff && !postRevealTreasureState)
         {
             treasureSearchController.Stop("Treasure buff expired during treasure traversal.");
             ClearTreasurePotContext();
             BeginRecoveryToBase("Treasure buff expired during treasure traversal; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
             return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff && postRevealTreasureState)
+        {
+            logger.DebugThrottled(
+                "pot-treasure-post-reveal",
+                WaitLogInterval,
+                $"Treasure buff expired after reveal for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "none"}; continuing {searchState}.");
         }
 
         if (treasureSearchController.IsRunning)
@@ -944,15 +954,6 @@ public sealed class PotFarmController : IDisposable
 
     private void TickRunningCofferInteraction()
     {
-        var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.HasTreasureBuff)
-        {
-            cofferInteractionController.Stop("Treasure buff expired during coffer interaction.");
-            ClearTreasurePotContext();
-            BeginRecoveryToBase("Treasure buff expired during coffer interaction; returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.TreasurePending);
-            return;
-        }
-
         if (cofferInteractionController.IsRunning)
         {
             logger.DebugThrottled(
