@@ -126,6 +126,12 @@ public sealed class RoutePlanner
         route = new PlannedRoute();
         failureReason = string.Empty;
 
+        if (IsZeroVector(destination))
+        {
+            failureReason = $"Destination is invalid for {targetDescription}: {FormatVector(destination)}.";
+            return false;
+        }
+
         var directDistance = CalculateFlatDistance(playerPosition, destination);
         var travelSpeed = MathF.Max(data.MountedTravelSpeed, 1f);
         if (data.Aethernets.Count == 0)
@@ -476,6 +482,12 @@ public sealed class RoutePlanner
         var deltaZ = left.Z - right.Z;
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
+
+    private static bool IsZeroVector(Vector3 value)
+        => value.X == 0f && value.Y == 0f && value.Z == 0f;
+
+    private static string FormatVector(Vector3 value)
+        => $"<{value.X:0.000}, {value.Y:0.000}, {value.Z:0.000}>";
 
     private static string FormatAethernetName(string name)
         => name switch

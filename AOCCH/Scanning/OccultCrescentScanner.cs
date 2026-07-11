@@ -262,8 +262,6 @@ public sealed class OccultCrescentScanner : IDisposable
                 continue;
             }
 
-            var fateLocation = GetFateLocation(fate);
-
             var state = fate.State;
             var stateCode = (int)state;
             var stateText = state.ToString();
@@ -274,11 +272,29 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var metadata = data.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
+            var (fateLocation, locationSource) = ResolveFateLocation(fate, metadata);
             var isPotFate = IsPotFate(fate.FateId);
             var isExcluded = metadata == null
                 || isPotFate
                 || !configuration.EnableFateFarming
                 || !configuration.IsFateEnabled(fate.FateId);
+
+            switch (locationSource)
+            {
+                case "metadata_start_position":
+                    logger.InfoThrottled(
+                        $"fate-location-fallback-{fate.FateId}",
+                        TimeSpan.FromSeconds(30),
+                        $"Using metadata start position for FATE {name} ({fate.FateId}): {FormatVector3(fateLocation)}.");
+                    break;
+                case "zero_unresolved":
+                    logger.WarningThrottled(
+                        $"fate-location-unresolved-{fate.FateId}",
+                        TimeSpan.FromSeconds(10),
+                        $"FATE {name} ({fate.FateId}) has no usable live or metadata position.");
+                    break;
+            }
+
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, fateLocation)
                 : float.MaxValue;
@@ -559,7 +575,7 @@ public sealed class OccultCrescentScanner : IDisposable
         => !string.Equals(state, "Ended", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(state, "Failed", StringComparison.OrdinalIgnoreCase);
 
-    private static Vector3 GetFateLocation(object fate)
+    private static (Vector3 Position, string Source) ResolveFateLocation(object fate, FateData? metadata)
     {
         const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public;
 
@@ -567,18 +583,36 @@ public sealed class OccultCrescentScanner : IDisposable
         if (locationProperty?.PropertyType == typeof(Vector3)
             && locationProperty.GetValue(fate) is Vector3 location)
         {
-            return location;
+            if (!IsZeroVector(location))
+            {
+                return (location, "location");
+            }
         }
 
         var positionProperty = fate.GetType().GetProperty("Position", Flags);
         if (positionProperty?.PropertyType == typeof(Vector3)
             && positionProperty.GetValue(fate) is Vector3 position)
         {
-            return position;
+            if (!IsZeroVector(position))
+            {
+                return (position, "position");
+            }
         }
 
-        return Vector3.Zero;
+        var metadataStartPosition = metadata?.StartPosition.ToVector3() ?? Vector3.Zero;
+        if (!IsZeroVector(metadataStartPosition))
+        {
+            return (metadataStartPosition, "metadata_start_position");
+        }
+
+        return (Vector3.Zero, "zero_unresolved");
     }
+
+    private static bool IsZeroVector(Vector3 value)
+        => value.X == 0f && value.Y == 0f && value.Z == 0f;
+
+    private static string FormatVector3(Vector3 value)
+        => $"<{value.X:0.000}, {value.Y:0.000}, {value.Z:0.000}>";
 
     private static uint GetJoinedFateId()
     {
