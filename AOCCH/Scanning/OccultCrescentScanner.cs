@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using AOCCH.Data;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -261,6 +262,8 @@ public sealed class OccultCrescentScanner : IDisposable
                 continue;
             }
 
+            var fateLocation = GetFateLocation(fate);
+
             var state = fate.State;
             var stateCode = (int)state;
             var stateText = state.ToString();
@@ -277,7 +280,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 || !configuration.EnableFateFarming
                 || !configuration.IsFateEnabled(fate.FateId);
             var distanceToPlayer = playerPosition.HasValue
-                ? CalculateFlatDistance(playerPosition.Value, fate.Position)
+                ? CalculateFlatDistance(playerPosition.Value, fateLocation)
                 : float.MaxValue;
 
             if (isPotFate)
@@ -292,10 +295,10 @@ public sealed class OccultCrescentScanner : IDisposable
                     IsInFate = joinedFateId != 0 && joinedFateId == fate.FateId,
                     Progress = fate.Progress,
                     Radius = fate.Radius,
-                    Position = fate.Position,
+                    Position = fateLocation,
                     DistanceToPlayer = distanceToPlayer,
                     PreferredAethernet = potMetadata?.PreferredAethernet ?? string.Empty,
-                    CenterPosition = potMetadata?.CenterPosition.ToVector3() ?? fate.Position,
+                    CenterPosition = potMetadata?.CenterPosition.ToVector3() ?? fateLocation,
                     StagingPosition = potMetadata?.StagingPosition?.ToVector3(),
                 };
 
@@ -317,7 +320,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 IsInFate = joinedFateId != 0 && joinedFateId == fate.FateId,
                 Progress = fate.Progress,
                 Radius = fate.Radius,
-                Position = fate.Position,
+                Position = fateLocation,
                 DistanceToPlayer = distanceToPlayer,
                 HasKnownMetadata = metadata != null,
                 Demiatma = metadata?.Demiatma ?? string.Empty,
@@ -555,6 +558,27 @@ public sealed class OccultCrescentScanner : IDisposable
     private static bool IsActiveFateState(string state)
         => !string.Equals(state, "Ended", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(state, "Failed", StringComparison.OrdinalIgnoreCase);
+
+    private static Vector3 GetFateLocation(object fate)
+    {
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public;
+
+        var locationProperty = fate.GetType().GetProperty("Location", Flags);
+        if (locationProperty?.PropertyType == typeof(Vector3)
+            && locationProperty.GetValue(fate) is Vector3 location)
+        {
+            return location;
+        }
+
+        var positionProperty = fate.GetType().GetProperty("Position", Flags);
+        if (positionProperty?.PropertyType == typeof(Vector3)
+            && positionProperty.GetValue(fate) is Vector3 position)
+        {
+            return position;
+        }
+
+        return Vector3.Zero;
+    }
 
     private static uint GetJoinedFateId()
     {

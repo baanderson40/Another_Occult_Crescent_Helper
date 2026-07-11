@@ -550,12 +550,15 @@ public sealed class MovementController : IDisposable
         {
             if (ShouldMountForStep(step, distance) && !EnsureMounted(step))
             {
+                logger.Debug($"Path step '{step.Description}' is waiting on mount. distance={distance:0.0} conditions={DescribeMovementConditions()}.");
                 return;
             }
 
             var targetPoint = GetPathStepTarget(step, playerPosition);
             var destination = vnavmesh.FindNearestPoint(targetPoint, 5f, 5f) ?? targetPoint;
             var started = vnavmesh.PathfindAndMoveCloseTo(destination, fly: false, GetPathStepTolerance(step));
+            logger.Debug(
+                $"Path step start attempt for '{step.Description}'. distance={distance:0.0} target={FormatVector(targetPoint)} navTarget={FormatVector(destination)} tolerance={GetPathStepTolerance(step):0.0} shouldMount={step.ShouldMountBeforeStep} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()}.");
             if (!started)
             {
                 SetFailure(MovementState.Failed, $"Failed to start pathing for step: {step.Description}.");
@@ -605,9 +608,15 @@ public sealed class MovementController : IDisposable
         {
             if (DateTimeOffset.UtcNow - stepStartedAt <= PathStartGrace)
             {
+                logger.DebugThrottled(
+                    BuildStepLogKey("path-start-grace"),
+                    TimeSpan.FromSeconds(1),
+                    $"Path step '{step.Description}' has no active vnavmesh path yet but is still within startup grace. distance={distance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalMilliseconds:0}ms pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()}.");
                 return;
             }
 
+            logger.Warning(
+                $"Resetting path step '{step.Description}' because vnavmesh is idle before arrival. distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}.");
             lock (gate)
             {
                 stepStarted = false;
@@ -1066,6 +1075,7 @@ public sealed class MovementController : IDisposable
     {
         if (condition[ConditionFlag.Mounted])
         {
+            logger.Debug($"Mount check for '{step.Description}' succeeded immediately because the player is already mounted. conditions={DescribeMovementConditions()}.");
             return true;
         }
 
@@ -1081,6 +1091,7 @@ public sealed class MovementController : IDisposable
                     mountAttempted = true;
                 }
 
+                logger.Debug($"Mount attempt suppressed for '{step.Description}' because mounting is currently unavailable. conditions={DescribeMovementConditions()}.");
                 logger.Warning($"Proceeding on foot for step {step.Description} because mounting is currently unavailable.");
             }
 
@@ -1089,6 +1100,13 @@ public sealed class MovementController : IDisposable
 
         if (!mountAttempted)
         {
+            if (condition[ConditionFlag.Mounted])
+            {
+                logger.Debug($"Mount check for '{step.Description}' succeeded on the final sanity check before dispatch. conditions={DescribeMovementConditions()}.");
+                return true;
+            }
+
+            logger.Debug($"Attempting mount action for '{step.Description}'. conditions={DescribeMovementConditions()}.");
             if (!gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, step.Description))
             {
                 lock (gate)
@@ -1096,6 +1114,7 @@ public sealed class MovementController : IDisposable
                     mountAttempted = true;
                 }
 
+                logger.Debug($"Mount action dispatch failed for '{step.Description}'. conditions={DescribeMovementConditions()}.");
                 logger.Warning($"Mount action unavailable; proceeding on foot for step {step.Description}.");
                 return true;
             }
@@ -1114,10 +1133,15 @@ public sealed class MovementController : IDisposable
 
         if (DateTimeOffset.UtcNow - stepStartedAt > MountTimeout)
         {
+            logger.Debug($"Mount confirmation timed out for '{step.Description}'. conditions={DescribeMovementConditions()}.");
             logger.Warning($"Mount confirmation timed out; proceeding on foot for step {step.Description}.");
             return true;
         }
 
+        logger.DebugThrottled(
+            BuildStepLogKey("mount-wait"),
+            TimeSpan.FromSeconds(1),
+            $"Still waiting for mount confirmation on '{step.Description}'. elapsed={(DateTimeOffset.UtcNow - stepStartedAt).TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
         return false;
     }
 
@@ -1324,6 +1348,9 @@ public sealed class MovementController : IDisposable
         var occupied = includeOccupiedCondition && condition[ConditionFlag.OccupiedInQuestEvent];
         return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={occupied} lifestreamBusy={lifestream.IsBusy()}";
     }
+
+    private string DescribeMovementConditions()
+        => $"mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupied={condition[ConditionFlag.Occupied]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} dead={objectTable.LocalPlayer?.CurrentHp == 0}";
 
     private static string FormatVector(Vector3 position)
         => $"<{position.X:0.000}, {position.Y:0.000}, {position.Z:0.000}>";
