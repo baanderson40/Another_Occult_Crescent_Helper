@@ -103,7 +103,7 @@ public sealed class Plugin : IDalamudPlugin
         InstancedContentController = new InstancedContentController(Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
-        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, TreasureHintTracker, DangerousTreasureTravelController, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
+        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration);

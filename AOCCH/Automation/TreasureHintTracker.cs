@@ -117,6 +117,21 @@ public sealed class TreasureHintTracker : IDisposable
         return hint != null;
     }
 
+    public bool TryGetLatestEventSince(int sessionId, int revision, out TreasureHintEvent? treasureEvent)
+    {
+        var currentSnapshot = Snapshot;
+        if (currentSnapshot.SessionId != sessionId
+            || currentSnapshot.Revision <= revision
+            || currentSnapshot.LastEvent == null)
+        {
+            treasureEvent = null;
+            return false;
+        }
+
+        treasureEvent = currentSnapshot.LastEvent;
+        return true;
+    }
+
     public void BeginNewTreasureSession(string reason)
     {
         TreasureHintSnapshot previous;
