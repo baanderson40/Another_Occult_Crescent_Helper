@@ -490,6 +490,7 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.MovingNearTreasureCenter
             and not PotFarmState.TreasurePending
             and not PotFarmState.RunningTreasureSearch
+            and not PotFarmState.RunningCofferInteraction
             && scannerSnapshot.HasTreasureBuff
             && hasTreasurePotContext)
         {

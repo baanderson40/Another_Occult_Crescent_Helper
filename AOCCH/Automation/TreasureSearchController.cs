@@ -511,11 +511,6 @@ public sealed class TreasureSearchController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached treasure candidate.");
-                if (TryHandleVisibleCoffer())
-                {
-                    return;
-                }
-
                 lock (gate)
                 {
                     candidateArrivedAt = DateTimeOffset.UtcNow;
@@ -550,11 +545,6 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickProbingCandidate()
     {
-        if (TryHandleVisibleCoffer())
-        {
-            return;
-        }
-
         var scannerSnapshot = scanner.Snapshot;
         if (!scannerSnapshot.HasTreasureBuff)
         {
@@ -637,11 +627,6 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickRefiningCandidate()
     {
-        if (TryHandleVisibleCoffer())
-        {
-            return;
-        }
-
         var scannerSnapshot = scanner.Snapshot;
         if (!scannerSnapshot.HasTreasureBuff && refinementEvent is not { Kind: TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage })
         {
@@ -865,6 +850,11 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryHandleVisibleCoffer()
     {
         var scannerSnapshot = scanner.Snapshot;
+        if (State != TreasureSearchState.AcquiringRevealedCoffer)
+        {
+            return false;
+        }
+
         if (scannerSnapshot.VisibleCoffers.Count == 0)
         {
             return false;
@@ -1102,11 +1092,6 @@ public sealed class TreasureSearchController : IDisposable
             case DangerousTreasureTravelState.Arrived:
                 var arriveReason = dangerousTreasureTravelController.LastTransition;
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
-                if (TryHandleVisibleCoffer())
-                {
-                    return true;
-                }
-
                 lock (gate)
                 {
                     candidateArrivedAt = DateTimeOffset.UtcNow;
@@ -1256,11 +1241,6 @@ public sealed class TreasureSearchController : IDisposable
             {
                 case DangerousTreasureTravelState.Arrived:
                     dangerousTreasureTravelController.AcknowledgeTerminalState();
-                    if (TryHandleVisibleCoffer())
-                    {
-                        return false;
-                    }
-
                     var dangerousHandoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
                     refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                     return dangerousHandoffResult != CandidateHandoffResult.DangerousTransitionStarted;
@@ -1297,11 +1277,6 @@ public sealed class TreasureSearchController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached local treasure refinement target.");
-                if (TryHandleVisibleCoffer())
-                {
-                    return false;
-                }
-
                 var handoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 return handoffResult != CandidateHandoffResult.DangerousTransitionStarted;
