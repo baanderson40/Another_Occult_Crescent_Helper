@@ -1,7 +1,7 @@
-using System;
 using System.Collections.Generic;
 using AOCCH.Logging;
 using Dalamud.Plugin.Services;
+using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
 namespace AOCCH.Data;
@@ -28,7 +28,7 @@ public sealed class OccultCrescentNameResolver
 
     private void BuildCriticalEncounterNames(IDataManager dataManager, OccultCrescentData data)
     {
-        dynamic? sheet = dataManager.GetExcelSheet<DynamicEvent>();
+        var sheet = dataManager.GetExcelSheet<DynamicEvent>();
         if (sheet == null)
         {
             logger.Warning("Occult Crescent name resolver could not load the DynamicEvent sheet.");
@@ -37,7 +37,7 @@ public sealed class OccultCrescentNameResolver
 
         foreach (var criticalEncounter in data.CriticalEncounters)
         {
-            var resolvedName = TryResolveSheetName(sheet, criticalEncounter.Id);
+            var resolvedName = TryResolveCriticalEncounterName(sheet, criticalEncounter.Id);
             if (resolvedName.Length > 0)
             {
                 criticalEncounterNames[criticalEncounter.Id] = resolvedName;
@@ -50,7 +50,7 @@ public sealed class OccultCrescentNameResolver
 
     private void BuildFateNames(IDataManager dataManager, OccultCrescentData data)
     {
-        dynamic? sheet = dataManager.GetExcelSheet<Fate>();
+        var sheet = dataManager.GetExcelSheet<Fate>();
         if (sheet == null)
         {
             logger.Warning("Occult Crescent name resolver could not load the Fate sheet.");
@@ -59,7 +59,7 @@ public sealed class OccultCrescentNameResolver
 
         foreach (var fate in data.Fates)
         {
-            var resolvedName = TryResolveSheetName(sheet, fate.Id);
+            var resolvedName = TryResolveFateName(sheet, fate.Id);
             if (resolvedName.Length > 0)
             {
                 fateNames[fate.Id] = resolvedName;
@@ -70,52 +70,25 @@ public sealed class OccultCrescentNameResolver
         }
     }
 
-    private static string TryResolveSheetName(dynamic? sheet, uint rowId)
+    private static string TryResolveCriticalEncounterName(ExcelSheet<DynamicEvent> sheet, uint rowId)
     {
-        if (sheet == null)
+        var row = sheet.GetRowOrDefault(rowId);
+        if (!row.HasValue)
         {
             return string.Empty;
         }
 
-        try
-        {
-            var row = sheet.GetRow(rowId);
-            if (row == null)
-            {
-                return string.Empty;
-            }
-
-            var name = row.Name;
-            return CoerceText(name);
-        }
-        catch
-        {
-            return string.Empty;
-        }
+        return ExcelTextResolver.ResolvePropertyText(row.Value, "Name");
     }
 
-    private static string CoerceText(object? value)
+    private static string TryResolveFateName(ExcelSheet<Fate> sheet, uint rowId)
     {
-        if (value == null)
+        var row = sheet.GetRowOrDefault(rowId);
+        if (!row.HasValue)
         {
             return string.Empty;
         }
 
-        if (value is string text)
-        {
-            return text;
-        }
-
-        var extractText = value.GetType().GetMethod("ExtractText", Type.EmptyTypes);
-        if (extractText != null)
-        {
-            var extracted = extractText.Invoke(value, null) as string;
-            if (!string.IsNullOrWhiteSpace(extracted))
-            {
-                return extracted;
-            }
-        }
-
-        return value.ToString() ?? string.Empty;
+        return ExcelTextResolver.ResolvePropertyText(row.Value, "Name");
     }
 }
