@@ -287,7 +287,7 @@ public class ConfigWindow : Window, IDisposable
             "Maximum Aggro Level (Visible Coffers)",
             configuration.VisibleTreasureCofferMaximumAggroLevel,
             0,
-            20,
+            28,
             value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
             nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
 

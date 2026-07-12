@@ -16,7 +16,6 @@ public sealed class TreasureCofferFarmController : IDisposable
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferScanRadius = 60f;
     private const float ApproachScanTriggerDistance = 40f;
-    private static readonly TimeSpan ArrivalMatchWait = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
@@ -42,7 +41,6 @@ public sealed class TreasureCofferFarmController : IDisposable
     private Vector3 activeResolvedPosition;
     private bool activeSpotUsesOverride;
     private VisibleCoffer? lastMatchedCoffer;
-    private DateTimeOffset waitForVisibleCofferUntil = DateTimeOffset.MinValue;
     private DateTimeOffset lastVisibleCofferScanAt = DateTimeOffset.MinValue;
     private string lastMatchSource = string.Empty;
 
@@ -215,7 +213,6 @@ public sealed class TreasureCofferFarmController : IDisposable
             activeResolvedPosition = Vector3.Zero;
             activeSpotUsesOverride = false;
             lastMatchedCoffer = null;
-            waitForVisibleCofferUntil = DateTimeOffset.MinValue;
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
         }
@@ -257,7 +254,6 @@ public sealed class TreasureCofferFarmController : IDisposable
             activeResolvedPosition = Vector3.Zero;
             activeSpotUsesOverride = false;
             lastMatchedCoffer = null;
-            waitForVisibleCofferUntil = DateTimeOffset.MinValue;
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
         }
@@ -296,9 +292,6 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToSpot:
                 TickTravelingToSpot();
                 break;
-            case TreasureCofferFarmState.WaitingForVisibleCoffer:
-                TickWaitingForVisibleCoffer();
-                break;
             case TreasureCofferFarmState.InteractingWithCoffer:
                 TickInteractingWithCoffer();
                 break;
@@ -323,6 +316,24 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             }
 
+            if (ShouldSkipSpot(spot))
+            {
+                lock (gate)
+                {
+                    currentRouteIndex = nextIndex;
+                    activeRouteEntry = routeEntry;
+                    activeSpot = spot;
+                    activeResolvedPosition = spot.Position.ToVector3();
+                    activeSpotUsesOverride = false;
+                    lastMatchedCoffer = null;
+                    lastVisibleCofferScanAt = DateTimeOffset.MinValue;
+                    lastMatchSource = string.Empty;
+                }
+
+                logger.Info($"Skipping visible coffer route spot {spot.Area}:{spot.Label} because it exceeds the configured visible coffer aggro threshold or requires dangerous travel. aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")}.");
+                continue;
+            }
+
             var resolvedPosition = spot.Position.ToVector3();
             var usesOverride = overrideStore.TryResolvePosition(spot.Area, spot.Label, out var overridePosition);
             if (usesOverride)
@@ -338,7 +349,6 @@ public sealed class TreasureCofferFarmController : IDisposable
                 activeResolvedPosition = resolvedPosition;
                 activeSpotUsesOverride = usesOverride;
                 lastMatchedCoffer = null;
-                waitForVisibleCofferUntil = DateTimeOffset.MinValue;
                 lastVisibleCofferScanAt = DateTimeOffset.MinValue;
                 lastMatchSource = string.Empty;
             }
@@ -368,34 +378,6 @@ public sealed class TreasureCofferFarmController : IDisposable
         var arrivalDistance = spot.ArrivalDistance ?? Math.Max(1f, configuration.ArrivalDistance);
         var description = $"Visible coffer route {spot.Label}";
 
-        if (RequiresDangerousTravel(spot))
-        {
-            var candidate = new TreasureCofferCandidateData
-            {
-                Label = spot.Label,
-                AggroLevel = spot.AggroLevel,
-                HideThresholdDistance = spot.HideThresholdDistance,
-            };
-
-            if (!dangerousTreasureTravelController.Start(candidate, destination, arrivalDistance))
-            {
-                if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
-                {
-                    logger.Warning($"Skipping visible coffer route spot {spot.Area}:{spot.Label} after dangerous travel refused the candidate. {dangerousTreasureTravelController.LastTransition}");
-                    TransitionTo(TreasureCofferFarmState.AdvancingRoute, dangerousTreasureTravelController.LastTransition);
-                    return false;
-                }
-
-                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
-                    ? $"Failed to start dangerous travel for visible coffer route spot {spot.Area}:{spot.Label}."
-                    : dangerousTreasureTravelController.LastError);
-                return false;
-            }
-
-            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to visible coffer route spot {spot.Area}:{spot.Label} with Ninja/Hide travel.");
-            return true;
-        }
-
         var preferredAethernet = ResolvePreferredAethernetName(spot.Area);
         if (!movementController.PlanRouteToLocation(description, preferredAethernet, destination, arrivalDistance))
         {
@@ -422,32 +404,6 @@ public sealed class TreasureCofferFarmController : IDisposable
         if (TryStartInteractionForActiveSpot(requireApproachThreshold: true, acquisitionSource: "approach"))
         {
             return;
-        }
-
-        if (dangerousTreasureTravelController.IsRunning)
-        {
-            logger.DebugThrottled(
-                "visible-coffer-farm-dangerous-travel",
-                WaitLogInterval,
-                $"Visible coffer farm is using dangerous travel for {DescribeActiveSpot()}. state={dangerousTreasureTravelController.State}.");
-            return;
-        }
-
-        switch (dangerousTreasureTravelController.LastResult)
-        {
-            case DangerousTreasureTravelResult.Arrived:
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
-                OnArrivedAtSpot();
-                return;
-            case DangerousTreasureTravelResult.CandidateSkipped:
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
-                TransitionTo(TreasureCofferFarmState.AdvancingRoute, dangerousTreasureTravelController.LastTransition);
-                return;
-            case DangerousTreasureTravelResult.Failed:
-                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
-                    ? dangerousTreasureTravelController.LastTransition
-                    : dangerousTreasureTravelController.LastError);
-                return;
         }
 
         switch (movementController.State)
@@ -477,31 +433,12 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        lock (gate)
-        {
-            waitForVisibleCofferUntil = DateTimeOffset.UtcNow + ArrivalMatchWait;
-        }
-
-        TransitionTo(TreasureCofferFarmState.WaitingForVisibleCoffer, $"Reached visible coffer route spot {DescribeActiveSpot()}; checking for a nearby visible coffer.");
-    }
-
-    private void TickWaitingForVisibleCoffer()
-    {
         if (TryStartInteractionForActiveSpot(requireApproachThreshold: false, acquisitionSource: "arrival"))
         {
             return;
         }
 
-        if (DateTimeOffset.UtcNow >= waitForVisibleCofferUntil)
-        {
-            TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No visible coffer matched {DescribeActiveSpot()} after arrival; continuing to the next route entry.");
-            return;
-        }
-
-        logger.DebugThrottled(
-            "visible-coffer-farm-wait",
-            WaitLogInterval,
-            $"Visible coffer farm is waiting for a visible coffer at {DescribeActiveSpot()}. deadline={waitForVisibleCofferUntil:O} {DescribeVisibleCofferScanSummary(ActiveResolvedPosition)}.");
+        TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No visible coffer matched {DescribeActiveSpot()} on immediate arrival scan; continuing to the next route entry.");
     }
 
     private void TickInteractingWithCoffer()
@@ -627,7 +564,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var now = DateTimeOffset.UtcNow;
-        if (now - lastVisibleCofferScanAt < ApproachScanPollInterval)
+        if (requireApproachThreshold && now - lastVisibleCofferScanAt < ApproachScanPollInterval)
         {
             return false;
         }
@@ -682,6 +619,9 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
         => spot.AggroLevel > configuration.VisibleTreasureCofferMaximumAggroLevel
             || (spot.HideThresholdDistance ?? 0) > 0;
+
+    private bool ShouldSkipSpot(VisibleCofferFarmSpotData spot)
+        => RequiresDangerousTravel(spot);
 
     private void SetFailure(string reason)
     {
