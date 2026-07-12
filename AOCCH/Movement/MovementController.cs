@@ -16,9 +16,12 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan ReturnCombatSettleTimeout = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan ReturnStartTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ReturnRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ReturnPathStopTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ReturnPathStopStableTime = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
@@ -31,6 +34,7 @@ public sealed class MovementController : IDisposable
     private const float AethernetApproachTolerance = 0.25f;
     private const float ProgressThreshold = 2f;
     private const int MaxAethernetAttempts = 3;
+    private const int MaxReturnAttempts = 3;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -62,8 +66,14 @@ public sealed class MovementController : IDisposable
     private bool transitionObserved;
     private bool startedAwayFromTransitionDestination;
     private bool returnPromptHandled;
+    private int returnAttemptCount;
     private DateTimeOffset returnReadyWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset lastReturnReadyPollAt = DateTimeOffset.MinValue;
+    private DateTimeOffset returnAttemptStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset returnTransitionStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset returnPathStopStableSince = DateTimeOffset.MinValue;
+    private DateTimeOffset returnRetryNotBeforeAt = DateTimeOffset.MinValue;
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
     private MovementState state = MovementState.Idle;
@@ -165,6 +175,7 @@ public sealed class MovementController : IDisposable
     public bool IsLifestreamAvailable
         => lifestream.IsAvailable();
 
+
     public bool CanUseReturnAction
         => gameActionController.CanUseGeneralAction(GameActionController.ReturnActionId);
 
@@ -191,12 +202,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = MovementState.Idle;
         }
@@ -299,12 +306,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = plannedRoute.Steps[0].Kind == RouteStepKind.Return
                 ? MovementState.UsingReturn
@@ -347,12 +350,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = route.Steps.Count > 0 && route.Steps[0].Kind == RouteStepKind.Return
                 ? MovementState.UsingReturn
@@ -406,12 +405,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = MovementState.Pathfinding;
         }
@@ -422,6 +417,7 @@ public sealed class MovementController : IDisposable
 
     public Vector3? FindNearestNavigablePoint(Vector3 position, float halfExtentXZ = 5f, float halfExtentY = 5f)
         => ResolveNavigablePoint(position, halfExtentXZ, halfExtentY);
+
 
     public void Stop(string reason)
     {
@@ -440,12 +436,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = reason;
         }
 
@@ -539,37 +531,85 @@ public sealed class MovementController : IDisposable
             }
 
             var now = DateTimeOffset.UtcNow;
+            if (returnRetryNotBeforeAt != DateTimeOffset.MinValue && now < returnRetryNotBeforeAt)
+            {
+                logger.DebugThrottled(
+                    BuildStepLogKey("return-retry-delay"),
+                    TimeSpan.FromMilliseconds(250),
+                    $"Waiting to retry Return step '{step.Description}'. remaining={(returnRetryNotBeforeAt - now).TotalMilliseconds:0}ms delay={ReturnRetryDelay.TotalMilliseconds:0}ms.");
+                return;
+            }
+
             if (returnReadyWaitStartedAt == DateTimeOffset.MinValue)
             {
                 lock (gate)
                 {
                     if (returnReadyWaitStartedAt == DateTimeOffset.MinValue)
                     {
+                        returnAttemptCount++;
                         returnReadyWaitStartedAt = now;
                         lastReturnReadyPollAt = DateTimeOffset.MinValue;
+                        returnPathStopWaitStartedAt = now;
+                        returnPathStopStableSince = DateTimeOffset.MinValue;
                     }
                 }
             }
 
-            var returnWaitElapsed = now - returnReadyWaitStartedAt;
-            if (condition[ConditionFlag.InCombat])
+            var pathBusy = vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
+            vnavmesh.Stop();
+            if (pathBusy)
             {
-                if (returnWaitElapsed < ReturnCombatSettleTimeout)
+                lock (gate)
+                {
+                    returnPathStopStableSince = DateTimeOffset.MinValue;
+                }
+
+                if (now - returnPathStopWaitStartedAt <= ReturnPathStopTimeout)
                 {
                     logger.DebugThrottled(
-                        BuildStepLogKey("return-combat-settle"),
+                        BuildStepLogKey("return-stop"),
                         TimeSpan.FromMilliseconds(250),
-                        $"Waiting for combat to clear before Return step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnCombatSettleTimeout.TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+                        $"Waiting for vnavmesh to stop before Return step '{step.Description}'. elapsed={(now - returnPathStopWaitStartedAt).TotalMilliseconds:0}ms timeout={ReturnPathStopTimeout.TotalMilliseconds:0}ms pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}.");
                     return;
                 }
 
-                SetFailure(MovementState.Failed, $"Timed out waiting for combat to clear before Return for step: {step.Description}.");
+                RetryOrFailReturnStep(step, playerPosition, distance, "vnavmesh did not stop before Return.");
                 return;
             }
 
-            if (returnWaitElapsed >= ReturnReadyTimeout)
+            if (returnPathStopStableSince == DateTimeOffset.MinValue)
             {
-                SetFailure(MovementState.Failed, $"Timed out waiting for Return to become available for step: {step.Description}.");
+                lock (gate)
+                {
+                    returnPathStopStableSince = now;
+                }
+
+                logger.DebugThrottled(
+                    BuildStepLogKey("return-stop-stable"),
+                    TimeSpan.FromMilliseconds(250),
+                    $"vnavmesh reported idle before Return step '{step.Description}'; waiting for a stable stop window of {ReturnPathStopStableTime.TotalMilliseconds:0}ms.");
+                return;
+            }
+
+            if (now - returnPathStopStableSince < ReturnPathStopStableTime)
+            {
+                return;
+            }
+
+            var returnWaitElapsed = now - returnReadyWaitStartedAt;
+            if (!IsReadyForReturn())
+            {
+                logger.DebugThrottled(
+                    BuildStepLogKey("return-ready"),
+                    ReturnReadyPollInterval,
+                    $"Waiting for Return readiness for step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnReadyTimeout.TotalMilliseconds:0}ms conditions={DescribeReturnConditions()}.");
+
+                if (returnWaitElapsed < ReturnReadyTimeout)
+                {
+                    return;
+                }
+
+                RetryOrFailReturnStep(step, playerPosition, distance, $"player not ready for Return. conditions={DescribeReturnConditions()}");
                 return;
             }
 
@@ -585,17 +625,22 @@ public sealed class MovementController : IDisposable
 
             if (!gameActionController.CanUseGeneralAction(step.GeneralActionId))
             {
-                logger.DebugThrottled(
-                    BuildStepLogKey("return-ready"),
-                    ReturnReadyPollInterval,
-                    $"Waiting for Return to become available for step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnReadyTimeout.TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+                if (returnWaitElapsed < ReturnReadyTimeout)
+                {
+                    logger.DebugThrottled(
+                        BuildStepLogKey("return-action-ready"),
+                        ReturnReadyPollInterval,
+                        $"Waiting for Return action availability for step '{step.Description}'. elapsed={returnWaitElapsed.TotalMilliseconds:0}ms timeout={ReturnReadyTimeout.TotalMilliseconds:0}ms conditions={DescribeReturnConditions()}.");
+                    return;
+                }
+
+                RetryOrFailReturnStep(step, playerPosition, distance, $"Return action stayed unavailable. conditions={DescribeReturnConditions()}");
                 return;
             }
 
-            vnavmesh.Stop();
             if (!gameActionController.TryExecuteGeneralAction(step.GeneralActionId, step.Description))
             {
-                SetFailure(MovementState.Failed, $"Failed to execute Return for step: {step.Description}.");
+                RetryOrFailReturnStep(step, playerPosition, distance, "failed to execute Return action.");
                 return;
             }
 
@@ -608,18 +653,22 @@ public sealed class MovementController : IDisposable
                 stepAttemptCount = 0;
                 idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
+                returnAttemptStartedAt = DateTimeOffset.UtcNow;
                 lastProgressAt = DateTimeOffset.UtcNow;
                 lastDistance = distance;
                 progressDistance = distance;
                 startedAwayFromTransitionDestination = distance > TransitionCompletionDistance;
                 transitionObserved = false;
+                returnTransitionStartedAt = DateTimeOffset.MinValue;
                 returnPromptHandled = false;
                 returnReadyWaitStartedAt = DateTimeOffset.MinValue;
                 lastReturnReadyPollAt = DateTimeOffset.MinValue;
+                returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
+                returnPathStopStableSince = DateTimeOffset.MinValue;
                 stableSince = DateTimeOffset.MinValue;
             }
 
-            logger.Info($"Started route step: {step.Description}.");
+            logger.Info($"Started route step: {step.Description} (attempt {returnAttemptCount}/{MaxReturnAttempts}).");
             return;
         }
 
@@ -636,7 +685,7 @@ public sealed class MovementController : IDisposable
             }
         }
 
-        WaitForTransitionCompletion(step, playerPosition, distance, ReturnTimeout, includeOccupiedCondition: false, "Return");
+        WaitForReturnCompletion(step, playerPosition, distance);
     }
 
     private void ProcessPathStep(RouteStep step, Vector3 playerPosition)
@@ -1026,12 +1075,8 @@ public sealed class MovementController : IDisposable
             dismountAttempted = false;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             if (currentStepIndex >= (plannedRoute?.Steps.Count ?? 0))
             {
                 state = MovementState.Arrived;
@@ -1059,12 +1104,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
         }
 
@@ -1091,12 +1132,8 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = reason;
             progressDistance = float.MaxValue;
         }
@@ -1129,15 +1166,140 @@ public sealed class MovementController : IDisposable
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
-            transitionObserved = false;
-            startedAwayFromTransitionDestination = false;
-            returnPromptHandled = false;
-            returnReadyWaitStartedAt = DateTimeOffset.MinValue;
-            lastReturnReadyPollAt = DateTimeOffset.MinValue;
-            stableSince = DateTimeOffset.MinValue;
+            ResetTransitionTracking();
+            ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = MovementState.Idle;
         }
+    }
+
+    private void WaitForReturnCompletion(RouteStep step, Vector3 playerPosition, float distance)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var transitionActive = condition[ConditionFlag.Casting]
+            || condition[ConditionFlag.BetweenAreas]
+            || condition[ConditionFlag.OccupiedInQuestEvent]
+            || lifestream.IsBusy();
+
+        if (transitionActive)
+        {
+            lock (gate)
+            {
+                transitionObserved = true;
+                returnTransitionStartedAt = returnTransitionStartedAt == DateTimeOffset.MinValue ? now : returnTransitionStartedAt;
+                lastProgressAt = now;
+                stableSince = DateTimeOffset.MinValue;
+            }
+
+            return;
+        }
+
+        bool observed;
+        bool startedAway;
+        DateTimeOffset stableStart;
+        DateTimeOffset attemptStart;
+        DateTimeOffset transitionStart;
+        lock (gate)
+        {
+            observed = transitionObserved;
+            startedAway = startedAwayFromTransitionDestination;
+            stableStart = stableSince;
+            attemptStart = returnAttemptStartedAt;
+            transitionStart = returnTransitionStartedAt;
+        }
+
+        if (!observed)
+        {
+            if (now - attemptStart <= ReturnStartTimeout)
+            {
+                logger.DebugThrottled(
+                    BuildStepLogKey("return-start"),
+                    TimeSpan.FromMilliseconds(250),
+                    $"Movement is still waiting for Return to start during step '{step.Description}'. elapsed={(now - attemptStart).TotalMilliseconds:0}ms timeout={ReturnStartTimeout.TotalMilliseconds:0}ms promptHandled={returnPromptHandled} conditions={DescribeTransitionConditions(includeOccupiedCondition: true)}.");
+                return;
+            }
+
+            RetryOrFailReturnStep(step, playerPosition, distance, $"Return did not start. promptHandled={returnPromptHandled} conditions={DescribeTransitionConditions(includeOccupiedCondition: true)}");
+            return;
+        }
+
+        var playerAvailable = objectTable.LocalPlayer?.CurrentHp > 0;
+        if (playerAvailable && distance <= TransitionCompletionDistance && (observed || startedAway))
+        {
+            var nextStableStart = stableStart == DateTimeOffset.MinValue ? now : stableStart;
+            lock (gate)
+            {
+                stableSince = nextStableStart;
+            }
+
+            if (now - nextStableStart >= TransitionStableTime)
+            {
+                logger.Info($"Completed route step: {step.Description}.");
+                AdvanceStep();
+            }
+
+            return;
+        }
+
+        lock (gate)
+        {
+            stableSince = DateTimeOffset.MinValue;
+        }
+
+        var timeoutStart = transitionStart == DateTimeOffset.MinValue ? attemptStart : transitionStart;
+        if (now - timeoutStart <= ReturnTimeout)
+        {
+            logger.DebugThrottled(
+                BuildStepLogKey("transition-Return"),
+                WaitLogInterval,
+                $"Movement is still waiting for Return completion during step '{step.Description}'. distance={distance:0.0} observedTransition={observed} conditions={DescribeTransitionConditions(includeOccupiedCondition: true)}.");
+            return;
+        }
+
+        RetryOrFailReturnStep(
+            step,
+            playerPosition,
+            distance,
+            $"Return transition timed out. observedTransition={observed} conditions={DescribeTransitionConditions(includeOccupiedCondition: true)}");
+    }
+
+    private void RetryOrFailReturnStep(RouteStep step, Vector3 playerPosition, float distance, string detail)
+    {
+        int attemptCount;
+        lock (gate)
+        {
+            attemptCount = returnAttemptCount;
+        }
+
+        if (attemptCount < MaxReturnAttempts)
+        {
+            lock (gate)
+            {
+                stepStarted = false;
+                stepStartedAt = DateTimeOffset.MinValue;
+                returnAttemptStartedAt = DateTimeOffset.MinValue;
+                returnTransitionStartedAt = DateTimeOffset.MinValue;
+                lastProgressAt = DateTimeOffset.UtcNow;
+                returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+                lastReturnReadyPollAt = DateTimeOffset.MinValue;
+                returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
+                returnPathStopStableSince = DateTimeOffset.MinValue;
+                returnRetryNotBeforeAt = DateTimeOffset.UtcNow + ReturnRetryDelay;
+                returnPromptHandled = false;
+                transitionObserved = false;
+                startedAwayFromTransitionDestination = false;
+                stableSince = DateTimeOffset.MinValue;
+            }
+
+            logger.Warning(
+                $"Retrying Return after attempt {attemptCount}/{MaxReturnAttempts} during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} {detail}");
+            return;
+        }
+
+        SetFailure(
+            MovementState.TimedOut,
+            $"Return failed after {attemptCount}/{MaxReturnAttempts} attempt(s) during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} {detail}",
+            stopMovement: true);
     }
 
     private Vector3? GetPlayerPosition()
@@ -1518,6 +1680,40 @@ public sealed class MovementController : IDisposable
     {
         var occupied = includeOccupiedCondition && condition[ConditionFlag.OccupiedInQuestEvent];
         return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={occupied} lifestreamBusy={lifestream.IsBusy()}";
+    }
+
+    private bool IsReadyForReturn()
+        => objectTable.LocalPlayer?.CurrentHp > 0
+            && !condition[ConditionFlag.InCombat]
+            && !condition[ConditionFlag.Casting]
+            && !condition[ConditionFlag.BetweenAreas]
+            && !condition[ConditionFlag.OccupiedInQuestEvent]
+            && !lifestream.IsBusy();
+
+    private string DescribeReturnConditions()
+        => $"available={objectTable.LocalPlayer?.CurrentHp > 0} dead={objectTable.LocalPlayer?.CurrentHp == 0} combat={condition[ConditionFlag.InCombat]} mounted={condition[ConditionFlag.Mounted]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} lifestreamBusy={lifestream.IsBusy()} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}";
+
+    private void ResetTransitionTracking()
+    {
+        transitionObserved = false;
+        startedAwayFromTransitionDestination = false;
+        stableSince = DateTimeOffset.MinValue;
+        returnTransitionStartedAt = DateTimeOffset.MinValue;
+    }
+
+    private void ResetReturnTracking(bool clearAttemptCount)
+    {
+        returnPromptHandled = false;
+        returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+        lastReturnReadyPollAt = DateTimeOffset.MinValue;
+        returnAttemptStartedAt = DateTimeOffset.MinValue;
+        returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
+        returnPathStopStableSince = DateTimeOffset.MinValue;
+        returnRetryNotBeforeAt = DateTimeOffset.MinValue;
+        if (clearAttemptCount)
+        {
+            returnAttemptCount = 0;
+        }
     }
 
     private string DescribeMovementConditions()
