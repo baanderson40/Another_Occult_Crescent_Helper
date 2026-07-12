@@ -264,8 +264,11 @@ public sealed class TreasureSearchController : IDisposable
     {
         if (IsRunning)
         {
+            logger.Debug($"Treasure search start ignored because a run is already active. fate={activeFateName} ({activeFateId}) state={State}");
             return true;
         }
+
+        logger.Info($"Treasure search start requested for fate {fateName} ({fateId}) from origin <{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>.");
 
         var hintSnapshot = treasureHintTracker.Snapshot;
         if (!hintSnapshot.HasActiveSession || !hintSnapshot.HasInitialHint)
@@ -323,6 +326,7 @@ public sealed class TreasureSearchController : IDisposable
 
     public void Stop(string reason)
     {
+        logger.Info($"Treasure search stop requested: {reason}");
         if (dangerousTreasureTravelController.IsRunning)
         {
             dangerousTreasureTravelController.Stop(reason);
@@ -376,6 +380,7 @@ public sealed class TreasureSearchController : IDisposable
 
     public bool StartNextCandidateAfterInteractionLoss(string reason)
     {
+        logger.Info($"Treasure search advancing after interaction loss. candidate={ActiveCandidateKey?.Label ?? "none"} reason={reason}");
         if (State != TreasureSearchState.ReadyForInteraction)
         {
             SetFailure("Treasure traversal cannot resume after coffer interaction loss because it is not waiting on a matched coffer.");
@@ -961,6 +966,7 @@ public sealed class TreasureSearchController : IDisposable
         var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f)
             ?? targetPosition;
         var isDangerousCandidate = IsDangerousCandidate(candidate);
+        logger.Info($"Treasure search candidate start: label={candidate.Label} fate={activeFateName} ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> reason={reason}");
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -1518,7 +1524,7 @@ public sealed class TreasureSearchController : IDisposable
         var scannerSnapshot = scanner.Snapshot;
         logger.DebugThrottled(
             "treasure-search-revealed-acquire",
-            TimeSpan.FromMilliseconds(250),
+            WaitLogInterval,
             $"Treasure search is acquiring a revealed coffer for candidate {activeCandidateKey?.Label}. buffActive={scannerSnapshot.HasTreasureBuff} visibleCoffers={scannerSnapshot.VisibleCoffers.Count} deadline={revealedCofferAcquireDeadlineAt:O}.");
     }
 
@@ -1529,7 +1535,7 @@ public sealed class TreasureSearchController : IDisposable
         {
             logger.DebugThrottled(
                 "treasure-search-probe-retry",
-                TimeSpan.FromMilliseconds(250),
+                WaitLogInterval,
                 $"Treasure candidate probe retry is waiting for {CandidateProbeRetryDelay.TotalSeconds:0.0}s between attempts. candidate={activeCandidateKey?.Label} attempts={candidateProbeAttemptCount}/{MaximumCandidateProbeAttempts}.");
             return true;
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AOCCH.Logging;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 
@@ -9,11 +10,14 @@ public sealed class OccultCrescentNameResolver
 {
     private readonly Dictionary<uint, string> criticalEncounterNames = [];
     private readonly Dictionary<uint, string> fateNames = [];
+    private readonly AocchLogger logger;
 
-    public OccultCrescentNameResolver(IDataManager dataManager, OccultCrescentData data)
+    public OccultCrescentNameResolver(IDataManager dataManager, OccultCrescentData data, AocchLogger logger)
     {
+        this.logger = logger;
         BuildCriticalEncounterNames(dataManager, data);
         BuildFateNames(dataManager, data);
+        this.logger.Info($"Occult Crescent name resolver initialized with {criticalEncounterNames.Count} CE name(s) and {fateNames.Count} FATE name(s).");
     }
 
     public string GetCriticalEncounterName(uint id, string fallbackName)
@@ -27,6 +31,7 @@ public sealed class OccultCrescentNameResolver
         dynamic? sheet = dataManager.GetExcelSheet<DynamicEvent>();
         if (sheet == null)
         {
+            logger.Warning("Occult Crescent name resolver could not load the DynamicEvent sheet.");
             return;
         }
 
@@ -36,7 +41,10 @@ public sealed class OccultCrescentNameResolver
             if (resolvedName.Length > 0)
             {
                 criticalEncounterNames[criticalEncounter.Id] = resolvedName;
+                continue;
             }
+
+            logger.Warning($"Occult Crescent name resolver could not resolve a CE name for {criticalEncounter.Id}.");
         }
     }
 
@@ -45,6 +53,7 @@ public sealed class OccultCrescentNameResolver
         dynamic? sheet = dataManager.GetExcelSheet<Fate>();
         if (sheet == null)
         {
+            logger.Warning("Occult Crescent name resolver could not load the Fate sheet.");
             return;
         }
 
@@ -54,7 +63,10 @@ public sealed class OccultCrescentNameResolver
             if (resolvedName.Length > 0)
             {
                 fateNames[fate.Id] = resolvedName;
+                continue;
             }
+
+            logger.Warning($"Occult Crescent name resolver could not resolve a FATE name for {fate.Id}.");
         }
     }
 

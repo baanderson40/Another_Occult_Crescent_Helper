@@ -12,6 +12,7 @@ namespace AOCCH.Automation;
 public sealed class PotCycleTracker : IDisposable
 {
     private static readonly TimeSpan PotCycleInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -98,15 +99,21 @@ public sealed class PotCycleTracker : IDisposable
     {
         if (!scannerSnapshot.IsInSouthHorn)
         {
+            logger.DebugThrottled("pot-cycle-outside-south-horn", WaitLogInterval, "Pot cycle tracker is idle because the player is outside South Horn.");
             return ClearCurrentActivePot(previous, now);
         }
 
         var activePotFate = scannerSnapshot.ActivePotFate;
         if (activePotFate == null)
         {
+            logger.DebugThrottled("pot-cycle-no-active-pot", WaitLogInterval, previous.HasKnownAnchor
+                ? $"Pot cycle tracker is waiting for the predicted pot window. nextPot={previous.PredictedNextPotFateName} nextSpawnAt={previous.PredictedNextSpawnAt:O}."
+                : "Pot cycle tracker is waiting for the first observed pot anchor.");
             return ClearCurrentActivePot(previous, now);
         }
 
+        logger.ResetThrottle("pot-cycle-outside-south-horn");
+        logger.ResetThrottle("pot-cycle-no-active-pot");
         if (previous.CurrentActivePotFateId == activePotFate.Id)
         {
             return new PotCycleSnapshot

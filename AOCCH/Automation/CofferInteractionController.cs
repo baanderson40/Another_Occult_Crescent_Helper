@@ -16,7 +16,7 @@ public sealed class CofferInteractionController : IDisposable
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
-    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
     private readonly IObjectTable objectTable;
@@ -145,8 +145,11 @@ public sealed class CofferInteractionController : IDisposable
     {
         if (IsRunning)
         {
+            logger.Debug($"Coffer interaction start ignored because a run is already active. candidate={match.CandidateKey} currentState={State}.");
             return true;
         }
+
+        logger.Info($"Coffer interaction start requested for candidate {match.CandidateKey} with coffer {match.Coffer.Name} ({match.Coffer.GameObjectId:X}). trustworthy={match.IsTrustworthy} attribution={match.AttributionReason}");
 
         var liveObject = ResolveObject(match.Coffer.GameObjectId);
         if (liveObject == null)
@@ -170,6 +173,7 @@ public sealed class CofferInteractionController : IDisposable
 
     public void Stop(string reason)
     {
+        logger.Info($"Coffer interaction stop requested: {reason}");
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop(reason);
@@ -244,6 +248,7 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        logger.Debug($"Coffer interaction evaluating approach for {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). distance={distance:0.0} preferredOpenDistance={PreferredOpenDistance:0.00} maxInteractRange={MaxInteractRange:0.0} reason={reason}");
         if (distance <= PreferredOpenDistance)
         {
             TransitionTo(CofferInteractionState.TargetingCoffer, $"{reason} Coffer is within the preferred opening distance ({distance:0.0}y <= {PreferredOpenDistance:0.00}y).");
@@ -251,6 +256,7 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f) ?? liveObject.Position;
+        logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> reason={reason}");
         if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, PreferredOpenDistance))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -451,7 +457,10 @@ public sealed class CofferInteractionController : IDisposable
     }
 
     private void SetFailure(string reason)
-        => TransitionTo(CofferInteractionState.Failed, reason, error: reason, result: CofferInteractionResult.Failed);
+    {
+        logger.Warning($"Coffer interaction failure: {reason}");
+        TransitionTo(CofferInteractionState.Failed, reason, error: reason, result: CofferInteractionResult.Failed);
+    }
 
     private void PersistConfirmedOverride(VisibleCofferMatch match)
     {

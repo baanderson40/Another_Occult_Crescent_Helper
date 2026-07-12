@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AOCCH.Logging;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 
@@ -8,10 +9,13 @@ namespace AOCCH.Scanning;
 public sealed class CofferNameResolver
 {
     private readonly HashSet<string> localizedNames = [];
+    private readonly AocchLogger logger;
 
-    public CofferNameResolver(IDataManager dataManager, IEnumerable<uint> cofferBaseIds)
+    public CofferNameResolver(IDataManager dataManager, IEnumerable<uint> cofferBaseIds, AocchLogger logger)
     {
+        this.logger = logger;
         BuildLocalizedNames(dataManager, cofferBaseIds);
+        this.logger.Info($"Coffer name resolver initialized with {localizedNames.Count} localized coffer name(s).");
     }
 
     public bool IsKnownLocalizedName(string? name)
@@ -23,6 +27,7 @@ public sealed class CofferNameResolver
         dynamic? sheet = dataManager.GetExcelSheet<EObjName>();
         if (sheet == null)
         {
+            logger.Warning("Coffer name resolver could not load the EObjName sheet.");
             return;
         }
 
@@ -31,6 +36,7 @@ public sealed class CofferNameResolver
             var resolvedName = TryResolveSheetName(sheet, baseId);
             if (resolvedName.Length == 0)
             {
+                logger.Warning($"Coffer name resolver could not resolve a localized name for baseId {baseId}.");
                 continue;
             }
 

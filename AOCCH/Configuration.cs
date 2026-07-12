@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using AOCCH.Data;
+using AOCCH.Logging;
 
 namespace AOCCH;
 
@@ -23,6 +24,9 @@ public enum StartingPotFateMode
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
+    [JsonIgnore]
+    private AocchLogger? logger;
+
     public int Version { get; set; } = 1;
 
     public string AutorotationPresetName { get; set; } = "Occult";
@@ -59,10 +63,26 @@ public class Configuration : IPluginConfiguration
         => !DisabledFateIds.Contains(id);
 
     public bool SetCriticalEncounterEnabled(uint id, bool enabled)
-        => SetIdEnabled(DisabledCriticalEncounterIds, id, enabled);
+    {
+        var changed = SetIdEnabled(DisabledCriticalEncounterIds, id, enabled);
+        if (changed)
+        {
+            logger?.Debug($"Configuration updated CE {id}: enabled={enabled}.");
+        }
+
+        return changed;
+    }
 
     public bool SetFateEnabled(uint id, bool enabled)
-        => SetIdEnabled(DisabledFateIds, id, enabled);
+    {
+        var changed = SetIdEnabled(DisabledFateIds, id, enabled);
+        if (changed)
+        {
+            logger?.Debug($"Configuration updated FATE {id}: enabled={enabled}.");
+        }
+
+        return changed;
+    }
 
     [JsonPropertyName("FarmingMode")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -73,17 +93,24 @@ public class Configuration : IPluginConfiguration
     public string? LegacyExcludedFates { get; set; }
 
     // The below exists just to make saving less cumbersome
+    public void SetLogger(AocchLogger logger)
+        => this.logger = logger;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
+        logger?.Debug("Configuration saved.");
     }
 
     public bool Migrate(OccultCrescentData data)
     {
         if (Version >= 1)
         {
+            logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
         }
+
+        logger?.Info($"Configuration migration starting from version {Version}.");
 
         if (LegacyFarmingMode.HasValue)
         {
@@ -123,6 +150,7 @@ public class Configuration : IPluginConfiguration
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
         Version = 1;
+        logger?.Info("Configuration migration completed at version 1.");
         return true;
     }
 

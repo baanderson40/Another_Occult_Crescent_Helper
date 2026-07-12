@@ -1,29 +1,43 @@
 using System;
 
+using AOCCH.Logging;
+
 namespace AOCCH.Automation;
 
 public sealed class PotFallbackWindowEvaluator
 {
     private readonly Configuration configuration;
+    private readonly AocchLogger logger;
 
-    public PotFallbackWindowEvaluator(Configuration configuration)
+    public PotFallbackWindowEvaluator(Configuration configuration, AocchLogger logger)
     {
         this.configuration = configuration;
+        this.logger = logger;
     }
 
     public PotFallbackStartDecision EvaluateCeStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
-        => EvaluateStart(
+    {
+        var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.CeFallbackCutoffMinutes)),
             "CE");
 
+        logger.DebugThrottled("pot-fallback-ce", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for CE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
+        return decision;
+    }
+
     public PotFallbackStartDecision EvaluateFateStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
-        => EvaluateStart(
+    {
+        var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.FateFallbackCutoffMinutes)),
             "FATE");
+
+        logger.DebugThrottled("pot-fallback-fate", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for FATE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
+        return decision;
+    }
 
     private PotFallbackStartDecision EvaluateStart(
         PotCycleSnapshot potCycleSnapshot,

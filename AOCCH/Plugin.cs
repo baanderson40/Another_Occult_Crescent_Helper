@@ -77,6 +77,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
+        Configuration.SetLogger(Logger);
         OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
         CofferPositionOverrideStore = new CofferPositionOverrideStore(PluginInterface, Logger);
         if (Configuration.Migrate(OccultCrescentData))
@@ -85,8 +86,8 @@ public sealed class Plugin : IDalamudPlugin
             Logger.Info("Migrated configuration to CE/FATE checkbox settings.");
         }
 
-        OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData);
-        CofferNameResolver = new CofferNameResolver(DataManager, [2014741u, 2014742u, 2014743u]);
+        OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData, Logger);
+        CofferNameResolver = new CofferNameResolver(DataManager, [2014741u, 2014742u, 2014743u], Logger);
         Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, CofferNameResolver, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
@@ -105,8 +106,8 @@ public sealed class Plugin : IDalamudPlugin
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
-        PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration);
-        PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration);
+        PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
+        PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
 
