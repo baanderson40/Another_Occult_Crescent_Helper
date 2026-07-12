@@ -728,9 +728,16 @@ public sealed class PotFarmController : IDisposable
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
-                SetFailure(movementController.LastError.Length == 0
-                    ? $"Failed to move near the completed FATE center for {treasurePotName}."
-                    : movementController.LastError);
+                var failedTreasurePotName = treasurePotName;
+                var failedTreasurePotId = treasurePotId;
+                logger.Warning(movementController.LastError.Length == 0
+                    ? $"Failed to move near the completed FATE center for {failedTreasurePotName}; abandoning the current treasure attempt and recovering to Base Camp."
+                    : $"{movementController.LastError} Abandoning the current treasure attempt and recovering to Base Camp.");
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Treasure-center movement failed for {failedTreasurePotName} ({failedTreasurePotId}); abandoning the current treasure attempt and returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.TreasurePending);
                 return;
         }
 
@@ -1121,8 +1128,14 @@ public sealed class PotFarmController : IDisposable
             return false;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(currentPotCenter, halfExtentXZ: 5f, halfExtentY: 5f) ?? currentPotCenter;
-        if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination, TreasureCenterArrivalTolerance))
+        var destination = movementController.FindNearestNavigablePoint(currentPotCenter, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            SetFailure($"No reliable vnavmesh point is available near the completed FATE center for {CurrentPotName}.");
+            return false;
+        }
+
+        if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination.Value, TreasureCenterArrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to start movement near the completed FATE center for {CurrentPotName}."

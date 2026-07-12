@@ -24,6 +24,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
+    private const int MaxIdlePathResets = 5;
     private const float TransitionCompletionDistance = 25f;
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
@@ -56,6 +57,7 @@ public sealed class MovementController : IDisposable
     private bool mountAttempted;
     private bool dismountAttempted;
     private int stepAttemptCount;
+    private int idlePathResetCount;
     private bool lifestreamOwned;
     private bool transitionObserved;
     private bool startedAwayFromTransitionDestination;
@@ -187,6 +189,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -294,6 +297,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -341,6 +345,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -360,6 +365,13 @@ public sealed class MovementController : IDisposable
 
     public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true)
     {
+        var resolvedDestination = ResolveNavigablePoint(destination, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!resolvedDestination.HasValue)
+        {
+            SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for direct movement: {description}. target={FormatVector(destination)}.");
+            return false;
+        }
+
         vnavmesh.Stop();
 
         lock (gate)
@@ -376,7 +388,7 @@ public sealed class MovementController : IDisposable
                     {
                         Kind = RouteStepKind.PathToPoint,
                         Description = description,
-                        Destination = destination,
+                        Destination = resolvedDestination.Value,
                         ArrivalTolerance = arrivalTolerance,
                         ShouldMountBeforeStep = shouldMountBeforeStep,
                     },
@@ -392,6 +404,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -403,12 +416,12 @@ public sealed class MovementController : IDisposable
             state = MovementState.Pathfinding;
         }
 
-        logger.Info($"Starting direct movement: {description}.");
+        logger.Info($"Starting direct movement: {description}. requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)}.");
         return true;
     }
 
     public Vector3? FindNearestNavigablePoint(Vector3 position, float halfExtentXZ = 5f, float halfExtentY = 5f)
-        => vnavmesh.FindNearestPoint(position, halfExtentXZ, halfExtentY);
+        => ResolveNavigablePoint(position, halfExtentXZ, halfExtentY);
 
     public void Stop(string reason)
     {
@@ -425,6 +438,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -592,6 +606,7 @@ public sealed class MovementController : IDisposable
                 mountAttempted = false;
                 dismountAttempted = false;
                 stepAttemptCount = 0;
+                idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
                 lastProgressAt = DateTimeOffset.UtcNow;
                 lastDistance = distance;
@@ -653,10 +668,16 @@ public sealed class MovementController : IDisposable
             }
 
             var targetPoint = GetPathStepTarget(step, playerPosition);
-            var destination = vnavmesh.FindNearestPoint(targetPoint, 5f, 5f) ?? targetPoint;
-            var started = vnavmesh.PathfindAndMoveCloseTo(destination, fly: false, GetPathStepTolerance(step));
+            var destination = ResolveNavigablePoint(targetPoint, halfExtentXZ: 5f, halfExtentY: 5f);
+            if (!destination.HasValue)
+            {
+                SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for step: {step.Description}. target={FormatVector(targetPoint)}.", stopMovement: true);
+                return;
+            }
+
+            var started = vnavmesh.PathfindAndMoveCloseTo(destination.Value, fly: false, GetPathStepTolerance(step));
             logger.Debug(
-                $"Path step start attempt for '{step.Description}'. distance={distance:0.0} target={FormatVector(targetPoint)} navTarget={FormatVector(destination)} tolerance={GetPathStepTolerance(step):0.0} shouldMount={step.ShouldMountBeforeStep} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()}.");
+                $"Path step start attempt for '{step.Description}'. distance={distance:0.0} target={FormatVector(targetPoint)} navTarget={FormatVector(destination.Value)} tolerance={GetPathStepTolerance(step):0.0} shouldMount={step.ShouldMountBeforeStep} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()}.");
             if (!started)
             {
                 SetFailure(MovementState.Failed, $"Failed to start pathing for step: {step.Description}.");
@@ -670,6 +691,7 @@ public sealed class MovementController : IDisposable
                 mountAttempted = false;
                 dismountAttempted = false;
                 stepAttemptCount++;
+                idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
                 lastProgressAt = DateTimeOffset.UtcNow;
                 lastDistance = distance;
@@ -713,10 +735,21 @@ public sealed class MovementController : IDisposable
                 return;
             }
 
+            var resetAttempt = idlePathResetCount + 1;
+            if (resetAttempt > MaxIdlePathResets)
+            {
+                SetFailure(
+                    MovementState.Failed,
+                    $"vnavmesh remained idle before arrival for step '{step.Description}' after {MaxIdlePathResets} reset attempt(s). distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}.",
+                    stopMovement: true);
+                return;
+            }
+
             logger.Warning(
-                $"Resetting path step '{step.Description}' because vnavmesh is idle before arrival. distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}.");
+                $"Resetting path step '{step.Description}' because vnavmesh is idle before arrival. resetAttempt={resetAttempt}/{MaxIdlePathResets} distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}.");
             lock (gate)
             {
+                idlePathResetCount = resetAttempt;
                 stepStarted = false;
                 mountAttempted = false;
                 dismountAttempted = false;
@@ -992,6 +1025,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
             returnPromptHandled = false;
@@ -1023,6 +1057,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -1054,6 +1089,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -1091,6 +1127,7 @@ public sealed class MovementController : IDisposable
             mountAttempted = false;
             dismountAttempted = false;
             stepAttemptCount = 0;
+            idlePathResetCount = 0;
             lifestreamOwned = false;
             transitionObserved = false;
             startedAwayFromTransitionDestination = false;
@@ -1403,6 +1440,34 @@ public sealed class MovementController : IDisposable
 
     private static float GetAethernetInnerBandTarget(RouteStep step)
         => MathF.Min(step.InteractDistanceMin + AethernetInnerEdgeBias, step.InteractDistanceMax);
+
+    private Vector3? ResolveNavigablePoint(Vector3 position, float halfExtentXZ, float halfExtentY, bool allowUnlandable = false)
+    {
+        var floorPoint = vnavmesh.FindPointOnFloor(position, allowUnlandable, halfExtentXZ);
+        var nearestFromFloor = floorPoint.HasValue
+            ? vnavmesh.FindNearestPoint(floorPoint.Value, halfExtentXZ, halfExtentY) ?? floorPoint
+            : null;
+        var nearestPoint = vnavmesh.FindNearestPoint(position, halfExtentXZ, halfExtentY);
+
+        return SelectCloserNavigablePoint(position, nearestFromFloor, nearestPoint);
+    }
+
+    private static Vector3? SelectCloserNavigablePoint(Vector3 origin, Vector3? primary, Vector3? secondary)
+    {
+        if (!primary.HasValue)
+        {
+            return secondary;
+        }
+
+        if (!secondary.HasValue)
+        {
+            return primary;
+        }
+
+        return CalculateFlatDistance(origin, primary.Value) <= CalculateFlatDistance(origin, secondary.Value)
+            ? primary
+            : secondary;
+    }
 
     private unsafe bool IsSelectYesnoReady()
     {

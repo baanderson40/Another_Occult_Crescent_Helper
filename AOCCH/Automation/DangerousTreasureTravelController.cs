@@ -215,14 +215,20 @@ public sealed class DangerousTreasureTravelController : IDisposable
             finalArrivalTolerance + 1f,
             candidate.HideThresholdDistance ?? configuration.HideThresholdDistance);
         var thresholdPoint = CalculateHideThresholdPoint(playerPosition.Value, destination, hideThresholdDistance);
+        var resolvedThresholdPoint = movementController.FindNearestNavigablePoint(thresholdPoint, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!resolvedThresholdPoint.HasValue)
+        {
+            SkipCandidate($"Dangerous treasure candidate {candidate.Label} has no reliable vnavmesh hide-threshold point. target=<{thresholdPoint.X:0.000}, {thresholdPoint.Y:0.000}, {thresholdPoint.Z:0.000}> destination=<{destination.X:0.000}, {destination.Y:0.000}, {destination.Z:0.000}>.");
+            return false;
+        }
 
         lock (gate)
         {
             activeCandidateLabel = candidate.Label;
             finalDestination = destination;
-            hideThresholdPoint = thresholdPoint;
+            hideThresholdPoint = resolvedThresholdPoint.Value;
             arrivalTolerance = finalArrivalTolerance;
-            hideThresholdTravelRequired = CalculateFlatDistance(playerPosition.Value, thresholdPoint) > arrivalTolerance;
+            hideThresholdTravelRequired = CalculateFlatDistance(playerPosition.Value, resolvedThresholdPoint.Value) > arrivalTolerance;
             lastError = string.Empty;
             lastResult = DangerousTreasureTravelResult.None;
             gearsetAttemptInFlight = false;

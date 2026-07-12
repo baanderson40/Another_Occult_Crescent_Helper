@@ -16,6 +16,7 @@ public sealed class VNavmeshIpc
     private readonly ICallGateSubscriber<bool> isPathRunning;
     private readonly ICallGateSubscriber<object> stopPath;
     private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> nearestPoint;
+    private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> pointOnFloor;
 
     private bool? lastAvailability;
 
@@ -30,6 +31,7 @@ public sealed class VNavmeshIpc
         isPathRunning = Plugin.PluginInterface.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
         stopPath = Plugin.PluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
         nearestPoint = Plugin.PluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
+        pointOnFloor = Plugin.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
     }
 
     public bool IsReady()
@@ -55,6 +57,10 @@ public sealed class VNavmeshIpc
     public Vector3? FindNearestPoint(Vector3 position, float halfExtentXZ, float halfExtentY)
         => Invoke("vnavmesh.Query.Mesh.NearestPoint",
             () => nearestPoint.InvokeFunc(position, halfExtentXZ, halfExtentY), null);
+
+    public Vector3? FindPointOnFloor(Vector3 position, bool allowUnlandable, float halfExtentXZ)
+        => Invoke("vnavmesh.Query.Mesh.PointOnFloor",
+            () => pointOnFloor.InvokeFunc(position, allowUnlandable, halfExtentXZ), null);
 
     public void Stop()
     {

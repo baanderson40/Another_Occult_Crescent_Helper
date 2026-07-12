@@ -255,9 +255,15 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f) ?? liveObject.Position;
-        logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> reason={reason}");
-        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, PreferredOpenDistance))
+        var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f);
+        if (!destination.HasValue)
+        {
+            SetFailure($"No reliable vnavmesh point is available near coffer {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}).");
+            return false;
+        }
+
+        logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
+        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination.Value, PreferredOpenDistance))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Failed to begin movement into coffer interact range."

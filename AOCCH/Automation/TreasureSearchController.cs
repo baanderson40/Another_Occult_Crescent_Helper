@@ -963,10 +963,21 @@ public sealed class TreasureSearchController : IDisposable
         var canonicalPosition = candidate.Position.ToVector3();
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition);
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
-        var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f)
-            ?? targetPosition;
         var isDangerousCandidate = IsDangerousCandidate(candidate);
-        logger.Info($"Treasure search candidate start: label={candidate.Label} fate={activeFateName} ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> reason={reason}");
+        var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            var navFailureReason = $"Treasure candidate {candidate.Label} has no reliable vnavmesh point near <{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}>.";
+            if (isDangerousCandidate)
+            {
+                return SkipDangerousCandidate(navFailureReason);
+            }
+
+            AdvanceCandidate(navFailureReason);
+            return false;
+        }
+
+        logger.Info($"Treasure search candidate start: label={candidate.Label} fate={activeFateName} ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -974,7 +985,7 @@ public sealed class TreasureSearchController : IDisposable
                 return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because aggro level {candidate.AggroLevel} exceeds Maximum Aggro Level {configuration.MaximumAggroLevel} and Ninja travel is disabled.");
             }
 
-            if (!dangerousTreasureTravelController.Start(candidate, destination, CandidateArrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(candidate, destination.Value, CandidateArrivalTolerance))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -987,7 +998,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
         }
-        else if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
+        else if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination.Value, CandidateArrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to start movement to treasure candidate {candidate.Label}."
@@ -1243,7 +1254,13 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TryStartRefinementMove(TreasureCofferCandidateData activeCandidate, Vector3 target, float arrivalTolerance, string description)
     {
-        var destination = movementController.FindNearestNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f) ?? target;
+        var destination = movementController.FindNearestNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            AdvanceCandidate($"Treasure candidate {activeCandidate.Label} local refinement target has no reliable vnavmesh point near <{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}>.");
+            return false;
+        }
+
         var isDangerousCandidate = IsDangerousCandidate(activeCandidate);
         if (isDangerousCandidate)
         {
@@ -1253,7 +1270,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
 
-            if (!dangerousTreasureTravelController.Start(activeCandidate, destination, arrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(activeCandidate, destination.Value, arrivalTolerance))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1269,7 +1286,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
         }
-        else if (!movementController.StartDirectMove(description, destination, arrivalTolerance))
+        else if (!movementController.StartDirectMove(description, destination.Value, arrivalTolerance))
         {
             AdvanceCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start local refinement movement for candidate {activeCandidate.Label}."
@@ -1277,7 +1294,7 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        refinementMoveDeadlineAt = DateTimeOffset.UtcNow + GetRefinementMoveTimeout(CalculateFlatDistance(Plugin.ObjectTable.LocalPlayer?.Position ?? target, destination));
+        refinementMoveDeadlineAt = DateTimeOffset.UtcNow + GetRefinementMoveTimeout(CalculateFlatDistance(Plugin.ObjectTable.LocalPlayer?.Position ?? target, destination.Value));
         return true;
     }
 
@@ -1355,9 +1372,14 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.Updated;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(handoffResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f)
-            ?? handoffResolvedPosition;
-        if (!dangerousTreasureTravelController.Start(handoffCandidate, destination, CandidateArrivalTolerance))
+        var destination = movementController.FindNearestNavigablePoint(handoffResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            AdvanceCandidate($"Treasure candidate {handoffCandidate.Label} handoff target has no reliable vnavmesh point near <{handoffResolvedPosition.X:0.0}, {handoffResolvedPosition.Y:0.0}, {handoffResolvedPosition.Z:0.0}>.");
+            return CandidateHandoffResult.DangerousTransitionStarted;
+        }
+
+        if (!dangerousTreasureTravelController.Start(handoffCandidate, destination.Value, CandidateArrivalTolerance))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
