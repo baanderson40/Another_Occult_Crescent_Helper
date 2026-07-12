@@ -14,8 +14,7 @@ namespace AOCCH.Automation;
 public sealed class TreasureCofferFarmController : IDisposable
 {
     private const float MatchConfidenceRadius = 25f;
-    private const float VisibleCofferScanRadius = 60f;
-    private const float ApproachScanTriggerDistance = 40f;
+    private const float VisibleCofferAcquisitionDistance = 100f;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
@@ -375,27 +374,17 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var destination = ActiveResolvedPosition;
-        var arrivalDistance = spot.ArrivalDistance ?? Math.Max(1f, configuration.ArrivalDistance);
-        var description = $"Visible coffer route {spot.Label}";
-
-        var preferredAethernet = ResolvePreferredAethernetName(spot.Area);
-        if (!movementController.PlanRouteToLocation(description, preferredAethernet, destination, arrivalDistance))
+        var arrivalDistance = GetArrivalDistance(spot);
+        if (!movementController.StartDirectMove($"Visible coffer route {spot.Label}", destination, arrivalDistance))
         {
-            SetFailure(movementController.LastError.Length == 0
-                ? $"Failed to plan travel to visible coffer route spot {spot.Area}:{spot.Label}."
-                : movementController.LastError);
-            return false;
-        }
-
-        if (!movementController.StartPlannedRoute())
-        {
-            SetFailure(movementController.LastError.Length == 0
+            logger.Warning(movementController.LastError.Length == 0
                 ? $"Failed to start travel to visible coffer route spot {spot.Area}:{spot.Label}."
                 : movementController.LastError);
+            TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping visible coffer route spot {spot.Area}:{spot.Label} because direct travel could not start.");
             return false;
         }
 
-        TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to visible coffer route spot {spot.Area}:{spot.Label}.");
+        TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to visible coffer route spot {spot.Area}:{spot.Label} with direct-only movement.");
         return true;
     }
 
@@ -413,9 +402,10 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
-                SetFailure(movementController.LastError.Length == 0
+                logger.Warning(movementController.LastError.Length == 0
                     ? $"Failed to reach visible coffer route spot {DescribeActiveSpot()}."
                     : movementController.LastError);
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping visible coffer route spot {DescribeActiveSpot()} because direct travel failed.");
                 return;
         }
 
@@ -433,12 +423,13 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        if (TryStartInteractionForActiveSpot(requireApproachThreshold: false, acquisitionSource: "arrival"))
+        if (TryStartInteractionForActiveSpot(requireApproachThreshold: false, acquisitionSource: "final"))
         {
             return;
         }
 
-        TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No visible coffer matched {DescribeActiveSpot()} on immediate arrival scan; continuing to the next route entry.");
+        logger.Info($"VISIBLE_COFFER_FINAL_SCAN_MISS spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot)} acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y.");
+        TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No visible coffer matched {DescribeActiveSpot()} on final arrival scan; continuing to the next route entry.");
     }
 
     private void TickInteractingWithCoffer()
@@ -492,15 +483,16 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
-        var matchedCoffer = TryMatchVisibleCoffer(ActiveResolvedPosition, VisibleCofferScanRadius, out var matchDistance);
-        if (matchedCoffer == null)
+        if (!TryMatchVisibleCoffer(spot, ActiveResolvedPosition, VisibleCofferAcquisitionDistance, acquisitionSource, remainingDistanceToSpot, out var matchedCoffer, out var matchDistance))
         {
             return false;
         }
 
+        var confirmedCoffer = matchedCoffer!;
+
         lock (gate)
         {
-            lastMatchedCoffer = matchedCoffer;
+            lastMatchedCoffer = confirmedCoffer;
             lastMatchSource = acquisitionSource;
         }
 
@@ -521,14 +513,14 @@ public sealed class TreasureCofferFarmController : IDisposable
                 Label = spot.Label,
                 CandidateKey = spot.Label,
             },
-            Coffer = matchedCoffer,
+            Coffer = confirmedCoffer,
             MatchDistance = matchDistance,
             IsTrustworthy = matchDistance <= MatchConfidenceRadius,
-            AttributionReason = $"Matched visible coffer during {acquisitionSource} scan for {spot.Area}:{spot.Label}. routeDistance={matchDistance:0.0}y playerDistance={matchedCoffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y scanRadius={VisibleCofferScanRadius:0.0}y.",
+            AttributionReason = $"Matched visible coffer during {acquisitionSource} scan for {spot.Area}:{spot.Label}. routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y.",
         };
 
         logger.Info(
-            $"VISIBLE_COFFER_MATCH spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={matchedCoffer.DataId} objectId={matchedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={matchedCoffer.DistanceToPlayer:0.0}y pos=<{matchedCoffer.Position.X:0.000}, {matchedCoffer.Position.Y:0.000}, {matchedCoffer.Position.Z:0.000}> name='{matchedCoffer.Name}'.");
+            $"VISIBLE_COFFER_MATCH spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={confirmedCoffer.DataId} objectId={confirmedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y pos=<{confirmedCoffer.Position.X:0.000}, {confirmedCoffer.Position.Y:0.000}, {confirmedCoffer.Position.Z:0.000}> name='{confirmedCoffer.Name}'.");
 
         if (!cofferInteractionController.Start(interactionMatch))
         {
@@ -558,7 +550,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         remainingDistanceToSpot = CalculateFlatDistance(playerPosition.Value, ActiveResolvedPosition);
-        if (requireApproachThreshold && remainingDistanceToSpot > ApproachScanTriggerDistance)
+        if (requireApproachThreshold && remainingDistanceToSpot > VisibleCofferAcquisitionDistance)
         {
             return false;
         }
@@ -577,7 +569,14 @@ public sealed class TreasureCofferFarmController : IDisposable
         return true;
     }
 
-    private VisibleCoffer? TryMatchVisibleCoffer(Vector3 resolvedPosition, float scanRadius, out float matchDistance)
+    private bool TryMatchVisibleCoffer(
+        VisibleCofferFarmSpotData spot,
+        Vector3 resolvedPosition,
+        float scanRadius,
+        string acquisitionSource,
+        float remainingDistanceToSpot,
+        out VisibleCoffer? matchedCoffer,
+        out float matchDistance)
     {
         var best = scanner.Snapshot.VisibleCoffers
             .Select(coffer => new
@@ -593,12 +592,32 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (best == null)
         {
+            matchedCoffer = null;
             matchDistance = float.MaxValue;
-            return null;
+            return false;
         }
 
+        var detectedLogPrefix = acquisitionSource == "final"
+            ? "VISIBLE_COFFER_FINAL_SCAN_MATCH"
+            : "VISIBLE_COFFER_EARLY_DETECTED";
+        logger.Info(
+            $"{detectedLogPrefix} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'.");
+
+        if (best.Distance > MatchConfidenceRadius)
+        {
+            var rejectedLogPrefix = acquisitionSource == "final"
+                ? "VISIBLE_COFFER_FINAL_SCAN_REJECTED"
+                : "VISIBLE_COFFER_EARLY_REJECTED";
+            logger.Info(
+                $"{rejectedLogPrefix} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y trustRadius={MatchConfidenceRadius:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'.");
+            matchedCoffer = null;
+            matchDistance = best.Distance;
+            return false;
+        }
+
+        matchedCoffer = best.Coffer;
         matchDistance = best.Distance;
-        return best.Coffer;
+        return true;
     }
 
     private void PersistActiveSpotOverride()
@@ -622,6 +641,12 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool ShouldSkipSpot(VisibleCofferFarmSpotData spot)
         => RequiresDangerousTravel(spot);
+
+    private float GetArrivalDistance(VisibleCofferFarmSpotData? spot)
+    {
+        var configured = spot?.ArrivalDistance ?? configuration.ArrivalDistance;
+        return Math.Clamp(configured, 5f, 50f);
+    }
 
     private void SetFailure(string reason)
     {
@@ -660,7 +685,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var nearestPlayer = visibleCoffers
-            .Where(coffer => coffer.DistanceToPlayer <= VisibleCofferScanRadius)
+            .Where(coffer => coffer.DistanceToPlayer <= VisibleCofferAcquisitionDistance)
             .OrderBy(coffer => coffer.DistanceToPlayer)
             .FirstOrDefault();
         var nearestRoute = visibleCoffers
@@ -669,7 +694,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 Coffer = coffer,
                 Distance = CalculateFlatDistance(coffer.Position, resolvedPosition),
             })
-            .Where(entry => entry.Coffer.DistanceToPlayer <= VisibleCofferScanRadius)
+            .Where(entry => entry.Coffer.DistanceToPlayer <= VisibleCofferAcquisitionDistance)
             .OrderBy(entry => entry.Distance)
             .FirstOrDefault();
 
