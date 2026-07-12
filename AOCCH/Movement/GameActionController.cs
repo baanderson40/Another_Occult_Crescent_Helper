@@ -410,7 +410,7 @@ public sealed class GameActionController
 
         var itemToUse = isHighQuality ? itemId + 1_000_000u : itemId;
         var result = agent->UseItem(itemToUse);
-        if (result != 0)
+        if (!IsAcceptedUseItemResult(result))
         {
             logger.Warning($"UseItem({itemToUse}) returned {result} for {description}.");
             return false;
@@ -480,7 +480,7 @@ public sealed class GameActionController
         }
 
         var result = agent->UseItem(itemSlot->ItemId, InventoryType.KeyItems, (uint)itemSlot->Slot);
-        if (result != 0)
+        if (!IsAcceptedUseItemResult(result))
         {
             logger.Warning($"UseItem({itemSlot->ItemId}, {InventoryType.KeyItems}, slot={itemSlot->Slot}) returned {result} for {description}.");
             return false;
@@ -516,6 +516,9 @@ public sealed class GameActionController
             MagicalElixirUseMethod.Command => TryUseMagicalElixirViaCommand(description),
             _ => false,
         };
+
+    private static bool IsAcceptedUseItemResult(long result)
+        => result is 0 or 1;
 
     public unsafe string DescribeMagicalElixirState()
     {

@@ -11,7 +11,8 @@ namespace AOCCH.Automation;
 
 public sealed class CofferInteractionController : IDisposable
 {
-    private const float InteractRange = 4.5f;
+    private const float MaxInteractRange = 4.5f;
+    private const float PreferredOpenDistance = 3.25f;
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
@@ -243,14 +244,14 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
-        if (distance <= InteractRange)
+        if (distance <= PreferredOpenDistance)
         {
-            TransitionTo(CofferInteractionState.TargetingCoffer, $"{reason} Coffer is within interact range.");
+            TransitionTo(CofferInteractionState.TargetingCoffer, $"{reason} Coffer is within the preferred opening distance ({distance:0.0}y <= {PreferredOpenDistance:0.00}y).");
             return true;
         }
 
         var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f) ?? liveObject.Position;
-        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, InteractRange))
+        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, PreferredOpenDistance))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Failed to begin movement into coffer interact range."
@@ -258,7 +259,7 @@ public sealed class CofferInteractionController : IDisposable
             return false;
         }
 
-        TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Moving into interact range of {liveObject.Name.TextValue}.");
+        TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Moving within {PreferredOpenDistance:0.00}y of {liveObject.Name.TextValue} before attempting to open it.");
         return true;
     }
 
@@ -267,8 +268,29 @@ public sealed class CofferInteractionController : IDisposable
         switch (movementController.State)
         {
             case MovementState.Arrived:
+                var liveObject = ResolveActiveObject();
+                if (liveObject == null)
+                {
+                    TransitionTo(CofferInteractionState.LostCoffer, "Matched coffer disappeared before the approach completed.", result: CofferInteractionResult.LostCoffer);
+                    return;
+                }
+
+                var playerPosition = objectTable.LocalPlayer?.Position;
+                if (playerPosition == null)
+                {
+                    SetFailure("Player position is unavailable after arriving at the matched coffer.");
+                    return;
+                }
+
+                var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+                if (distance > PreferredOpenDistance)
+                {
+                    BeginApproachOrTarget(liveObject, $"Movement reported arrival, but the player is still {distance:0.0}y from {liveObject.Name.TextValue}.");
+                    return;
+                }
+
                 movementController.Stop("Reached coffer interact range.");
-                TransitionTo(CofferInteractionState.TargetingCoffer, "Reached coffer interact range.");
+                TransitionTo(CofferInteractionState.TargetingCoffer, $"Reached the preferred opening distance for {liveObject.Name.TextValue} ({distance:0.0}y).");
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
@@ -278,7 +300,7 @@ public sealed class CofferInteractionController : IDisposable
                 return;
         }
 
-        logger.DebugThrottled("coffer-approach", WaitLogInterval, $"Coffer interaction is approaching {ActiveMatch?.Coffer.Name ?? "unknown"}. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+        logger.DebugThrottled("coffer-approach", WaitLogInterval, $"Coffer interaction is approaching {ActiveMatch?.Coffer.Name ?? "unknown"}. targetDistance<={PreferredOpenDistance:0.00}y movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
     }
 
     private void TickTargeting()
@@ -290,6 +312,20 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (playerPosition == null)
+        {
+            SetFailure("Player position is unavailable while targeting the matched coffer.");
+            return;
+        }
+
+        var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        if (distance > MaxInteractRange)
+        {
+            BeginApproachOrTarget(liveObject, $"Player drifted outside the coffer interaction range ({distance:0.0}y > {MaxInteractRange:0.0}y).");
+            return;
+        }
+
         logger.ResetThrottle("coffer-approach");
         if (!gameActionController.TrySetTarget(liveObject, "coffer interaction"))
         {
@@ -297,7 +333,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        TransitionTo(CofferInteractionState.InteractingWithCoffer, $"Targeted coffer {liveObject.Name.TextValue}; attempting interaction.");
+        TransitionTo(CofferInteractionState.InteractingWithCoffer, $"Targeted coffer {liveObject.Name.TextValue} at {distance:0.0}y; attempting interaction.");
     }
 
     private void TickInteraction()
@@ -306,6 +342,20 @@ public sealed class CofferInteractionController : IDisposable
         if (liveObject == null)
         {
             TransitionTo(CofferInteractionState.LostCoffer, "Matched coffer disappeared before interaction could start.", result: CofferInteractionResult.LostCoffer);
+            return;
+        }
+
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (playerPosition == null)
+        {
+            SetFailure("Player position is unavailable while interacting with the matched coffer.");
+            return;
+        }
+
+        var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        if (distance > MaxInteractRange)
+        {
+            BeginApproachOrTarget(liveObject, $"Interaction was deferred because the player is {distance:0.0}y from the matched coffer.");
             return;
         }
 
