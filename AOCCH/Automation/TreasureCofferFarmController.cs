@@ -294,6 +294,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.InteractingWithCoffer:
                 TickInteractingWithCoffer();
                 break;
+            case TreasureCofferFarmState.ReturningToBase:
+                TickReturningToBase();
+                break;
         }
     }
 
@@ -304,7 +307,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             var nextIndex = CurrentRouteIndex + 1;
             if (nextIndex >= data.VisibleCofferFarmRoute.Count)
             {
-                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route.");
+                BeginReturnToBase();
                 return;
             }
 
@@ -468,6 +471,53 @@ public sealed class TreasureCofferFarmController : IDisposable
                     : cofferInteractionController.LastError);
                 return;
         }
+    }
+
+    private void BeginReturnToBase()
+    {
+        if (!movementController.RecoverToBaseCamp())
+        {
+            logger.Warning(movementController.LastError.Length == 0
+                ? "Completed the visible coffer farm route, but failed to start Base Camp recovery with Return routing; retrying with direct recovery."
+                : movementController.LastError);
+
+            if (!movementController.RecoverToBaseCamp(allowReturn: false))
+            {
+                logger.Warning(movementController.LastError.Length == 0
+                    ? "Completed the visible coffer farm route, but failed to start Base Camp recovery."
+                    : movementController.LastError);
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but failed to start Base Camp recovery.");
+                return;
+            }
+
+            TransitionTo(TreasureCofferFarmState.ReturningToBase, "Completed the visible coffer farm route; returning to Base Camp with direct recovery after Return routing was unavailable.");
+            return;
+        }
+
+        TransitionTo(TreasureCofferFarmState.ReturningToBase, "Completed the visible coffer farm route; returning to Base Camp with normal recovery routing.");
+    }
+
+    private void TickReturningToBase()
+    {
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Visible coffer route returned to Base Camp.");
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route and returned to Base Camp.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                logger.Warning(movementController.LastError.Length == 0
+                    ? "Base Camp recovery failed after completing the visible coffer farm route."
+                    : movementController.LastError);
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but Base Camp recovery failed.");
+                return;
+        }
+
+        logger.DebugThrottled(
+            "visible-coffer-farm-returning-base",
+            WaitLogInterval,
+            $"Visible coffer farm is returning to Base Camp. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
     }
 
     private bool TryStartInteractionForActiveSpot(bool requireApproachThreshold, string acquisitionSource)
