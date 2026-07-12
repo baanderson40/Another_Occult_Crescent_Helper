@@ -14,6 +14,7 @@ namespace AOCCH.Automation;
 
 public sealed class BuffRotationController : IDisposable
 {
+    private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const float BuffFreshDuration = 600f;
     private const float BuffSettleSeconds = 1f;
     private const float BuffTimeoutSeconds = 3f;
@@ -476,7 +477,37 @@ public sealed class BuffRotationController : IDisposable
 
         moveTargets = BuildBuffZoneTargets(playerPosition.Value);
         moveAttemptIndex = 0;
-        StartNextMoveAttempt();
+
+        if (moveTargets.Count == 0)
+        {
+            SetFailure("Buff rotation failed to build a valid buff zone route.", critical: false);
+            return;
+        }
+
+        StartPlannedMoveToBuffZone();
+    }
+
+    private void StartPlannedMoveToBuffZone()
+    {
+        var destination = moveTargets[moveAttemptIndex++];
+        currentAction = "Moving to buff zone";
+        if (!movementController.PlanRouteToLocation(currentAction, "BaseCamp", destination, 1f))
+        {
+            SetFailure(movementController.LastError.Length == 0
+                ? "Buff rotation could not plan movement into the buff zone."
+                : movementController.LastError, critical: false);
+            return;
+        }
+
+        if (!movementController.StartPlannedRoute())
+        {
+            SetFailure(movementController.LastError.Length == 0
+                ? "Buff rotation could not start movement into the buff zone."
+                : movementController.LastError, critical: false);
+            return;
+        }
+
+        TransitionTo(BuffRotationState.MovingToBuffZone, currentAction);
     }
 
     private void StartNextMoveAttempt()
@@ -491,7 +522,9 @@ public sealed class BuffRotationController : IDisposable
         currentAction = $"Moving to buff zone point {moveAttemptIndex}/{moveTargets.Count}";
         if (!movementController.StartDirectMove(currentAction, destination, 1f))
         {
-            SetFailure("Buff rotation could not start movement into the buff zone.", critical: false);
+            SetFailure(movementController.LastError.Length == 0
+                ? "Buff rotation could not start movement into the buff zone."
+                : movementController.LastError, critical: false);
             return;
         }
 
@@ -508,15 +541,25 @@ public sealed class BuffRotationController : IDisposable
             return;
         }
 
-        if (movementController.State == MovementState.Arrived)
+        var movementState = movementController.State;
+        if (movementState is MovementState.Pathfinding or MovementState.WaitingForArrival or MovementState.UsingReturn or MovementState.UsingAethernet)
+        {
+            logger.DebugThrottled(
+                "buff-rotation-move",
+                WaitLogInterval,
+                $"Buff rotation is moving to the buff zone. MovementState={movementState} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+        }
+
+        if (movementState == MovementState.Arrived)
         {
             StartNextMoveAttempt();
             return;
         }
 
-        if (movementController.State is MovementState.Failed or MovementState.TimedOut or MovementState.Stopped)
+        if (movementState is MovementState.Failed or MovementState.TimedOut or MovementState.Stopped)
         {
             StartNextMoveAttempt();
+            return;
         }
     }
 
