@@ -13,8 +13,17 @@ namespace AOCCH.Automation;
 
 public sealed class TreasureSearchController : IDisposable
 {
+    private enum CandidateHandoffResult
+    {
+        None,
+        Updated,
+        DangerousTransitionStarted,
+    }
+
     private const float CandidateArrivalTolerance = 5f;
     private const float MaximumTrustedAttributionDistance = 25f;
+    private const float CandidateHandoffRadius = 25f;
+    private const float CandidateHandoffAdvantage = 10f;
     private const float MappedPointRetryArrivalTolerance = 4.5f;
     private const float LocalMoveSkipDistance = 3f;
     private const int MaximumCandidateRefinementSteps = 12;
@@ -37,6 +46,8 @@ public sealed class TreasureSearchController : IDisposable
     private readonly float mountedTravelSpeed;
     private readonly Dictionary<uint, Dictionary<string, TreasureCofferGroupData>> groupsByFateId;
     private readonly object gate = new();
+    private readonly HashSet<string> handledCandidateLabels = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<TreasureCofferCandidateData> orderedCandidates = [];
 
     private TreasureSearchState state = TreasureSearchState.Idle;
     private TreasureSearchRunResult lastResult;
@@ -48,6 +59,7 @@ public sealed class TreasureSearchController : IDisposable
     private int currentCandidateIndex = -1;
     private int consumedHintRevision;
     private string lastHandoffReason = string.Empty;
+    private Vector3 traversalOriginCenter;
     private DateTimeOffset candidateTravelDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateArrivedAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateProbeDeadlineAt = DateTimeOffset.MinValue;
@@ -223,7 +235,32 @@ public sealed class TreasureSearchController : IDisposable
         }
     }
 
+    public IReadOnlyList<string> OrderedCandidateLabels
+    {
+        get
+        {
+            lock (gate)
+            {
+                return orderedCandidates.Select(candidate => candidate.Label).ToArray();
+            }
+        }
+    }
+
+    public IReadOnlyList<string> HandledCandidateLabels
+    {
+        get
+        {
+            lock (gate)
+            {
+                return handledCandidateLabels.OrderBy(label => label, StringComparer.OrdinalIgnoreCase).ToArray();
+            }
+        }
+    }
+
     public bool Start(uint fateId, string fateName)
+        => Start(fateId, fateName, Vector3.Zero);
+
+    public bool Start(uint fateId, string fateName, Vector3 originCenter)
     {
         if (IsRunning)
         {
@@ -251,14 +288,26 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        activeFateName = fateName;
+        var runOrderedCandidates = BuildOrderedCandidates(group, originCenter);
+        if (runOrderedCandidates.Count == 0)
+        {
+            SetFailure($"Treasure search has no eligible coffer candidates for fate {fateId} group {groupKey}.");
+            return false;
+        }
+
         lock (gate)
         {
             activeFateId = fateId;
             activeFateName = fateName;
             activeGroupKey = group.GroupKey;
+            handledCandidateLabels.Clear();
+            orderedCandidates.Clear();
+            orderedCandidates.AddRange(runOrderedCandidates);
             currentCandidateIndex = 0;
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Selected initial treasure group {group.GroupKey} from first hint revision {hintSnapshot.InitialHintEvent?.Revision ?? 0}.";
+            traversalOriginCenter = originCenter;
             candidateTravelDeadlineAt = DateTimeOffset.MinValue;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
@@ -301,6 +350,9 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex = -1;
             consumedHintRevision = 0;
             lastHandoffReason = string.Empty;
+            handledCandidateLabels.Clear();
+            orderedCandidates.Clear();
+            traversalOriginCenter = Vector3.Zero;
             candidateTravelDeadlineAt = DateTimeOffset.MinValue;
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
@@ -330,14 +382,14 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
+        if (orderedCandidates.Count == 0)
         {
             SetFailure("Treasure traversal lost its candidate group while handling coffer interaction loss.");
             return false;
         }
 
         logger.ResetThrottle("treasure-search-travel");
-        if (CurrentCandidateIndex + 1 >= group.Candidates.Count)
+        if (CurrentCandidateIndex + 1 >= orderedCandidates.Count)
         {
             TransitionTo(TreasureSearchState.CandidatesExhausted, reason, result: TreasureSearchRunResult.CandidatesExhausted);
             return false;
@@ -715,6 +767,18 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        var runOrderedCandidates = BuildOrderedCandidates(group, traversalOriginCenter);
+        if (runOrderedCandidates.Count == 0)
+        {
+            lock (gate)
+            {
+                consumedHintRevision = hintSnapshot.Revision;
+                lastHandoffReason = $"Ignored treasure hint revision {hintSnapshot.Revision}; group {groupKey} has no eligible mapped candidates.";
+            }
+
+            return false;
+        }
+
         if (dangerousTreasureTravelController.IsRunning)
         {
             dangerousTreasureTravelController.Stop($"Treasure hint handoff to group {group.GroupKey}.");
@@ -724,6 +788,9 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             activeGroupKey = group.GroupKey;
+            handledCandidateLabels.Clear();
+            orderedCandidates.Clear();
+            orderedCandidates.AddRange(runOrderedCandidates);
             currentCandidateIndex = 0;
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Handoff to treasure group {group.GroupKey} from hint revision {hintSnapshot.Revision}.";
@@ -755,7 +822,7 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0 || ActiveCandidateKey == null)
+        if (orderedCandidates.Count == 0 || ActiveCandidateKey == null)
         {
             return false;
         }
@@ -773,7 +840,7 @@ public sealed class TreasureSearchController : IDisposable
         var nearestOtherDistance = float.MaxValue;
         TreasureCandidateKey? nearestOtherCandidateKey = null;
 
-        foreach (var candidate in group.Candidates)
+        foreach (var candidate in orderedCandidates)
         {
             if (string.Equals(candidate.CandidateKey, ActiveCandidateKey.CandidateKey, StringComparison.OrdinalIgnoreCase))
             {
@@ -845,13 +912,13 @@ public sealed class TreasureSearchController : IDisposable
     {
         logger.ResetThrottle("treasure-search-travel");
 
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
+        if (orderedCandidates.Count == 0)
         {
             SetFailure(reason);
             return;
         }
 
-        if (CurrentCandidateIndex + 1 >= group.Candidates.Count)
+        if (CurrentCandidateIndex + 1 >= orderedCandidates.Count)
         {
             TransitionTo(TreasureSearchState.CandidatesExhausted, reason, result: TreasureSearchRunResult.CandidatesExhausted);
             return;
@@ -893,7 +960,7 @@ public sealed class TreasureSearchController : IDisposable
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
         var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f)
             ?? targetPosition;
-        var isDangerousCandidate = candidate.AggroLevel > configuration.MaximumAggroLevel;
+        var isDangerousCandidate = IsDangerousCandidate(candidate);
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -925,6 +992,7 @@ public sealed class TreasureSearchController : IDisposable
         var travelTimeout = TimeSpan.FromSeconds(Math.Max(30, candidate.TravelTimeoutSeconds ?? 180));
         lock (gate)
         {
+            handledCandidateLabels.Add(candidate.Label);
             activeCandidateKey = candidateKey;
             candidateTravelDeadlineAt = DateTimeOffset.UtcNow + travelTimeout;
             candidateArrivedAt = DateTimeOffset.MinValue;
@@ -1014,13 +1082,13 @@ public sealed class TreasureSearchController : IDisposable
     {
         logger.ResetThrottle("treasure-search-travel");
 
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
+        if (orderedCandidates.Count == 0)
         {
             SetFailure(reason);
             return false;
         }
 
-        if (CurrentCandidateIndex + 1 >= group.Candidates.Count)
+        if (CurrentCandidateIndex + 1 >= orderedCandidates.Count)
         {
             TransitionTo(TreasureSearchState.CandidatesExhausted, reason, result: TreasureSearchRunResult.CandidatesExhausted);
             return false;
@@ -1052,14 +1120,13 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryGetCurrentCandidate(out TreasureCofferCandidateData candidate)
     {
         candidate = new TreasureCofferCandidateData();
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group)
-            || CurrentCandidateIndex < 0
-            || CurrentCandidateIndex >= group.Candidates.Count)
+        if (CurrentCandidateIndex < 0
+            || CurrentCandidateIndex >= orderedCandidates.Count)
         {
             return false;
         }
 
-        candidate = group.Candidates[CurrentCandidateIndex];
+        candidate = orderedCandidates[CurrentCandidateIndex];
         return true;
     }
 
@@ -1109,9 +1176,9 @@ public sealed class TreasureSearchController : IDisposable
                         return false;
                     }
 
-                    TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
+                    var dangerousHandoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
                     refinementMoveDeadlineAt = DateTimeOffset.MinValue;
-                    return true;
+                    return dangerousHandoffResult != CandidateHandoffResult.DangerousTransitionStarted;
                 case DangerousTreasureTravelState.CandidateSkipped:
                     var skipReason = dangerousTreasureTravelController.LastTransition;
                     dangerousTreasureTravelController.AcknowledgeTerminalState();
@@ -1150,9 +1217,9 @@ public sealed class TreasureSearchController : IDisposable
                     return false;
                 }
 
-                TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
+                var handoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
-                return true;
+                return handoffResult != CandidateHandoffResult.DangerousTransitionStarted;
             case MovementState.Failed:
             case MovementState.TimedOut:
                 AdvanceCandidate(movementController.LastError.Length == 0
@@ -1171,7 +1238,7 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryStartRefinementMove(TreasureCofferCandidateData activeCandidate, Vector3 target, float arrivalTolerance, string description)
     {
         var destination = movementController.FindNearestNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f) ?? target;
-        var isDangerousCandidate = activeCandidate.AggroLevel > configuration.MaximumAggroLevel;
+        var isDangerousCandidate = IsDangerousCandidate(activeCandidate);
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -1208,55 +1275,165 @@ public sealed class TreasureSearchController : IDisposable
         return true;
     }
 
-    private bool TryApplyCandidateHandoff(Vector3 referencePosition, string reason)
+    private CandidateHandoffResult TryApplyCandidateHandoff(Vector3 referencePosition, string reason)
     {
-        if (!TryGetGroup(activeFateId, ActiveGroupKey, out var group) || group.Candidates.Count == 0)
-        {
-            return false;
-        }
-
         var currentIndex = CurrentCandidateIndex;
-        if (currentIndex < 0 || currentIndex >= group.Candidates.Count)
+        if (currentIndex < 0 || currentIndex >= orderedCandidates.Count)
         {
-            return false;
+            return CandidateHandoffResult.None;
         }
 
-        var currentCandidate = group.Candidates[currentIndex];
+        var currentCandidate = orderedCandidates[currentIndex];
         var currentPosition = ResolveCandidatePosition(currentCandidate);
         var currentDistance = CalculateFlatDistance(referencePosition, currentPosition);
-        var nearestIndex = currentIndex;
-        var nearestDistance = currentDistance;
+        var bestIndex = -1;
+        var bestDistance = float.MaxValue;
 
-        for (var i = 0; i < group.Candidates.Count; i++)
+        for (var i = 0; i < orderedCandidates.Count; i++)
         {
-            var distance = CalculateFlatDistance(referencePosition, ResolveCandidatePosition(group.Candidates[i]));
-            if (distance < nearestDistance)
+            if (i == currentIndex)
             {
-                nearestDistance = distance;
-                nearestIndex = i;
+                continue;
+            }
+
+            var candidate = orderedCandidates[i];
+            if (IsHandledCandidate(candidate.Label))
+            {
+                continue;
+            }
+
+            var distance = CalculateFlatDistance(referencePosition, ResolveCandidatePosition(candidate));
+            var advantage = currentDistance - distance;
+            if (distance > CandidateHandoffRadius || advantage < CandidateHandoffAdvantage)
+            {
+                continue;
+            }
+
+            if (IsDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
+            {
+                continue;
+            }
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestIndex = i;
             }
         }
 
-        if (nearestIndex == currentIndex || nearestDistance >= currentDistance)
+        if (bestIndex < 0)
         {
-            return false;
+            return CandidateHandoffResult.None;
         }
 
-        var handoffCandidate = group.Candidates[nearestIndex];
+        var handoffCandidate = orderedCandidates[bestIndex];
+        var handoffIsDangerous = IsDangerousCandidate(handoffCandidate);
         var handoffKey = ToCandidateKey(handoffCandidate);
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(handoffKey, out var overridePosition);
+        var handoffResolvedPosition = usedOverride ? overridePosition : handoffCandidate.Position.ToVector3();
         lock (gate)
         {
-            currentCandidateIndex = nearestIndex;
+            handledCandidateLabels.Add(currentCandidate.Label);
+            handledCandidateLabels.Add(handoffCandidate.Label);
+            currentCandidateIndex = bestIndex;
             activeCandidateKey = handoffKey;
             activeCandidateUsesOverride = usedOverride;
-            activeCandidateResolvedPosition = usedOverride ? overridePosition : handoffCandidate.Position.ToVector3();
+            activeCandidateResolvedPosition = handoffResolvedPosition;
             mappedPointRetryUsed = false;
+            lastHandoffReason = $"Handoff from {currentCandidate.Label} to {handoffCandidate.Label} using {reason}.";
         }
 
-        logger.Info($"Treasure refinement handed off from candidate {currentCandidate.Label} to {handoffCandidate.Label} using {reason}. distances current={currentDistance:0.0}y handoff={nearestDistance:0.0}y.");
-        return true;
+        logger.Info($"Treasure refinement handed off from candidate {currentCandidate.Label} to {handoffCandidate.Label} using {reason}. distances current={currentDistance:0.0}y handoff={bestDistance:0.0}y advantage={(currentDistance - bestDistance):0.0}y.");
+        if (!handoffIsDangerous)
+        {
+            return CandidateHandoffResult.Updated;
+        }
+
+        var destination = movementController.FindNearestNavigablePoint(handoffResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f)
+            ?? handoffResolvedPosition;
+        if (!dangerousTreasureTravelController.Start(handoffCandidate, destination, CandidateArrivalTolerance))
+        {
+            if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
+            {
+                AdvanceCandidate(dangerousTreasureTravelController.LastTransition);
+            }
+            else
+            {
+                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                    ? $"Failed to start dangerous travel after handoff to treasure candidate {handoffCandidate.Label}."
+                    : dangerousTreasureTravelController.LastError);
+            }
+
+            return CandidateHandoffResult.DangerousTransitionStarted;
+        }
+
+        logger.Info($"Treasure candidate handoff to dangerous candidate {handoffCandidate.Label} started Ninja/Hide travel before continuing refinement.");
+        return CandidateHandoffResult.DangerousTransitionStarted;
     }
+
+    private List<TreasureCofferCandidateData> BuildOrderedCandidates(TreasureCofferGroupData group, Vector3 originCenter)
+    {
+        var safeCandidates = new List<TreasureCofferCandidateData>();
+        var dangerousCandidates = new List<TreasureCofferCandidateData>();
+
+        foreach (var candidate in group.Candidates)
+        {
+            if (IsDangerousCandidate(candidate))
+            {
+                if (!configuration.UseNinjaForDangerousArea)
+                {
+                    continue;
+                }
+
+                dangerousCandidates.Add(candidate);
+            }
+            else
+            {
+                safeCandidates.Add(candidate);
+            }
+        }
+
+        var orderedSafeCandidates = OrderCandidatesNearestNeighbor(safeCandidates, originCenter);
+        var dangerousOrigin = orderedSafeCandidates.Count > 0
+            ? orderedSafeCandidates[^1].Position.ToVector3()
+            : originCenter;
+        var orderedDangerousCandidates = OrderCandidatesNearestNeighbor(dangerousCandidates, dangerousOrigin);
+        foreach (var dangerousCandidate in orderedDangerousCandidates)
+        {
+            logger.Info($"Dangerous candidate {dangerousCandidate.Label} retained for end-of-order traversal because Ninja dangerous-area mode is enabled.");
+        }
+
+        var finalOrder = new List<TreasureCofferCandidateData>(orderedSafeCandidates.Count + orderedDangerousCandidates.Count);
+        finalOrder.AddRange(orderedSafeCandidates);
+        finalOrder.AddRange(orderedDangerousCandidates);
+        logger.Info($"Treasure candidate order for {activeFateName}/{group.GroupKey}: safe=[{string.Join(", ", orderedSafeCandidates.Select(candidate => candidate.Label))}] dangerous=[{string.Join(", ", orderedDangerousCandidates.Select(candidate => candidate.Label))}] final=[{string.Join(", ", finalOrder.Select(candidate => candidate.Label))}]");
+        return finalOrder;
+    }
+
+    private List<TreasureCofferCandidateData> OrderCandidatesNearestNeighbor(IReadOnlyList<TreasureCofferCandidateData> candidates, Vector3 originCenter)
+    {
+        var remaining = candidates.ToList();
+        var ordered = new List<TreasureCofferCandidateData>(remaining.Count);
+        var currentPosition = originCenter;
+
+        while (remaining.Count > 0)
+        {
+            var nextCandidate = remaining
+                .OrderBy(candidate => CalculateFlatDistance(currentPosition, candidate.Position.ToVector3()))
+                .First();
+            ordered.Add(nextCandidate);
+            remaining.Remove(nextCandidate);
+            currentPosition = nextCandidate.Position.ToVector3();
+        }
+
+        return ordered;
+    }
+
+    private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
+        => candidate.AggroLevel > configuration.MaximumAggroLevel;
+
+    private bool IsHandledCandidate(string label)
+        => handledCandidateLabels.Contains(label);
 
     private (Vector3 RawTarget, Vector3? Target, float Step, string SnapMethod) ResolveRefinementMove(Vector3 playerPosition, TreasureDirection direction, float baseStep)
     {
@@ -1397,6 +1574,16 @@ public sealed class TreasureSearchController : IDisposable
     {
         lock (gate)
         {
+            if (nextState is TreasureSearchState.Idle
+                or TreasureSearchState.Stopped
+                or TreasureSearchState.Failed
+                or TreasureSearchState.CandidatesExhausted)
+            {
+                handledCandidateLabels.Clear();
+                orderedCandidates.Clear();
+                traversalOriginCenter = Vector3.Zero;
+            }
+
             state = nextState;
             lastTransition = reason;
             if (error != null)

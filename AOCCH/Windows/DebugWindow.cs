@@ -672,6 +672,8 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Treasure Search Candidate: {FormatValue(treasureSearch.ActiveCandidateKey?.Label)}");
         ImGui.TextWrapped($"Treasure Search Candidate Key: {FormatValue(treasureSearch.ActiveCandidateKey?.ToString())}");
         ImGui.TextWrapped($"Treasure Search Candidate Index: {treasureSearch.CurrentCandidateIndex}");
+        ImGui.TextWrapped($"Treasure Search Ordered Candidates: {FormatStringList(treasureSearch.OrderedCandidateLabels)}");
+        ImGui.TextWrapped($"Treasure Search Handled Candidates: {FormatStringList(treasureSearch.HandledCandidateLabels)}");
         ImGui.TextWrapped($"Treasure Search Position Source: {FormatPositionSource(treasureSearch.ActiveCandidateKey, treasureSearch.ActiveCandidateUsesOverride)}");
         ImGui.TextWrapped($"Treasure Search Resolved Position: {FormatResolvedPosition(treasureSearch.ActiveCandidateKey, treasureSearch.ActiveCandidateResolvedPosition)}");
         ImGui.TextWrapped($"Treasure Search Handoff: {FormatValue(treasureSearch.LastHandoffReason)}");
@@ -920,6 +922,9 @@ public sealed class DebugWindow : Window, IDisposable
 
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private static string FormatStringList(System.Collections.Generic.IReadOnlyList<string> values)
+        => values.Count == 0 ? "None" : string.Join(", ", values);
 
     private static string FormatResolvedPosition(TreasureCandidateKey? candidateKey, Vector3 position)
         => candidateKey == null ? "None" : FormatVector3(position);

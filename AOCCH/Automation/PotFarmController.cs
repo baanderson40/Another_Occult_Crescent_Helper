@@ -785,7 +785,7 @@ public sealed class PotFarmController : IDisposable
                 return;
             }
 
-            if (!treasureSearchController.Start(treasurePotId, treasurePotName))
+            if (!treasureSearchController.Start(treasurePotId, treasurePotName, treasurePotCenter))
             {
                 if (treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted)
                 {
