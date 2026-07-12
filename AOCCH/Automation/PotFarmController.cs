@@ -14,6 +14,7 @@ namespace AOCCH.Automation;
 public sealed class PotFarmController : IDisposable
 {
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan BootstrapWaitTimeout = TimeSpan.FromMinutes(35);
     private static readonly TimeSpan PotSpawnGrace = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TreasureHintWaitTimeout = TimeSpan.FromSeconds(4);
@@ -61,6 +62,7 @@ public sealed class PotFarmController : IDisposable
     private DateTimeOffset lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
     private DateTimeOffset treasureCenterArrivedAt = DateTimeOffset.MinValue;
     private DateTimeOffset leaveRequestedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset runStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private int treasureElixirAttemptCount;
     private int treasureAttemptBaselineSessionId;
@@ -68,6 +70,7 @@ public sealed class PotFarmController : IDisposable
     private bool leavePending;
     private bool pendingStop;
     private bool resumeBootstrapAfterRecovery;
+    private bool isWaitingForConfiguredBootstrapPot;
     private PotFarmRunResult completionResultAfterRecovery;
     private PotInstanceTimeDecision lastInstanceTimeDecision = new();
 
@@ -319,6 +322,7 @@ public sealed class PotFarmController : IDisposable
 
         lock (gate)
         {
+            runStartedAt = DateTimeOffset.UtcNow;
             pendingStop = false;
             resumeBootstrapAfterRecovery = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
@@ -341,6 +345,7 @@ public sealed class PotFarmController : IDisposable
             treasureAttemptBaselineSessionId = 0;
             treasureAttemptBaselineRevision = 0;
             leavePending = false;
+            isWaitingForConfiguredBootstrapPot = false;
             lastError = string.Empty;
             lastResult = PotFarmRunResult.None;
             lastInstanceTimeDecision = new();
@@ -403,6 +408,7 @@ public sealed class PotFarmController : IDisposable
             lastTreasureElixirAttemptAt = DateTimeOffset.MinValue;
             treasureCenterArrivedAt = DateTimeOffset.MinValue;
             leaveRequestedAt = DateTimeOffset.MinValue;
+            runStartedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
             treasureElixirAttemptCount = 0;
             treasureAttemptBaselineSessionId = 0;
@@ -410,6 +416,7 @@ public sealed class PotFarmController : IDisposable
             leavePending = false;
             pendingStop = false;
             resumeBootstrapAfterRecovery = false;
+            isWaitingForConfiguredBootstrapPot = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
             lastInstanceTimeDecision = new();
         }
@@ -606,7 +613,7 @@ public sealed class PotFarmController : IDisposable
     private void TickWaitingAtSpawn()
     {
         var potCycleSnapshot = potCycleTracker.Snapshot;
-        if (WaitDeadlineAt == DateTimeOffset.MinValue
+        if ((WaitDeadlineAt == DateTimeOffset.MinValue || isWaitingForConfiguredBootstrapPot)
             && potCycleSnapshot.HasPredictedNextPot
             && potCycleSnapshot.PredictedNextPotFateId != 0
             && potCycleSnapshot.PredictedNextPotFateId != currentPotId)
@@ -623,12 +630,16 @@ public sealed class PotFarmController : IDisposable
         if (WaitDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= WaitDeadlineAt)
         {
             logger.ResetThrottle("pot-wait-spawn");
-            potCycleTracker.Reset($"Predicted pot {CurrentPotName} did not appear before the wait window expired.");
-            BeginRecoveryToBase("Predicted pot did not appear; returning to Base Camp.", resumeBootstrapAfterRecovery: true, completionResult: PotFarmRunResult.None);
+            var timeoutReason = isWaitingForConfiguredBootstrapPot
+                ? $"Configured starting pot {CurrentPotName} did not appear within the {BootstrapWaitTimeout.TotalMinutes:0}-minute bootstrap window."
+                : $"Predicted pot {CurrentPotName} did not appear before the wait window expired.";
+            potCycleTracker.Reset(timeoutReason);
+            BeginRecoveryToBase($"{timeoutReason} Returning to Base Camp.", resumeBootstrapAfterRecovery: true, completionResult: PotFarmRunResult.None);
             return;
         }
 
-        logger.DebugThrottled("pot-wait-spawn", WaitLogInterval, $"Pot farm is waiting at spawn for {CurrentPotName}. deadline={WaitDeadlineAt:O}.");
+        var deadlineText = WaitDeadlineAt == DateTimeOffset.MinValue ? "none" : WaitDeadlineAt.ToString("O");
+        logger.DebugThrottled("pot-wait-spawn", WaitLogInterval, $"Pot farm is waiting at spawn for {CurrentPotName}. bootstrap={isWaitingForConfiguredBootstrapPot} deadline={deadlineText}.");
     }
 
     private void TickRunningPotFate()
@@ -786,6 +797,19 @@ public sealed class PotFarmController : IDisposable
             && treasureHintTracker.TryGetLatestEventSince(treasureAttemptBaselineSessionId, treasureAttemptBaselineRevision, out var latestEvent)
             && latestEvent != null)
         {
+            if (latestEvent.Kind == TreasureHintKind.BonusOffer)
+            {
+                treasureHintTracker.CompleteCurrentTreasureSession(
+                    "Treasure search offered a bonus coffer; returning to the normal farming cycle.",
+                    TreasureSessionState.Completed);
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Treasure startup for {treasurePotName} ({treasurePotId}) produced a bonus offer; returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.Completed);
+                return;
+            }
+
             if (latestEvent.Kind != TreasureHintKind.Hint)
             {
                 logger.Info($"Treasure startup observed event kind {latestEvent.Kind} after Magical Elixir attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}; waiting for follow-up handling through treasure tracking.");
@@ -901,7 +925,14 @@ public sealed class PotFarmController : IDisposable
                 var activeMatch = treasureSearchController.ActiveVisibleCofferMatch;
                 if (activeMatch == null)
                 {
-                    SetFailure("Treasure search reported a ready coffer interaction without an active coffer match.");
+                    treasureHintTracker.CompleteCurrentTreasureSession(
+                        "Treasure search completed with a bonus offer; returning to the normal farming cycle.",
+                        TreasureSessionState.Completed);
+                    ClearTreasurePotContext();
+                    BeginRecoveryToBase(
+                        $"Treasure search for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"} completed with a bonus offer; returning to Base Camp.",
+                        resumeBootstrapAfterRecovery: false,
+                        completionResult: PotFarmRunResult.Completed);
                     return;
                 }
 
@@ -1028,7 +1059,7 @@ public sealed class PotFarmController : IDisposable
             return false;
         }
 
-        return BeginTravelToPotLocation(configuredPot, "configured starting pot", waitUntil: DateTimeOffset.MinValue);
+        return BeginTravelToPotLocation(configuredPot, "configured starting pot", GetBootstrapWaitDeadline(), isConfiguredBootstrap: true);
     }
 
     private void BeginPredictedStaging(PotCycleSnapshot snapshot)
@@ -1039,10 +1070,10 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        BeginTravelToPotLocation(potFate, "predicted pot", snapshot.PredictedNextSpawnAt + PotSpawnGrace);
+        BeginTravelToPotLocation(potFate, "predicted pot", snapshot.PredictedNextSpawnAt + PotSpawnGrace, isConfiguredBootstrap: false);
     }
 
-    private bool BeginTravelToPotLocation(PotFateData potFate, string context, DateTimeOffset waitUntil)
+    private bool BeginTravelToPotLocation(PotFateData potFate, string context, DateTimeOffset waitUntil, bool isConfiguredBootstrap)
     {
         var stagingCenter = potFate.StagingPosition?.ToVector3() ?? potFate.CenterPosition.ToVector3();
         var destination = TrySelectPotWaitPoint(stagingCenter, out var randomWaitPoint)
@@ -1075,6 +1106,7 @@ public sealed class PotFarmController : IDisposable
             currentPotCenter = potFate.CenterPosition.ToVector3();
             hasCurrentPotCenter = true;
             waitDeadlineAt = waitUntil;
+            isWaitingForConfiguredBootstrapPot = isConfiguredBootstrap;
         }
 
         TransitionTo(PotFarmState.TravelingToSpawn, $"Traveling to {context} staging for {potFate.Name}.");
@@ -1112,6 +1144,7 @@ public sealed class PotFarmController : IDisposable
             currentPotCenter = activePotFate.CenterPosition;
             hasCurrentPotCenter = true;
             waitDeadlineAt = DateTimeOffset.MinValue;
+            isWaitingForConfiguredBootstrapPot = false;
         }
 
         logger.ResetThrottle("pot-bootstrap-wait");
@@ -1202,6 +1235,11 @@ public sealed class PotFarmController : IDisposable
 
         return snapshot.PredictedNextSpawnAt - TimeSpan.FromMinutes(Math.Max(0, configuration.SpawnLeadMinutes));
     }
+
+    private DateTimeOffset GetBootstrapWaitDeadline()
+        => runStartedAt == DateTimeOffset.MinValue
+            ? DateTimeOffset.UtcNow + BootstrapWaitTimeout
+            : runStartedAt + BootstrapWaitTimeout;
 
     private void SetFailure(string reason)
     {

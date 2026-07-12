@@ -466,7 +466,7 @@ public sealed class TreasureHintTracker : IDisposable
             TreasureHintKind.CofferReveal => $"Treasure coffer reveal: \"{treasureEvent.RawText}\".",
             TreasureHintKind.CofferMessage => $"Treasure coffer message: \"{treasureEvent.RawText}\".",
             TreasureHintKind.ElixirPrompt => $"Treasure prompt: \"{treasureEvent.RawText}\".",
-            TreasureHintKind.BonusOffer => $"Bonus offer seen but ignored: \"{treasureEvent.RawText}\".",
+            TreasureHintKind.BonusOffer => $"Bonus offer detected: \"{treasureEvent.RawText}\".",
             _ => $"Treasure event: \"{treasureEvent.RawText}\".",
         };
 
