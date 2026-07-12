@@ -20,6 +20,7 @@ public sealed class DebugWindow : Window, IDisposable
         SelectedTarget,
         FarmSession,
         PotControl,
+        VisibleCofferFarm,
         DangerousTreasureTravel,
         CriticalEngagementAutomation,
         FateAutomation,
@@ -44,6 +45,7 @@ public sealed class DebugWindow : Window, IDisposable
     private readonly PotFarmController potFarmController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly FarmSessionController farmSessionController;
+    private readonly TreasureCofferFarmController treasureCofferFarmController;
     private DebugSection selectedSection = DebugSection.Overview;
 
     // We give this window a hidden ID using ##.
@@ -62,7 +64,8 @@ public sealed class DebugWindow : Window, IDisposable
         DeathRecoveryController deathRecoveryController,
         PotFarmController potFarmController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
-        FarmSessionController farmSessionController)
+        FarmSessionController farmSessionController,
+        TreasureCofferFarmController treasureCofferFarmController)
         : base("AOCCH Debug###AOCCHDebug")
     {
         this.plugin = plugin;
@@ -78,6 +81,7 @@ public sealed class DebugWindow : Window, IDisposable
         this.potFarmController = potFarmController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.farmSessionController = farmSessionController;
+        this.treasureCofferFarmController = treasureCofferFarmController;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -114,6 +118,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
         DrawSectionButton(DebugSection.FarmSession, "Farm Session");
         DrawSectionButton(DebugSection.PotControl, "Pot Control");
+        DrawSectionButton(DebugSection.VisibleCofferFarm, "Visible Coffer Farm");
         DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
         DrawSectionButton(DebugSection.CriticalEngagementAutomation, "Critical Engagement Automation");
         DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
@@ -155,6 +160,9 @@ public sealed class DebugWindow : Window, IDisposable
                 break;
             case DebugSection.PotControl:
                 DrawPotStatus(snapshot);
+                break;
+            case DebugSection.VisibleCofferFarm:
+                DrawVisibleCofferFarm();
                 break;
             case DebugSection.DangerousTreasureTravel:
                 DrawDangerousTreasureTravel();
@@ -718,6 +726,38 @@ public sealed class DebugWindow : Window, IDisposable
         }
     }
 
+    private void DrawVisibleCofferFarm()
+    {
+        ImGui.TextUnformatted("Visible Coffer Farm");
+        ImGui.TextUnformatted($"State: {treasureCofferFarmController.State}");
+        ImGui.TextWrapped($"Last Transition: {treasureCofferFarmController.LastTransition}");
+        ImGui.TextWrapped($"Current Route Index: {treasureCofferFarmController.CurrentRouteIndex}");
+
+        var activeSpot = treasureCofferFarmController.ActiveSpot;
+        var activeLabel = activeSpot == null ? null : $"{activeSpot.Area}:{activeSpot.Label}";
+        ImGui.TextWrapped($"Active Spot: {FormatValue(activeLabel)}");
+        ImGui.TextWrapped($"Resolved Position: {(activeSpot == null ? "None" : FormatVector3(treasureCofferFarmController.ActiveResolvedPosition))}");
+        ImGui.TextWrapped($"Position Source: {(activeSpot == null ? "None" : (treasureCofferFarmController.ActiveSpotUsesOverride ? "Override" : "Canonical"))}");
+
+        var overrideEntry = activeSpot == null
+            ? null
+            : plugin.VisibleCofferPositionOverrideStore.TryGetOverride(activeSpot.Area, activeSpot.Label);
+        ImGui.TextWrapped($"Active Override: {FormatVisibleCofferOverride(overrideEntry)}");
+        ImGui.TextWrapped($"Visible Override Count: {plugin.VisibleCofferPositionOverrideStore.Count}");
+        ImGui.TextWrapped($"Last Saved Override: {FormatVisibleCofferOverride(plugin.VisibleCofferPositionOverrideStore.LastSavedOverride)}");
+
+        var lastMatched = treasureCofferFarmController.LastMatchedCoffer;
+        var lastMatchedText = lastMatched == null
+            ? null
+            : $"{lastMatched.Name} ({lastMatched.DataId}) | pos={FormatVector3(lastMatched.Position)} | object={lastMatched.GameObjectId:X}";
+        ImGui.TextWrapped($"Last Matched Coffer: {FormatValue(lastMatchedText)}");
+
+        if (!string.IsNullOrEmpty(treasureCofferFarmController.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {treasureCofferFarmController.LastError}");
+        }
+    }
+
     private void DrawMovement(ScannerSnapshot snapshot)
     {
         ImGui.TextUnformatted("Movement");
@@ -940,6 +980,16 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         return $"{entry.FateId}:{entry.GroupKey}:{entry.CandidateKey} | dataId={entry.ObservedDataId} | pos={FormatVector3(entry.ObservedPosition.ToVector3())} | {FormatTimestamp(entry.LastConfirmedAt)}";
+    }
+
+    private static string FormatVisibleCofferOverride(AOCCH.Data.VisibleCofferPositionOverride? entry)
+    {
+        if (entry == null)
+        {
+            return "None";
+        }
+
+        return $"{entry.Area}:{entry.Label} | dataId={entry.ObservedDataId} | pos={FormatVector3(entry.ObservedPosition.ToVector3())} | {FormatTimestamp(entry.LastConfirmedAt)}";
     }
 
     private DateTimeOffset GetDepartureAt(PotCycleSnapshot snapshot)

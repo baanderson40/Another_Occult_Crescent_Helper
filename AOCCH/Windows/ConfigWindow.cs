@@ -271,9 +271,30 @@ public class ConfigWindow : Window, IDisposable
         DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
     }
 
-    private static void DrawTreasureCoffersTab()
+    private void DrawTreasureCoffersTab()
     {
-        ImGui.TextUnformatted("Treasure coffer settings will be added later.");
+        ImGui.TextUnformatted("Visible Coffer Route");
+
+        DrawPotsIntSetting(
+            "Arrival Distance",
+            configuration.ArrivalDistance,
+            1,
+            50,
+            value => configuration.ArrivalDistance = value,
+            nameof(configuration.ArrivalDistance));
+
+        var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
+        if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
+        {
+            logger.Info($"Setting changed: SkipHighLevelCavernsDuringAshkin: {configuration.SkipHighLevelCavernsDuringAshkin} -> {skipHighLevelCavernsDuringAshkin}.");
+            configuration.SkipHighLevelCavernsDuringAshkin = skipHighLevelCavernsDuringAshkin;
+            configuration.Save();
+        }
+
+        DrawSettingTooltip("Reserved for Lua-parity route rules in the visible coffer route controller.");
+
+        ImGui.TextWrapped($"Loaded visible coffer spots: {data.VisibleCofferFarmSpots.Count}");
+        ImGui.TextWrapped($"Loaded visible coffer route entries: {data.VisibleCofferFarmRoute.Count}");
     }
 
     private void DrawSettingsTab()

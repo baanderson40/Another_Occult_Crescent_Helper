@@ -9,6 +9,7 @@ namespace AOCCH.Scanning;
 
 public sealed class CofferNameResolver
 {
+    private static readonly string[] FallbackVisibleCofferNames = ["Treasure Coffer"];
     private readonly HashSet<string> localizedNames = [];
     private readonly AocchLogger logger;
 
@@ -25,6 +26,11 @@ public sealed class CofferNameResolver
 
     private void BuildLocalizedNames(IDataManager dataManager, IEnumerable<uint> cofferBaseIds)
     {
+        foreach (var fallbackName in FallbackVisibleCofferNames)
+        {
+            localizedNames.Add(fallbackName.ToLowerInvariant());
+        }
+
         var sheet = dataManager.GetExcelSheet<EObjName>();
         if (sheet == null)
         {

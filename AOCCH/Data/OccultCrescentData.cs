@@ -14,6 +14,8 @@ public sealed class OccultCrescentData
     public List<FateData> Fates { get; init; } = [];
     public List<PotFateData> PotFates { get; init; } = [];
     public List<TreasureCofferGroupData> TreasureCofferGroups { get; init; } = [];
+    public List<VisibleCofferFarmSpotData> VisibleCofferFarmSpots { get; init; } = [];
+    public List<VisibleCofferFarmRouteEntryData> VisibleCofferFarmRoute { get; init; } = [];
     public List<FateAethernetPreference> FateAethernetPreferences { get; init; } = [];
     public List<DropData> Drops { get; init; } = [];
 }
@@ -78,6 +80,32 @@ public sealed class TreasureCofferCandidateData
     public int? HideThresholdDistance { get; init; }
     public int? TravelTimeoutSeconds { get; init; }
     public string? Notes { get; init; }
+}
+
+public sealed class VisibleCofferFarmSpotData
+{
+    public string Area { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public Vector3Data Position { get; init; } = new();
+    public int AggroLevel { get; init; }
+    public int? HideThresholdDistance { get; init; }
+    public float? ArrivalDistance { get; init; }
+    public bool RouteOnly { get; init; }
+    public bool ForceHidden { get; init; }
+    public bool ForceUnhidden { get; init; }
+    public bool HideOnArrival { get; init; }
+    public bool DisableExitHideThreshold { get; init; }
+    public bool MountOnArrival { get; init; }
+    public string? SpecialBranch { get; init; }
+    public bool RecheckAscentSafetyOnArrival { get; init; }
+    public bool RainSensitive { get; init; }
+    public string? Note { get; init; }
+}
+
+public sealed class VisibleCofferFarmRouteEntryData
+{
+    public string Area { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
 }
 
 public sealed class FateAethernetPreference

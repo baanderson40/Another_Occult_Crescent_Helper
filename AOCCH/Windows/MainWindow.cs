@@ -21,6 +21,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly FarmSessionController farmSessionController;
+    private readonly TreasureCofferFarmController treasureCofferFarmController;
 
     public MainWindow(
         Plugin plugin,
@@ -31,7 +32,8 @@ public sealed class MainWindow : Window, IDisposable
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
-        FarmSessionController farmSessionController)
+        FarmSessionController farmSessionController,
+        TreasureCofferFarmController treasureCofferFarmController)
         : base("Another Occult Crescent Helper##Main")
     {
         this.plugin = plugin;
@@ -43,6 +45,7 @@ public sealed class MainWindow : Window, IDisposable
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.farmSessionController = farmSessionController;
+        this.treasureCofferFarmController = treasureCofferFarmController;
 
         Size = new Vector2(460, 215);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -80,6 +83,7 @@ public sealed class MainWindow : Window, IDisposable
         var instanceTimeDecision = plugin.PotFarmController.LastInstanceTimeDecision;
 
         ImGui.TextWrapped($"Farm: {farmSessionController.State} | {farmSessionController.CurrentActivity}");
+        ImGui.TextWrapped($"Visible Coffer Route: {treasureCofferFarmController.State} | {GetVisibleCofferSummary()}");
         ImGui.TextWrapped($"Activity: {GetActivityLabel(snapshot)}");
         ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot)}");
         ImGui.TextWrapped($"Treasure: {GetTreasureSummary(treasureSnapshot)}");
@@ -114,6 +118,27 @@ public sealed class MainWindow : Window, IDisposable
         if (farmStartBlocker != null)
         {
             ImGui.TextWrapped(farmStartBlocker);
+        }
+
+        var cofferStartBlocker = GetVisibleCofferStartBlocker();
+        ImGui.BeginDisabled(cofferStartBlocker != null);
+        if (ImGui.Button("Start Coffer Route"))
+        {
+            plugin.Logger.Info("Manual UI action: Start Coffer Route.");
+            treasureCofferFarmController.Start();
+        }
+        ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (ImGui.Button("Stop Coffer Route"))
+        {
+            plugin.Logger.Info("Manual UI action: Stop Coffer Route.");
+            treasureCofferFarmController.Stop("Manual visible coffer route stop requested.");
+        }
+
+        if (cofferStartBlocker != null)
+        {
+            ImGui.TextWrapped(cofferStartBlocker);
         }
     }
 
@@ -218,4 +243,45 @@ public sealed class MainWindow : Window, IDisposable
 
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private string GetVisibleCofferSummary()
+    {
+        var activeSpot = treasureCofferFarmController.ActiveSpot;
+        if (activeSpot == null)
+        {
+            return "Idle";
+        }
+
+        return $"{activeSpot.Area}:{activeSpot.Label}";
+    }
+
+    private string? GetVisibleCofferStartBlocker()
+    {
+        if (configuration.ScannerOnlyMode)
+        {
+            return "Scanner-only mode blocks visible coffer route starts.";
+        }
+
+        if (treasureCofferFarmController.IsRunning)
+        {
+            return "Visible coffer route is already running.";
+        }
+
+        if (!scanner.Snapshot.IsInSouthHorn)
+        {
+            return "Visible coffer route start requires South Horn.";
+        }
+
+        if (!movementController.IsVNavmeshReady)
+        {
+            return "Visible coffer route start requires vnavmesh IPC.";
+        }
+
+        if (!movementController.IsLifestreamAvailable)
+        {
+            return "Visible coffer route start requires Lifestream IPC.";
+        }
+
+        return null;
+    }
 }

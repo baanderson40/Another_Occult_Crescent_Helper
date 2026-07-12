@@ -44,7 +44,8 @@ public static class OccultCrescentDataLoader
             logger.Info(
                 $"Loaded Occult Crescent data: {data.Aethernets.Count} aethernets, " +
                 $"{data.CriticalEncounters.Count} CEs, {data.Fates.Count} FATEs, " +
-                $"{data.PotFates.Count} pot FATEs, {data.TreasureCofferGroups.Count} treasure coffer groups.");
+                $"{data.PotFates.Count} pot FATEs, {data.TreasureCofferGroups.Count} treasure coffer groups, " +
+                $"{data.VisibleCofferFarmSpots.Count} visible coffer spots, {data.VisibleCofferFarmRoute.Count} visible coffer route entries.");
 
             return data;
         }

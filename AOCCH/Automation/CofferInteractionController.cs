@@ -6,6 +6,8 @@ using AOCCH.Scanning;
 using AOCCH.Data;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace AOCCH.Automation;
 
@@ -35,6 +37,7 @@ public sealed class CofferInteractionController : IDisposable
     private DateTimeOffset confirmationDeadlineAt = DateTimeOffset.MinValue;
     private int interactionAttemptCount;
     private int missingConfirmationCount;
+    private TreasureFlags lastObservedTreasureFlags;
 
     public CofferInteractionController(
         IFramework framework,
@@ -164,8 +167,17 @@ public sealed class CofferInteractionController : IDisposable
             confirmationDeadlineAt = DateTimeOffset.MinValue;
             interactionAttemptCount = 0;
             missingConfirmationCount = 0;
+            lastObservedTreasureFlags = TreasureFlags.None;
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
+        }
+
+        if (TryReadTreasureFlags(liveObject, out var currentFlags))
+        {
+            lock (gate)
+            {
+                lastObservedTreasureFlags = currentFlags;
+            }
         }
 
         return BeginApproachOrTarget(liveObject, "Starting coffer interaction.");
@@ -194,6 +206,7 @@ public sealed class CofferInteractionController : IDisposable
             confirmationDeadlineAt = DateTimeOffset.MinValue;
             interactionAttemptCount = 0;
             missingConfirmationCount = 0;
+            lastObservedTreasureFlags = TreasureFlags.None;
         }
 
         logger.Info($"Coffer interaction reset: {reason}");
@@ -395,7 +408,7 @@ public sealed class CofferInteractionController : IDisposable
             confirmationDeadlineAt = DateTimeOffset.UtcNow + ConfirmationTimeout;
         }
 
-        TransitionTo(CofferInteractionState.WaitingForOpenConfirmation, $"Interaction attempt {interactionAttemptCount} started; waiting for coffer disappearance confirmation.");
+        TransitionTo(CofferInteractionState.WaitingForOpenConfirmation, $"Interaction attempt {interactionAttemptCount} started; waiting for coffer open confirmation.");
     }
 
     private void TickConfirmation()
@@ -405,6 +418,24 @@ public sealed class CofferInteractionController : IDisposable
         {
             SetFailure("Coffer interaction lost its active match during confirmation.");
             return;
+        }
+
+        var liveObject = ResolveActiveObject();
+        if (liveObject != null && TryReadTreasureFlags(liveObject, out var currentFlags))
+        {
+            var previousFlags = lastObservedTreasureFlags;
+            lock (gate)
+            {
+                lastObservedTreasureFlags = currentFlags;
+            }
+
+            if (!previousFlags.HasFlag(TreasureFlags.Opened) && currentFlags.HasFlag(TreasureFlags.Opened))
+            {
+                PersistConfirmedOverride(active);
+                logger.ResetThrottle("coffer-confirmation");
+                TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via the treasure opened flag after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
+                return;
+            }
         }
 
         var stillVisible = scanner.Snapshot.VisibleCoffers.Any(coffer => coffer.GameObjectId == active.Coffer.GameObjectId);
@@ -460,6 +491,25 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         return null;
+    }
+
+    private static unsafe bool TryReadTreasureFlags(IGameObject gameObject, out TreasureFlags flags)
+    {
+        flags = TreasureFlags.None;
+        if (gameObject == null || gameObject.Address == nint.Zero)
+        {
+            return false;
+        }
+
+        var objectPointer = (GameObject*)(void*)gameObject.Address;
+        if (objectPointer == null)
+        {
+            return false;
+        }
+
+        var treasurePointer = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)objectPointer;
+        flags = treasurePointer->Flags;
+        return true;
     }
 
     private void SetFailure(string reason)

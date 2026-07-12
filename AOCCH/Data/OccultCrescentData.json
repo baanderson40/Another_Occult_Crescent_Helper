@@ -272,6 +272,1058 @@
       ]
     }
   ],
+  "visibleCofferFarmSpots": [
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_1",
+      "position": {
+        "x": 617.09,
+        "y": 66.3,
+        "z": -703.883
+      },
+      "aggroLevel": 1
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_2",
+      "position": {
+        "x": 490.41,
+        "y": 62.455,
+        "z": -590.57
+      },
+      "aggroLevel": 1
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_3",
+      "position": {
+        "x": 386.923,
+        "y": 96.788,
+        "z": -451.377
+      },
+      "aggroLevel": 1
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_4",
+      "position": {
+        "x": 666.529,
+        "y": 79.118,
+        "z": -480.369
+      },
+      "aggroLevel": 2
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_5",
+      "position": {
+        "x": 343.672,
+        "y": 95.536,
+        "z": -284.062
+      },
+      "aggroLevel": 3
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_1",
+      "position": {
+        "x": 381.735,
+        "y": 22.171,
+        "z": -743.648
+      },
+      "aggroLevel": 3
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_2",
+      "position": {
+        "x": 142.107,
+        "y": 16.403,
+        "z": -574.06
+      },
+      "aggroLevel": 6
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_3",
+      "position": {
+        "x": -140.459,
+        "y": 22.354,
+        "z": -414.267
+      },
+      "aggroLevel": 6
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_4",
+      "position": {
+        "x": -343.16,
+        "y": 52.323,
+        "z": -382.132
+      },
+      "aggroLevel": 11
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_5",
+      "position": {
+        "x": -491.02,
+        "y": 2.975,
+        "z": -529.595
+      },
+      "aggroLevel": 8
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_6",
+      "position": {
+        "x": -118.975,
+        "y": 4.99,
+        "z": -708.461
+      },
+      "aggroLevel": 7
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_1",
+      "position": {
+        "x": -451.682,
+        "y": 2.975,
+        "z": -775.57
+      },
+      "aggroLevel": 8
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_2",
+      "position": {
+        "x": -585.29,
+        "y": 4.99,
+        "z": -864.836
+      },
+      "aggroLevel": 22
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_3",
+      "position": {
+        "x": -729.427,
+        "y": 4.99,
+        "z": -724.819
+      },
+      "aggroLevel": 22
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_4",
+      "position": {
+        "x": -661.708,
+        "y": 2.975,
+        "z": -579.492
+      },
+      "aggroLevel": 22
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_5",
+      "position": {
+        "x": -884.123,
+        "y": 3.799,
+        "z": -682.032
+      },
+      "aggroLevel": 23,
+      "note": "requires_jump"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_6",
+      "position": {
+        "x": -825.162,
+        "y": 2.975,
+        "z": -832.273
+      },
+      "aggroLevel": 23,
+      "note": "silver_variant"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_1",
+      "position": {
+        "x": 870.664,
+        "y": 95.689,
+        "z": -388.357
+      },
+      "aggroLevel": 4
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_2",
+      "position": {
+        "x": 779.019,
+        "y": 96.086,
+        "z": -256.245
+      },
+      "aggroLevel": 4
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_3",
+      "position": {
+        "x": 475.73,
+        "y": 95.994,
+        "z": -87.083
+      },
+      "aggroLevel": 4
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_4",
+      "position": {
+        "x": 609.613,
+        "y": 107.988,
+        "z": 117.266
+      },
+      "aggroLevel": 5
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_5",
+      "position": {
+        "x": 726.284,
+        "y": 108.141,
+        "z": -67.918
+      },
+      "aggroLevel": 5
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_6",
+      "position": {
+        "x": 770.748,
+        "y": 107.988,
+        "z": -143.572
+      },
+      "aggroLevel": 5
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_7",
+      "position": {
+        "x": 788.876,
+        "y": 120.378,
+        "z": 109.392
+      },
+      "aggroLevel": 20
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_8",
+      "position": {
+        "x": 517.754,
+        "y": 67.887,
+        "z": 236.133
+      },
+      "aggroLevel": 21
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_1",
+      "position": {
+        "x": 277.79,
+        "y": 103.776,
+        "z": 241.901
+      },
+      "aggroLevel": 10
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_2",
+      "position": {
+        "x": 8.987,
+        "y": 103.197,
+        "z": 426.963
+      },
+      "aggroLevel": 10
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_3",
+      "position": {
+        "x": -283.986,
+        "y": 115.984,
+        "z": 377.035
+      },
+      "aggroLevel": 11
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_4",
+      "position": {
+        "x": -256.886,
+        "y": 120.989,
+        "z": 125.078
+      },
+      "aggroLevel": 11
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_5",
+      "position": {
+        "x": -25.681,
+        "y": 102.22,
+        "z": 150.164
+      },
+      "aggroLevel": 10
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_6",
+      "position": {
+        "x": 245.594,
+        "y": 109.117,
+        "z": -18.174
+      },
+      "aggroLevel": 9
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_7",
+      "position": {
+        "x": 55.283,
+        "y": 111.314,
+        "z": -289.082
+      },
+      "aggroLevel": 9
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_8",
+      "position": {
+        "x": -158.648,
+        "y": 98.619,
+        "z": -132.738
+      },
+      "aggroLevel": 11
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_9",
+      "position": {
+        "x": -487.114,
+        "y": 98.527,
+        "z": -205.463
+      },
+      "aggroLevel": 11
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_10",
+      "position": {
+        "x": -682.795,
+        "y": 135.607,
+        "z": -195.27
+      },
+      "aggroLevel": 13,
+      "rainSensitive": true
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_1",
+      "position": {
+        "x": -444.114,
+        "y": 90.684,
+        "z": 26.23
+      },
+      "aggroLevel": 12
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_2",
+      "position": {
+        "x": -394.888,
+        "y": 106.737,
+        "z": 175.433
+      },
+      "aggroLevel": 12
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_3",
+      "position": {
+        "x": -713.802,
+        "y": 62.058,
+        "z": 192.615
+      },
+      "aggroLevel": 13
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_4",
+      "position": {
+        "x": -756.832,
+        "y": 76.554,
+        "z": 97.368
+      },
+      "aggroLevel": 13
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_5",
+      "position": {
+        "x": -767.453,
+        "y": 115.618,
+        "z": -235.004
+      },
+      "aggroLevel": 24,
+      "hideThresholdDistance": 400
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_6",
+      "position": {
+        "x": -680.537,
+        "y": 104.845,
+        "z": -354.788
+      },
+      "aggroLevel": 25,
+      "hideThresholdDistance": 425
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_7",
+      "position": {
+        "x": -798.245,
+        "y": 105.577,
+        "z": -310.567
+      },
+      "aggroLevel": 25,
+      "hideThresholdDistance": 400
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_8",
+      "position": {
+        "x": -856.962,
+        "y": 68.833,
+        "z": -93.156
+      },
+      "aggroLevel": 24,
+      "hideThresholdDistance": 400
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9",
+      "position": {
+        "x": -729.915,
+        "y": 116.533,
+        "z": -79.057
+      },
+      "aggroLevel": 24,
+      "hideThresholdDistance": 400
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_1",
+      "position": {
+        "x": 642.969,
+        "y": 69.993,
+        "z": 407.797
+      },
+      "aggroLevel": 16
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_2",
+      "position": {
+        "x": 697.322,
+        "y": 69.993,
+        "z": 597.925
+      },
+      "aggroLevel": 17
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_3",
+      "position": {
+        "x": 596.46,
+        "y": 70.298,
+        "z": 622.766
+      },
+      "aggroLevel": 17
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_4",
+      "position": {
+        "x": 471.183,
+        "y": 70.298,
+        "z": 530.022
+      },
+      "aggroLevel": 16
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_5",
+      "position": {
+        "x": 835.08,
+        "y": 69.993,
+        "z": 699.092
+      },
+      "aggroLevel": 17
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_6",
+      "position": {
+        "x": 433.707,
+        "y": 70.298,
+        "z": 683.528
+      },
+      "aggroLevel": 17
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_7",
+      "position": {
+        "x": 294.88,
+        "y": 56.077,
+        "z": 640.223
+      },
+      "aggroLevel": 15
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_8",
+      "position": {
+        "x": 140.978,
+        "y": 55.985,
+        "z": 770.992
+      },
+      "aggroLevel": 15
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_9",
+      "position": {
+        "x": 826.688,
+        "y": 121.996,
+        "z": 434.989
+      },
+      "aggroLevel": 21
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_10",
+      "position": {
+        "x": 869.291,
+        "y": 109.972,
+        "z": 581.201
+      },
+      "aggroLevel": 21
+    },
+    {
+      "area": "Eldergrowth",
+      "label": "Eldergrowth_1",
+      "position": {
+        "x": 256.153,
+        "y": 73.167,
+        "z": 492.363
+      },
+      "aggroLevel": 14
+    },
+    {
+      "area": "Eldergrowth",
+      "label": "Eldergrowth_2",
+      "position": {
+        "x": 35.721,
+        "y": 65.11,
+        "z": 648.951
+      },
+      "aggroLevel": 14
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_1",
+      "position": {
+        "x": -225.025,
+        "y": 74.998,
+        "z": 804.99
+      },
+      "aggroLevel": 20
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_2",
+      "position": {
+        "x": -197.192,
+        "y": 74.906,
+        "z": 618.341
+      },
+      "aggroLevel": 18
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_3",
+      "position": {
+        "x": -372.671,
+        "y": 74.998,
+        "z": 527.428
+      },
+      "aggroLevel": 19
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_4",
+      "position": {
+        "x": -401.663,
+        "y": 85.038,
+        "z": 332.54
+      },
+      "aggroLevel": 19
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_5",
+      "position": {
+        "x": -648.005,
+        "y": 74.998,
+        "z": 403.952
+      },
+      "aggroLevel": 19
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_1",
+      "position": {
+        "x": -729.549,
+        "y": 106.981,
+        "z": 561.15
+      },
+      "aggroLevel": 26,
+      "hideThresholdDistance": 175
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_2",
+      "position": {
+        "x": -550.134,
+        "y": 106.981,
+        "z": 627.741
+      },
+      "aggroLevel": 26,
+      "hideThresholdDistance": 400
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_3",
+      "position": {
+        "x": -600.275,
+        "y": 138.994,
+        "z": 802.64
+      },
+      "aggroLevel": 27
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_4",
+      "position": {
+        "x": -784.756,
+        "y": 138.994,
+        "z": 699.763
+      },
+      "aggroLevel": 27
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5",
+      "position": {
+        "x": -676.417,
+        "y": 170.977,
+        "z": 640.375
+      },
+      "aggroLevel": 28,
+      "forceUnhidden": true,
+      "note": "spell_aggro_unhidden"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_6",
+      "position": {
+        "x": -716.152,
+        "y": 170.977,
+        "z": 794.43
+      },
+      "aggroLevel": 28
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7",
+      "position": {
+        "x": -645.686,
+        "y": 202.991,
+        "z": 710.17
+      },
+      "aggroLevel": 28,
+      "forceUnhidden": true,
+      "specialBranch": "ascent7",
+      "note": "spell_aggro_unhidden"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7_UnhidePoint",
+      "position": {
+        "x": -637.906,
+        "y": 180.037,
+        "z": 764.909
+      },
+      "aggroLevel": 28,
+      "forceHidden": true,
+      "routeOnly": true,
+      "disableExitHideThreshold": true,
+      "mountOnArrival": true,
+      "recheckAscentSafetyOnArrival": true,
+      "arrivalDistance": 3.0,
+      "specialBranch": "ascent7",
+      "note": "drop_hide_before_ascent_7"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7_RampCorner",
+      "position": {
+        "x": -701.109,
+        "y": 203.0,
+        "z": 781.534
+      },
+      "aggroLevel": 28,
+      "forceUnhidden": true,
+      "routeOnly": true,
+      "arrivalDistance": 3.0,
+      "specialBranch": "ascent7",
+      "note": "spell_aggro_unhidden"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5_UnhidePoint",
+      "position": {
+        "x": -687.237,
+        "y": 171.0,
+        "z": 665.097
+      },
+      "aggroLevel": 28,
+      "forceHidden": true,
+      "routeOnly": true,
+      "disableExitHideThreshold": true,
+      "mountOnArrival": true,
+      "arrivalDistance": 3.0,
+      "specialBranch": "ascent5_only",
+      "note": "drop_hide_before_ascent_5"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5_RehidePoint",
+      "position": {
+        "x": -687.237,
+        "y": 171.0,
+        "z": 665.097
+      },
+      "aggroLevel": 28,
+      "forceUnhidden": true,
+      "routeOnly": true,
+      "hideOnArrival": true,
+      "arrivalDistance": 3.0,
+      "note": "rehide_after_ascent_5"
+    }
+  ],
+  "visibleCofferFarmRoute": [
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_1"
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_2"
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_3"
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_5"
+    },
+    {
+      "area": "Southdown Heath",
+      "label": "Southdown Heath_4"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_1"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_2"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_3"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_5"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_6"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_7"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_9"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_10"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_4"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_1"
+    },
+    {
+      "area": "Lost Citadel",
+      "label": "Lost Citadel_8"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_1"
+    },
+    {
+      "area": "Eldergrowth",
+      "label": "Eldergrowth_1"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_4"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_5"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_2"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_3"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_6"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_7"
+    },
+    {
+      "area": "Shadowed City",
+      "label": "Shadowed City_8"
+    },
+    {
+      "area": "Eldergrowth",
+      "label": "Eldergrowth_2"
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_1"
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_2"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_2"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_3"
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_4"
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_3"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_2"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_3"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_6"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7_UnhidePoint"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7_RampCorner"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_7"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5_UnhidePoint"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_5_RehidePoint"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_4"
+    },
+    {
+      "area": "Abandoned Ascent",
+      "label": "Abandoned Ascent_1"
+    },
+    {
+      "area": "Stonemarsh",
+      "label": "Stonemarsh_5"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_3"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_8"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_5"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_7"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_6"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_4"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_10"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_2"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_1"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_9"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_8"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_4"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_5"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_6"
+    },
+    {
+      "area": "Heathcliff",
+      "label": "Heathcliff_7"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_4"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_3"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_5"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_4"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_5"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_6"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_3"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_2"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_1"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_6"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_2"
+    },
+    {
+      "area": "Vanishing Slope",
+      "label": "Vanishing Slope_1"
+    }
+  ],
   "fateAethernetPreferences": [
     { "fateId": 1967, "aethernet": "CrystallizedCaverns" }
   ],

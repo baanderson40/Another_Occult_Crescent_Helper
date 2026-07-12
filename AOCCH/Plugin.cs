@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     public AocchLogger Logger { get; init; }
     public OccultCrescentData OccultCrescentData { get; init; }
     public CofferPositionOverrideStore CofferPositionOverrideStore { get; init; }
+    public VisibleCofferPositionOverrideStore VisibleCofferPositionOverrideStore { get; init; }
     public OccultCrescentNameResolver OccultCrescentNameResolver { get; init; }
     public CofferNameResolver CofferNameResolver { get; init; }
     public OccultCrescentScanner Scanner { get; init; }
@@ -60,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
     public TreasureHintTracker TreasureHintTracker { get; init; }
     public TreasureSearchController TreasureSearchController { get; init; }
     public CofferInteractionController CofferInteractionController { get; init; }
+    public TreasureCofferFarmController TreasureCofferFarmController { get; init; }
     public PotFallbackWindowEvaluator PotFallbackWindowEvaluator { get; init; }
     public PotInstanceTimeEvaluator PotInstanceTimeEvaluator { get; init; }
     public PotFarmController PotFarmController { get; init; }
@@ -80,6 +82,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration.SetLogger(Logger);
         OccultCrescentData = OccultCrescentDataLoader.Load(PluginInterface, Logger);
         CofferPositionOverrideStore = new CofferPositionOverrideStore(PluginInterface, Logger);
+        VisibleCofferPositionOverrideStore = new VisibleCofferPositionOverrideStore(PluginInterface, Logger);
         if (Configuration.Migrate(OccultCrescentData))
         {
             Configuration.Save();
@@ -106,6 +109,7 @@ public sealed class Plugin : IDalamudPlugin
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
+        TreasureCofferFarmController = new TreasureCofferFarmController(Framework, ObjectTable, Scanner, MovementController, DangerousTreasureTravelController, CofferInteractionController, OccultCrescentData, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
@@ -113,8 +117,8 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController);
-        DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController);
+        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
+        DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController, TreasureCofferFarmController);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
@@ -123,7 +127,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, panic, testkeyitem, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -170,6 +174,7 @@ public sealed class Plugin : IDalamudPlugin
         DebugWindow.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
+        TreasureCofferFarmController.Dispose();
         CofferInteractionController.Dispose();
         TreasureSearchController.Dispose();
         DangerousTreasureTravelController.Dispose();
@@ -228,6 +233,14 @@ public sealed class Plugin : IDalamudPlugin
                 Logger.Info("Slash command action: stop farm session.");
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
+            case "coffer-start":
+                Logger.Info("Slash command action: start visible coffer farm.");
+                TreasureCofferFarmController.Start();
+                break;
+            case "coffer-stop":
+                Logger.Info("Slash command action: stop visible coffer farm.");
+                TreasureCofferFarmController.Stop("Slash command visible coffer stop requested.");
+                break;
             case "panic":
                 Logger.Warning("Slash command action: panic stop.");
                 PanicStopAll();
@@ -255,6 +268,8 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch log - Toggle log window");
         ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
         ChatGui.Print("/aocch stop - Stop unified CE/FATE farm session");
+        ChatGui.Print("/aocch coffer-start - Start visible coffer farm route");
+        ChatGui.Print("/aocch coffer-stop - Stop visible coffer farm route");
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
         ChatGui.Print("/aocch testkeyitem [slot|inventory|command|both] [wait] - Test Magical Elixir usage with detailed logs");
         ChatGui.Print("/aocch help - Show this help");
@@ -447,6 +462,11 @@ public sealed class Plugin : IDalamudPlugin
             PotFarmController.Stop(reason);
         }
 
+        if (TreasureCofferFarmController.IsRunning)
+        {
+            TreasureCofferFarmController.Stop(reason);
+        }
+
         if (CriticalEngagementAutomationController.IsRunning)
         {
             CriticalEngagementAutomationController.Stop(reason);
@@ -486,6 +506,7 @@ public sealed class Plugin : IDalamudPlugin
 
         FarmSessionController.ResetInstanceState(reason);
         PotFarmController.ResetInstanceState(reason);
+        TreasureCofferFarmController.ResetInstanceState(reason);
         CofferInteractionController.ResetInstanceState(reason);
         TreasureSearchController.ResetInstanceState(reason);
         DangerousTreasureTravelController.ResetInstanceState(reason);
@@ -544,6 +565,12 @@ public sealed class Plugin : IDalamudPlugin
         else
         {
             Logger.Info("Panic stop: pot control not running.");
+        }
+
+        if (TreasureCofferFarmController.IsRunning)
+        {
+            Logger.Info("Panic stop: stopping visible coffer farm.");
+            TreasureCofferFarmController.Stop(reason);
         }
 
         if (BuffRotationController.IsRunning)
