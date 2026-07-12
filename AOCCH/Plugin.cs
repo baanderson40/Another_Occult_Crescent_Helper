@@ -86,7 +86,7 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.Migrate(OccultCrescentData))
         {
             Configuration.Save();
-            Logger.Info("Migrated configuration to CE/FATE checkbox settings.");
+            Logger.Info("Migrated configuration settings.");
         }
 
         OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData, Logger);

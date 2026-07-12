@@ -178,7 +178,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextUnformatted("Treasure Travel");
 
         DrawPotsIntSetting(
-            "Maximum Aggro Level",
+            "Maximum Aggro Level (Revealed Treasure)",
             configuration.MaximumAggroLevel,
             0,
             20,
@@ -282,6 +282,14 @@ public class ConfigWindow : Window, IDisposable
             50,
             value => configuration.ArrivalDistance = value,
             nameof(configuration.ArrivalDistance));
+
+        DrawPotsIntSetting(
+            "Maximum Aggro Level (Visible Coffers)",
+            configuration.VisibleTreasureCofferMaximumAggroLevel,
+            0,
+            20,
+            value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
+            nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
 
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))

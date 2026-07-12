@@ -680,7 +680,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     }
 
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
-        => spot.AggroLevel > configuration.MaximumAggroLevel
+        => spot.AggroLevel > configuration.VisibleTreasureCofferMaximumAggroLevel
             || (spot.HideThresholdDistance ?? 0) > 0;
 
     private void SetFailure(string reason)

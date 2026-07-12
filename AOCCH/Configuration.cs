@@ -27,7 +27,7 @@ public class Configuration : IPluginConfiguration
     [JsonIgnore]
     private AocchLogger? logger;
 
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public string AutorotationPresetName { get; set; } = "Occult";
     public bool EnableCriticalEngagementFarming { get; set; } = true;
@@ -49,6 +49,7 @@ public class Configuration : IPluginConfiguration
     public int InstanceExitBufferMinutes { get; set; } = 2;
     public int SpawnArrivalRadius { get; set; } = 18;
     public int MaximumAggroLevel { get; set; } = 19;
+    public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 19;
     public bool UseNinjaForDangerousArea { get; set; }
     public int HideThresholdDistance { get; set; } = 120;
     public int NinjaGearsetNumber { get; set; }
@@ -106,7 +107,7 @@ public class Configuration : IPluginConfiguration
 
     public bool Migrate(OccultCrescentData data)
     {
-        if (Version >= 1)
+        if (Version >= 2)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -114,7 +115,7 @@ public class Configuration : IPluginConfiguration
 
         logger?.Info($"Configuration migration starting from version {Version}.");
 
-        if (LegacyFarmingMode.HasValue)
+        if (Version < 1 && LegacyFarmingMode.HasValue)
         {
             switch (LegacyFarmingMode.Value)
             {
@@ -133,7 +134,7 @@ public class Configuration : IPluginConfiguration
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(LegacyExcludedFates))
+        if (Version < 1 && !string.IsNullOrWhiteSpace(LegacyExcludedFates))
         {
             var excludedNames = LegacyExcludedFates
                 .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
@@ -149,10 +150,16 @@ public class Configuration : IPluginConfiguration
             }
         }
 
+        if (Version < 2)
+        {
+            VisibleTreasureCofferMaximumAggroLevel = MaximumAggroLevel;
+            logger?.Info($"Configuration migration copied MaximumAggroLevel {MaximumAggroLevel} to VisibleTreasureCofferMaximumAggroLevel.");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 1;
-        logger?.Info("Configuration migration completed at version 1.");
+        Version = 2;
+        logger?.Info("Configuration migration completed at version 2.");
         return true;
     }
 
