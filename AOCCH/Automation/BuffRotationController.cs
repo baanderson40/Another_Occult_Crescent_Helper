@@ -16,7 +16,8 @@ public sealed class BuffRotationController : IDisposable
 {
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const float BuffFreshDuration = 600f;
-    private const float BuffSettleSeconds = 1f;
+    private const float BuffSettleSeconds = 1.5f;
+    private const float BuffOutcomeTimeoutSeconds = 4f;
     private const float BuffTimeoutSeconds = 3f;
     private const float DismountTimeoutSeconds = 4f;
     private const int BuffVerifyRetries = 3;
@@ -39,6 +40,7 @@ public sealed class BuffRotationController : IDisposable
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -59,6 +61,7 @@ public sealed class BuffRotationController : IDisposable
     private int currentVerifyAttempt;
     private int dismountAttempt;
     private int moveAttemptIndex;
+    private DateTimeOffset actionAttemptStartedAt = DateTimeOffset.MinValue;
     private List<Vector3> moveTargets = [];
 
     public BuffRotationController(
@@ -67,6 +70,7 @@ public sealed class BuffRotationController : IDisposable
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        GameActionController gameActionController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -75,6 +79,7 @@ public sealed class BuffRotationController : IDisposable
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -207,6 +212,7 @@ public sealed class BuffRotationController : IDisposable
             currentVerifyAttempt = 0;
             dismountAttempt = 0;
             moveAttemptIndex = 0;
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
             moveTargets = [];
         }
 
@@ -236,6 +242,7 @@ public sealed class BuffRotationController : IDisposable
             currentVerifyAttempt = 0;
             dismountAttempt = 0;
             moveAttemptIndex = 0;
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
             moveTargets = [];
             supportJobLevels = [];
             restoreRequested = false;
@@ -439,12 +446,14 @@ public sealed class BuffRotationController : IDisposable
 
             if (!IsWithinBuffZone())
             {
+                actionAttemptStartedAt = DateTimeOffset.MinValue;
                 BeginMoveToBuffZone();
                 return;
             }
 
             if (condition[ConditionFlag.Mounted])
             {
+                actionAttemptStartedAt = DateTimeOffset.MinValue;
                 BeginDismount();
                 return;
             }
@@ -457,6 +466,7 @@ public sealed class BuffRotationController : IDisposable
 
             if (currentJob != entry.JobId)
             {
+                actionAttemptStartedAt = DateTimeOffset.MinValue;
                 BeginSwitchJob(entry);
                 return;
             }
@@ -641,30 +651,47 @@ public sealed class BuffRotationController : IDisposable
 
     private void BeginActionAttempt(BuffAction entry)
     {
-        currentVerifyAttempt++;
-        currentAction = $"Casting {entry.BuffName} attempt {currentVerifyAttempt}/{BuffVerifyRetries}";
-        unsafe
+        var nextAttempt = currentVerifyAttempt + 1;
+        if (nextAttempt > BuffVerifyRetries)
         {
-            ActionManager.Instance()->UseAction(ActionType.Action, entry.ActionId);
+            SetFailure($"Buff rotation failed to verify {entry.BuffName}.", critical: false);
+            return;
         }
 
+        currentAction = $"Casting {entry.BuffName} attempt {nextAttempt}/{BuffVerifyRetries}";
+        if (!gameActionController.CanUseAction(entry.ActionId))
+        {
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
+            TransitionTo(BuffRotationState.Verifying, $"Waiting to cast {entry.BuffName} attempt {nextAttempt}/{BuffVerifyRetries}");
+            return;
+        }
+
+        if (!gameActionController.TryExecuteAction(entry.ActionId, currentAction))
+        {
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
+            TransitionTo(BuffRotationState.Verifying, $"Waiting to cast {entry.BuffName} attempt {nextAttempt}/{BuffVerifyRetries}");
+            return;
+        }
+
+        currentVerifyAttempt = nextAttempt;
+        actionAttemptStartedAt = DateTimeOffset.UtcNow;
         TransitionTo(BuffRotationState.Verifying, currentAction);
     }
 
     private void TickVerifying()
     {
-        if ((DateTimeOffset.UtcNow - stateEnteredAt).TotalSeconds < BuffSettleSeconds)
-        {
-            return;
-        }
-
         var entry = BuffActions[currentEntryIndex];
+        var elapsed = actionAttemptStartedAt == DateTimeOffset.MinValue
+            ? DateTimeOffset.UtcNow - stateEnteredAt
+            : DateTimeOffset.UtcNow - actionAttemptStartedAt;
+
         var applied = entry.AppliesAll
             ? TryAuditRequiredBuffs(out var missingStatuses) && missingStatuses.Count == 0
             : GetStatusRemaining(entry.StatusId) >= BuffFreshDuration;
 
         if (applied)
         {
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
             if (entry.AppliesAll)
             {
                 SetMissingStatuses([]);
@@ -681,6 +708,61 @@ public sealed class BuffRotationController : IDisposable
             return;
         }
 
+        if (actionAttemptStartedAt == DateTimeOffset.MinValue)
+        {
+            if (!IsWithinBuffZone())
+            {
+                BeginMoveToBuffZone();
+                return;
+            }
+
+            if (gameActionController.CanUseAction(entry.ActionId))
+            {
+                BeginActionAttempt(entry);
+                return;
+            }
+
+            logger.DebugThrottled(
+                "buff-rotation-verify",
+                WaitLogInterval,
+                $"Buff rotation is waiting to cast {entry.BuffName}. attempt={currentVerifyAttempt + 1}/{BuffVerifyRetries} canUseAction={gameActionController.CanUseAction(entry.ActionId)} casting={condition[ConditionFlag.Casting]} elapsed={elapsed.TotalSeconds:0.0}s.");
+
+            if (elapsed.TotalSeconds >= BuffOutcomeTimeoutSeconds)
+            {
+                SetFailure($"Buff rotation timed out waiting to cast {entry.BuffName}.", critical: false);
+            }
+
+            return;
+        }
+
+        if ((DateTimeOffset.UtcNow - stateEnteredAt).TotalSeconds < BuffSettleSeconds)
+        {
+            return;
+        }
+
+        if (condition[ConditionFlag.Casting] || !gameActionController.CanUseAction(entry.ActionId))
+        {
+            logger.DebugThrottled(
+                "buff-rotation-verify",
+                WaitLogInterval,
+                $"Buff rotation is waiting for {entry.BuffName} to resolve. attempt={currentVerifyAttempt}/{BuffVerifyRetries} canUseAction={gameActionController.CanUseAction(entry.ActionId)} casting={condition[ConditionFlag.Casting]} elapsed={elapsed.TotalSeconds:0.0}s.");
+
+            if (elapsed.TotalSeconds < BuffOutcomeTimeoutSeconds)
+            {
+                return;
+            }
+
+            logger.Warning($"Buff rotation: timed out waiting for {entry.BuffName} to resolve before the action became reusable.");
+        }
+        else if (elapsed.TotalSeconds < BuffOutcomeTimeoutSeconds)
+        {
+            logger.DebugThrottled(
+                "buff-rotation-verify",
+                WaitLogInterval,
+                $"Buff rotation is waiting for {entry.BuffName} to apply after cast completion. attempt={currentVerifyAttempt}/{BuffVerifyRetries} elapsed={elapsed.TotalSeconds:0.0}s.");
+            return;
+        }
+
         if (currentVerifyAttempt < BuffVerifyRetries)
         {
             if (!IsWithinBuffZone())
@@ -689,10 +771,12 @@ public sealed class BuffRotationController : IDisposable
                 return;
             }
 
+            actionAttemptStartedAt = DateTimeOffset.MinValue;
             BeginActionAttempt(entry);
             return;
         }
 
+        actionAttemptStartedAt = DateTimeOffset.MinValue;
         if (entry.AppliesAll)
         {
             logger.Warning("Buff rotation: Freelancer buff failed verification; continuing with individual buffs.");
