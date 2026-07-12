@@ -68,6 +68,11 @@ public sealed class TreasureSearchController : IDisposable
     private int candidateProbeBaselineSessionId;
     private int candidateProbeBaselineRevision;
     private TreasureHintEvent? refinementEvent;
+    private DateTimeOffset refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+    private int refinementProbeAttemptCount;
+    private int refinementProbeBaselineSessionId;
+    private int refinementProbeBaselineRevision;
     private DateTimeOffset refinementMoveDeadlineAt = DateTimeOffset.MinValue;
     private int refinementStepIndex;
     private bool mappedPointRetryUsed;
@@ -365,6 +370,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeBaselineSessionId = 0;
             candidateProbeBaselineRevision = 0;
             refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -407,6 +417,11 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
         }
 
@@ -509,6 +524,11 @@ public sealed class TreasureSearchController : IDisposable
                     candidateProbeAttemptCount = 0;
                     candidateProbeBaselineSessionId = 0;
                     candidateProbeBaselineRevision = 0;
+                    refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+                    refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+                    refinementProbeAttemptCount = 0;
+                    refinementProbeBaselineSessionId = 0;
+                    refinementProbeBaselineRevision = 0;
                 }
 
                 logger.ResetThrottle("treasure-search-probe");
@@ -643,9 +663,27 @@ public sealed class TreasureSearchController : IDisposable
             }
         }
 
+        if (refinementEvent == null
+            && refinementProbeBaselineSessionId != 0
+            && treasureHintTracker.TryGetLatestEventSince(refinementProbeBaselineSessionId, refinementProbeBaselineRevision, out var refinementLatestEvent)
+            && refinementLatestEvent != null)
+        {
+            lock (gate)
+            {
+                consumedHintRevision = Math.Max(consumedHintRevision, refinementLatestEvent.Revision);
+                refinementEvent = refinementLatestEvent;
+                refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            }
+        }
+
         if (refinementEvent == null)
         {
-            if (!TryStartCandidateProbe($"Refinement is probing candidate {activeCandidateKey?.Label} after local movement."))
+            if (refinementProbeDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= refinementProbeDeadlineAt)
+            {
+                logger.Info($"Treasure candidate {activeCandidateKey?.Label} refinement probe attempt {refinementProbeAttemptCount} produced no usable event; retrying from the current position.");
+            }
+
+            if (!TryStartRefinementProbe($"Refinement is probing candidate {activeCandidateKey?.Label} after local movement."))
             {
                 return;
             }
@@ -806,6 +844,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeBaselineSessionId = 0;
             candidateProbeBaselineRevision = 0;
             refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -939,6 +982,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeBaselineSessionId = 0;
             candidateProbeBaselineRevision = 0;
             refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -1019,6 +1067,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeBaselineSessionId = 0;
             candidateProbeBaselineRevision = 0;
             refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -1063,6 +1116,11 @@ public sealed class TreasureSearchController : IDisposable
                     candidateProbeBaselineSessionId = 0;
                     candidateProbeBaselineRevision = 0;
                     refinementEvent = null;
+                    refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+                    refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+                    refinementProbeAttemptCount = 0;
+                    refinementProbeBaselineSessionId = 0;
+                    refinementProbeBaselineRevision = 0;
                     refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                     refinementStepIndex = 0;
                     mappedPointRetryUsed = false;
@@ -1121,6 +1179,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeBaselineSessionId = 0;
             candidateProbeBaselineRevision = 0;
             refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -1169,6 +1232,11 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             refinementEvent = latestEvent;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
             mappedPointRetryUsed = false;
@@ -1519,6 +1587,11 @@ public sealed class TreasureSearchController : IDisposable
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateArrivedAt = DateTimeOffset.MinValue;
             refinementEvent = revealEvent;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             revealedCofferAcquireDeadlineAt = deadline;
         }
@@ -1584,6 +1657,50 @@ public sealed class TreasureSearchController : IDisposable
         logger.ResetThrottle("treasure-search-probe-retry");
         logger.Info($"Treasure candidate probe attempt {candidateProbeAttemptCount}/{MaximumCandidateProbeAttempts} for {activeCandidateKey?.Label}: inventoryUseAccepted={used} baselineSession={candidateProbeBaselineSessionId} baselineRevision={candidateProbeBaselineRevision} probeDeadline={candidateProbeDeadlineAt:O}. {reason}");
         TransitionTo(TreasureSearchState.ProbingCandidate, $"{reason} Waiting for a new treasure event after baseline revision {candidateProbeBaselineRevision} in session {candidateProbeBaselineSessionId} for candidate {activeCandidateKey?.Label}.");
+        return true;
+    }
+
+    private bool TryStartRefinementProbe(string reason)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (refinementProbeLastAttemptAt != DateTimeOffset.MinValue && now - refinementProbeLastAttemptAt < CandidateProbeRetryDelay)
+        {
+            logger.DebugThrottled(
+                "treasure-search-refine-probe-retry",
+                TimeSpan.FromMilliseconds(250),
+                $"Treasure refinement probe retry is waiting for {CandidateProbeRetryDelay.TotalSeconds:0.0}s between attempts. candidate={activeCandidateKey?.Label} refinementStep={refinementStepIndex}/{MaximumCandidateRefinementSteps} attempts={refinementProbeAttemptCount}.");
+            return true;
+        }
+
+        if (refinementProbeDeadlineAt != DateTimeOffset.MinValue && now < refinementProbeDeadlineAt)
+        {
+            logger.DebugThrottled(
+                "treasure-search-refine-probe",
+                WaitLogInterval,
+                $"Treasure refinement is probing candidate {activeCandidateKey?.Label}. attempts={refinementProbeAttemptCount} probeDeadline={refinementProbeDeadlineAt:O} baselineSession={refinementProbeBaselineSessionId} baselineRevision={refinementProbeBaselineRevision} step={refinementStepIndex}/{MaximumCandidateRefinementSteps} hint={treasureHintTracker.Snapshot.GetHintSummary()}.");
+            return true;
+        }
+
+        if (!gameActionController.HasMagicalElixir())
+        {
+            SetFailure($"Treasure refinement cannot continue because {GameActionController.MagicalElixirKeyItemName} is unavailable.");
+            return false;
+        }
+
+        var hintSnapshot = treasureHintTracker.Snapshot;
+        var used = gameActionController.TryUseMagicalElixirViaInventory($"treasure refinement probe {activeCandidateKey?.Label}");
+        lock (gate)
+        {
+            refinementProbeAttemptCount++;
+            refinementProbeLastAttemptAt = now;
+            refinementProbeDeadlineAt = now + CandidateProbeTimeout;
+            refinementProbeBaselineSessionId = hintSnapshot.SessionId;
+            refinementProbeBaselineRevision = hintSnapshot.Revision;
+        }
+
+        logger.ResetThrottle("treasure-search-refine-probe");
+        logger.ResetThrottle("treasure-search-refine-probe-retry");
+        logger.Info($"Treasure refinement probe attempt {refinementProbeAttemptCount} for {activeCandidateKey?.Label}: inventoryUseAccepted={used} baselineSession={refinementProbeBaselineSessionId} baselineRevision={refinementProbeBaselineRevision} probeDeadline={refinementProbeDeadlineAt:O} step={refinementStepIndex}/{MaximumCandidateRefinementSteps}. {reason}");
         return true;
     }
 
