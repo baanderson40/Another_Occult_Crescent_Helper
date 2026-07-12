@@ -588,7 +588,7 @@ public sealed class FateAutomationController : IDisposable
         lastLoggedProgress = target.Progress;
         lastLoggedStateCode = target.StateCode;
         var elapsed = stateEnteredAt == DateTimeOffset.MinValue ? TimeSpan.Zero : now - stateEnteredAt;
-        logger.Debug(
+        logger.Verbose(
             $"FATE monitor {target.Name} ({target.Id}): state={target.State}({target.StateCode}) progress={target.Progress}% inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} insideRadius={HasArrivedWithinFateRadius(target)} distance={distance:0.0} elapsed={elapsed:mm\\:ss}.");
     }
 
