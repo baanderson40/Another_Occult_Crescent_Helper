@@ -728,6 +728,13 @@ public sealed class MovementController : IDisposable
             lastDistance = distance;
         }
 
+        var isWithinEarlyDismountRange = IsWithinEarlyDismountRange(step, playerPosition, out _);
+        if (isWithinEarlyDismountRange && condition[ConditionFlag.Mounted])
+        {
+            ProcessEarlyDismount(step, playerPosition);
+            return;
+        }
+
         if (IsPathStepComplete(step, playerPosition, distance))
         {
             if (!CompletePathStepArrival(step))
@@ -1587,15 +1594,21 @@ public sealed class MovementController : IDisposable
         return false;
     }
 
-    private void ProcessEarlyDismount(RouteStep step, Vector3 playerPosition)
+    private static bool IsWithinEarlyDismountRange(RouteStep step, Vector3 playerPosition, out float distanceToDismountTarget)
     {
+        distanceToDismountTarget = float.MaxValue;
         if (step.EarlyDismountDistance <= 0f || IsZeroVector(step.EarlyDismountTarget))
         {
-            return;
+            return false;
         }
 
-        var distanceToDismountTarget = CalculateFlatDistance(playerPosition, step.EarlyDismountTarget);
-        if (distanceToDismountTarget > step.EarlyDismountDistance)
+        distanceToDismountTarget = CalculateFlatDistance(playerPosition, step.EarlyDismountTarget);
+        return distanceToDismountTarget <= step.EarlyDismountDistance;
+    }
+
+    private void ProcessEarlyDismount(RouteStep step, Vector3 playerPosition)
+    {
+        if (!IsWithinEarlyDismountRange(step, playerPosition, out var distanceToDismountTarget))
         {
             return;
         }
