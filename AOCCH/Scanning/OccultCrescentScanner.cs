@@ -435,6 +435,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 Name = objectEntry.Name.ToString(),
                 Position = objectEntry.Position,
                 DistanceToPlayer = distanceToPlayer,
+                IsTargetable = objectEntry.IsTargetable,
             });
         }
 

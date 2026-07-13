@@ -555,6 +555,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         var interactionMatch = new VisibleCofferMatch
         {
+            Flow = CofferInteractionFlow.VisibleRoute,
             CandidateKey = new TreasureCandidateKey
             {
                 Label = spot.Label,

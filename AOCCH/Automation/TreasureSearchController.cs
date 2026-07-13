@@ -40,6 +40,7 @@ public sealed class TreasureSearchController : IDisposable
     private const float CandidateHandoffAdvantage = 10f;
     private const float MappedPointRetryArrivalTolerance = 4.5f;
     private const float LocalMoveSkipDistance = 3f;
+    private const float PotRevealCofferScanRadius = 28f;
     private const int MaximumCandidateRefinementSteps = 12;
     private const float NavmeshMinimumValidY = -400f;
     private const float NavmeshMaximumValidY = 500f;
@@ -62,6 +63,7 @@ public sealed class TreasureSearchController : IDisposable
     private readonly GameActionController gameActionController;
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
+    private readonly CofferNameResolver cofferNameResolver;
     private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
@@ -114,6 +116,7 @@ public sealed class TreasureSearchController : IDisposable
         GameActionController gameActionController,
         TreasureHintTracker treasureHintTracker,
         DangerousTreasureTravelController dangerousTreasureTravelController,
+        CofferNameResolver cofferNameResolver,
         OccultCrescentData data,
         CofferPositionOverrideStore cofferPositionOverrideStore,
         Configuration configuration,
@@ -125,6 +128,7 @@ public sealed class TreasureSearchController : IDisposable
         this.gameActionController = gameActionController;
         this.treasureHintTracker = treasureHintTracker;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
+        this.cofferNameResolver = cofferNameResolver;
         this.cofferPositionOverrideStore = cofferPositionOverrideStore;
         this.configuration = configuration;
         this.logger = logger;
@@ -920,12 +924,6 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TryAcquireVisibleCofferFromActiveCandidate(string source)
     {
-        var scannerSnapshot = scanner.Snapshot;
-        if (scannerSnapshot.VisibleCoffers.Count == 0)
-        {
-            return false;
-        }
-
         if (orderedCandidates.Count == 0 || ActiveCandidateKey == null)
         {
             return false;
@@ -937,12 +935,16 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        if (!TryFindNearbyPotRevealCoffer(out var coffer, out var recognitionSource, out var objectKind))
+        {
+            return false;
+        }
+
         if (!TryGetCurrentCandidate(out var activeCandidate))
         {
             return false;
         }
 
-        var coffer = scannerSnapshot.VisibleCoffers[0];
         var activePosition = ActiveCandidateResolvedPosition != Vector3.Zero
             ? ActiveCandidateResolvedPosition
             : ResolveCandidatePosition(activeCandidate);
@@ -975,14 +977,126 @@ public sealed class TreasureSearchController : IDisposable
                 ? $"Visible coffer {coffer.Name} was found while routing {activeCandidateKey.Label}, but the mapped candidate distance {distanceToActive:0.0}y exceeds the trust threshold {MaximumTrustedAttributionDistance:0.0}y. Interaction will continue without learning an override."
                 : $"Visible coffer {coffer.Name} was found while routing {activeCandidateKey.Label}, but {nearestOtherCandidateKey.Label} is closer ({nearestOtherDistance:0.0}y vs {distanceToActive:0.0}y). Interaction will continue without learning an override.";
 
+        if (!coffer.IsTargetable)
+        {
+            logger.DebugThrottled(
+                $"pot-reveal-match-wait-{activeCandidateKey.CandidateKey}",
+                TimeSpan.FromSeconds(1),
+                $"Pot reveal coffer {coffer.Name} for candidate {activeCandidateKey.Label} was recognized via {recognitionSource} as {objectKind}, but it is not targetable yet. playerDistance={coffer.DistanceToPlayer:0.0}y candidateDistance={distanceToActive:0.0}y.");
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=pot-reveal-match candidate={activeCandidateKey.Label} source={source} recognition={recognitionSource} objectKind={objectKind} baseId={coffer.DataId} objectId={coffer.GameObjectId:X} playerDistance={coffer.DistanceToPlayer:0.0}y candidateDistance={distanceToActive:0.0}y");
+
         CompleteWithVisibleCoffer(
             coffer,
             activeCandidateKey,
             distanceToActive,
             isTrustworthy,
             nearestOtherDistance,
-            $"{reason} source={source}.");
+            $"{reason} source={source} recognition={recognitionSource} objectKind={objectKind}.");
         return true;
+    }
+
+    private bool TryFindNearbyPotRevealCoffer(out VisibleCoffer coffer, out string recognitionSource, out string objectKind)
+    {
+        coffer = new VisibleCoffer();
+        recognitionSource = string.Empty;
+        objectKind = string.Empty;
+
+        var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
+        if (playerPosition == null)
+        {
+            return false;
+        }
+
+        VisibleCoffer? bestMatch = null;
+        string bestRecognitionSource = string.Empty;
+        string bestObjectKind = string.Empty;
+        var bestDistance = float.MaxValue;
+        var bestTargetable = false;
+
+        foreach (var gameObject in Plugin.ObjectTable)
+        {
+            if (gameObject is not Dalamud.Game.ClientState.Objects.Types.IGameObject objectEntry)
+            {
+                continue;
+            }
+
+            if (!objectEntry.IsValid())
+            {
+                continue;
+            }
+
+            if (!TryRecognizePotRevealCoffer(objectEntry, out var nextRecognitionSource))
+            {
+                continue;
+            }
+
+            var distanceToPlayer = CalculateFlatDistance(playerPosition.Value, objectEntry.Position);
+            if (distanceToPlayer > PotRevealCofferScanRadius)
+            {
+                continue;
+            }
+
+            var targetable = objectEntry.IsTargetable;
+            if (bestMatch != null)
+            {
+                if (targetable != bestTargetable)
+                {
+                    if (!targetable)
+                    {
+                        continue;
+                    }
+                }
+                else if (distanceToPlayer >= bestDistance)
+                {
+                    continue;
+                }
+            }
+
+            bestTargetable = targetable;
+            bestDistance = distanceToPlayer;
+            bestRecognitionSource = nextRecognitionSource;
+            bestObjectKind = objectEntry.ObjectKind.ToString();
+            bestMatch = new VisibleCoffer
+            {
+                GameObjectId = objectEntry.GameObjectId,
+                DataId = objectEntry.BaseId,
+                Name = objectEntry.Name.ToString(),
+                Position = objectEntry.Position,
+                DistanceToPlayer = distanceToPlayer,
+                IsTargetable = targetable,
+            };
+        }
+
+        if (bestMatch == null)
+        {
+            return false;
+        }
+
+        coffer = bestMatch;
+        recognitionSource = bestRecognitionSource;
+        objectKind = bestObjectKind;
+        return true;
+    }
+
+    private bool TryRecognizePotRevealCoffer(Dalamud.Game.ClientState.Objects.Types.IGameObject objectEntry, out string recognitionSource)
+    {
+        if (objectEntry.BaseId is 2014741u or 2014742u or 2014743u)
+        {
+            recognitionSource = "base-id";
+            return true;
+        }
+
+        if (cofferNameResolver.IsKnownLocalizedName(objectEntry.Name.ToString()))
+        {
+            recognitionSource = "localized-name";
+            return true;
+        }
+
+        recognitionSource = string.Empty;
+        return false;
     }
 
     private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, bool isTrustworthy, float nearestOtherDistance, string reason)
@@ -1004,6 +1118,7 @@ public sealed class TreasureSearchController : IDisposable
             revealedCofferLatched = true;
             activeVisibleCofferMatch = new VisibleCofferMatch
             {
+                Flow = CofferInteractionFlow.PotReveal,
                 CandidateKey = candidateKey,
                 Coffer = coffer,
                 MatchDistance = matchDistance,

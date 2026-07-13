@@ -19,6 +19,7 @@ public sealed class CofferInteractionController : IDisposable
     private const float PreferredOpenDistance = 3.25f;
     private const uint JumpActionId = 2;
     private const float JumpAssistTriggerDistance = 10f;
+    private const float PotRevealConfirmationFallbackRadius = 8f;
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
@@ -158,7 +159,7 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
-        logger.Info($"[Coffer] op=start-request candidate={match.CandidateKey.Label} coffer=\"{match.Coffer.Name}\" ({match.Coffer.GameObjectId:X}) trustworthy={match.IsTrustworthy} attribution=\"{match.AttributionReason}\"");
+        logger.Info($"[Coffer] op=start-request flow={match.Flow} candidate={match.CandidateKey.Label} coffer=\"{match.Coffer.Name}\" ({match.Coffer.GameObjectId:X}) trustworthy={match.IsTrustworthy} attribution=\"{match.AttributionReason}\"");
 
         var liveObject = ResolveObject(match.Coffer.GameObjectId);
         if (liveObject == null)
@@ -458,7 +459,7 @@ public sealed class CofferInteractionController : IDisposable
             }
         }
 
-        var stillVisible = scanner.Snapshot.VisibleCoffers.Any(coffer => coffer.GameObjectId == active.Coffer.GameObjectId);
+        var stillVisible = IsStillVisibleForConfirmation(active);
         if (!stillVisible)
         {
             lock (gate)
@@ -494,7 +495,57 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        logger.DebugThrottled("coffer-confirmation", WaitLogInterval, $"Waiting for coffer open confirmation on {active.Coffer.Name} ({active.Coffer.GameObjectId:X}). attempt={interactionAttemptCount} deadline={ConfirmationDeadlineAt:O}.");
+        logger.DebugThrottled("coffer-confirmation", WaitLogInterval, $"Waiting for coffer open confirmation on {active.Coffer.Name} ({active.Coffer.GameObjectId:X}). flow={active.Flow} attempt={interactionAttemptCount} deadline={ConfirmationDeadlineAt:O}.");
+    }
+
+    private bool IsStillVisibleForConfirmation(VisibleCofferMatch match)
+        => match.Flow switch
+        {
+            CofferInteractionFlow.PotReveal => IsStillVisibleViaPotRevealObjectLookup(match),
+            _ => IsStillVisibleViaScanner(match),
+        };
+
+    private bool IsStillVisibleViaScanner(VisibleCofferMatch match)
+        => scanner.Snapshot.VisibleCoffers.Any(coffer => coffer.GameObjectId == match.Coffer.GameObjectId);
+
+    private bool IsStillVisibleViaPotRevealObjectLookup(VisibleCofferMatch match)
+    {
+        var exact = ResolveObject(match.Coffer.GameObjectId);
+        if (exact != null)
+        {
+            logger.DebugThrottled(
+                $"coffer-confirmation-pot-{match.CandidateKey.CandidateKey}",
+                TimeSpan.FromSeconds(1),
+                $"Pot reveal confirmation kept exact object match for {match.Coffer.Name} ({match.Coffer.GameObjectId:X}).");
+            return true;
+        }
+
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is not IGameObject objectEntry || !objectEntry.IsValid())
+            {
+                continue;
+            }
+
+            if (objectEntry.BaseId != match.Coffer.DataId)
+            {
+                continue;
+            }
+
+            var distanceFromObserved = CalculateFlatDistance(objectEntry.Position, match.Coffer.Position);
+            if (distanceFromObserved > PotRevealConfirmationFallbackRadius)
+            {
+                continue;
+            }
+
+            logger.DebugThrottled(
+                $"coffer-confirmation-pot-{match.CandidateKey.CandidateKey}",
+                TimeSpan.FromSeconds(1),
+                $"Pot reveal confirmation found fallback object for {match.Coffer.Name}. originalObjectId={match.Coffer.GameObjectId:X} fallbackObjectId={objectEntry.GameObjectId:X} baseId={objectEntry.BaseId} distanceFromObserved={distanceFromObserved:0.0}y.");
+            return true;
+        }
+
+        return false;
     }
 
     private IGameObject? ResolveActiveObject()
@@ -620,7 +671,7 @@ public sealed class CofferInteractionController : IDisposable
             }
         }
 
-        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} attempts={interactionAttemptCount} trustworthy={ActiveMatch?.IsTrustworthy ?? false} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} flow={ActiveMatch?.Flow.ToString() ?? "none"} candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} attempts={interactionAttemptCount} trustworthy={ActiveMatch?.IsTrustworthy ?? false} reason={reason}");
     }
 
     private string BuildLogTag()
