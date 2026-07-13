@@ -300,6 +300,31 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
             nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
 
+        var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
+        if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableAutomaticTreasureCofferRoute old={configuration.EnableAutomaticTreasureCofferRoute} new={enableAutomaticTreasureCofferRoute}");
+            configuration.EnableAutomaticTreasureCofferRoute = enableAutomaticTreasureCofferRoute;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the visible coffer route once both threshold rules are satisfied.");
+
+        DrawPotsIntSetting(
+            "Automatic Silver Threshold",
+            configuration.AutomaticTreasureCofferSilverThreshold,
+            0,
+            8,
+            value => configuration.AutomaticTreasureCofferSilverThreshold = value,
+            nameof(configuration.AutomaticTreasureCofferSilverThreshold));
+        DrawPotsIntSetting(
+            "Automatic Bronze Threshold",
+            configuration.AutomaticTreasureCofferBronzeThreshold,
+            0,
+            30,
+            value => configuration.AutomaticTreasureCofferBronzeThreshold = value,
+            nameof(configuration.AutomaticTreasureCofferBronzeThreshold));
+        DrawSettingTooltip("0 means any amount of that type. Both automatic threshold checks must pass. A 0/0 configuration starts the route when the survey finds at least one coffer of either type.");
+
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
         {

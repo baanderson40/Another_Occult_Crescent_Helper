@@ -24,6 +24,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly DeathRecoveryController deathRecoveryController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly CofferInteractionController cofferInteractionController;
     private readonly OccultCrescentData data;
@@ -34,6 +35,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private readonly Dictionary<string, VisibleCofferFarmSpotData> spotsByKey;
 
     private TreasureCofferFarmState state = TreasureCofferFarmState.Idle;
+    private TreasureCofferFarmResult lastResult;
     private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
@@ -51,6 +53,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        DeathRecoveryController deathRecoveryController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         CofferInteractionController cofferInteractionController,
         OccultCrescentData data,
@@ -62,6 +65,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.deathRecoveryController = deathRecoveryController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.cofferInteractionController = cofferInteractionController;
         this.data = data;
@@ -108,6 +112,17 @@ public sealed class TreasureCofferFarmController : IDisposable
             lock (gate)
             {
                 return lastError;
+            }
+        }
+    }
+
+    public TreasureCofferFarmResult LastResult
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastResult;
             }
         }
     }
@@ -181,7 +196,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     public VisibleCofferPositionOverride? LastSavedOverride
         => overrideStore.LastSavedOverride;
 
-    public bool Start()
+    public bool Start(bool startedByFarmSession = false)
     {
         if (IsRunning)
         {
@@ -209,6 +224,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         lock (gate)
         {
+            lastResult = TreasureCofferFarmResult.None;
             currentRunId = $"CofferFarm#{Interlocked.Increment(ref nextRunSequence)}";
             currentRouteIndex = -1;
             activeRouteEntry = null;
@@ -221,7 +237,9 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         movementController.SetLogOwner(currentRunId);
-        TransitionTo(TreasureCofferFarmState.Starting, $"Starting visible coffer farm route with {data.VisibleCofferFarmRoute.Count} entries.");
+        TransitionTo(TreasureCofferFarmState.Starting, startedByFarmSession
+            ? $"Starting automatic visible coffer farm route with {data.VisibleCofferFarmRoute.Count} entries."
+            : $"Starting visible coffer farm route with {data.VisibleCofferFarmRoute.Count} entries.");
         return true;
     }
 
@@ -242,7 +260,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             cofferInteractionController.Stop(reason);
         }
 
-        TransitionTo(TreasureCofferFarmState.Stopped, reason, error: reason);
+        TransitionTo(TreasureCofferFarmState.Stopped, reason, error: reason, result: TreasureCofferFarmResult.Stopped);
     }
 
     public void ResetInstanceState(string reason)
@@ -250,6 +268,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         lock (gate)
         {
             state = TreasureCofferFarmState.Idle;
+            lastResult = TreasureCofferFarmResult.None;
             currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
@@ -279,6 +298,12 @@ public sealed class TreasureCofferFarmController : IDisposable
     {
         if (!IsRunning)
         {
+            return;
+        }
+
+        if (deathRecoveryController.State != DeathRecoveryState.Idle)
+        {
+            Stop($"Visible coffer route interrupted because death recovery became active. state={deathRecoveryController.State}");
             return;
         }
 
@@ -466,7 +491,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Visible coffer interaction ended without a confirmed open at {DescribeActiveSpot()}; continuing to the next route entry.");
                 return;
             case CofferInteractionResult.Stopped:
-                TransitionTo(TreasureCofferFarmState.Stopped, cofferInteractionController.LastTransition, error: cofferInteractionController.LastError);
+                TransitionTo(TreasureCofferFarmState.Stopped, cofferInteractionController.LastTransition, error: cofferInteractionController.LastError, result: TreasureCofferFarmResult.Stopped);
                 return;
             default:
                 SetFailure(cofferInteractionController.LastError.Length == 0
@@ -485,7 +510,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             if (!movementController.RecoverToBaseCamp(allowReturn: false))
             {
                 logger.Warning($"{BuildLogTag()} op=direct-recovery-start-failed spot={DescribeActiveSpot()} reason={(movementController.LastError.Length == 0 ? "Completed the visible coffer farm route, but failed to start Base Camp recovery." : movementController.LastError)}");
-                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but failed to start Base Camp recovery.");
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but failed to start Base Camp recovery.", result: TreasureCofferFarmResult.CompletedWithoutBaseRecovery);
                 return;
             }
 
@@ -502,12 +527,12 @@ public sealed class TreasureCofferFarmController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Visible coffer route returned to Base Camp.");
-                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route and returned to Base Camp.");
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route and returned to Base Camp.", result: TreasureCofferFarmResult.ReturnedToBase);
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
                 logger.Warning($"{BuildLogTag()} op=return-failed movementState={movementController.State} reason={(movementController.LastError.Length == 0 ? "Base Camp recovery failed after completing the visible coffer farm route." : movementController.LastError)}");
-                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but Base Camp recovery failed.");
+                TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but Base Camp recovery failed.", result: TreasureCofferFarmResult.CompletedWithoutBaseRecovery);
                 return;
         }
 
@@ -700,10 +725,10 @@ public sealed class TreasureCofferFarmController : IDisposable
     private void SetFailure(string reason)
     {
         logger.Warning($"{BuildLogTag()} op=failure state={TreasureCofferFarmState.Failed} spot={DescribeActiveSpot()} reason={reason}");
-        TransitionTo(TreasureCofferFarmState.Failed, reason, error: reason);
+        TransitionTo(TreasureCofferFarmState.Failed, reason, error: reason, result: TreasureCofferFarmResult.Failed);
     }
 
-    private void TransitionTo(TreasureCofferFarmState nextState, string reason, string? error = null)
+    private void TransitionTo(TreasureCofferFarmState nextState, string reason, string? error = null, TreasureCofferFarmResult? result = null)
     {
         TreasureCofferFarmState previousState;
         lock (gate)
@@ -711,6 +736,14 @@ public sealed class TreasureCofferFarmController : IDisposable
             previousState = state;
             state = nextState;
             lastTransition = reason;
+            if (result.HasValue)
+            {
+                lastResult = result.Value;
+            }
+            else if (nextState == TreasureCofferFarmState.Starting)
+            {
+                lastResult = TreasureCofferFarmResult.None;
+            }
             if (error != null)
             {
                 lastError = error;

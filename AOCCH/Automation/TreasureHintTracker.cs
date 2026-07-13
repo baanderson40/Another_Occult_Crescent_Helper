@@ -17,8 +17,12 @@ public sealed class TreasureHintTracker : IDisposable
     private const uint TreasureHintBeyondFarLogMessageId = 10989u;
     private const uint TreasureElixirPromptLogMessageId = 10990u;
     private const uint TreasureBonusOfferLogMessageId = 10994u;
+    private const uint TreasureCofferSurveyCountsLogMessageId = 10965u;
+    private const uint TreasureCofferSurveyEmptyLogMessageId = 10966u;
     private static readonly HashSet<uint> DebugTreasureLogMessageIds =
     [
+        TreasureCofferSurveyCountsLogMessageId,
+        TreasureCofferSurveyEmptyLogMessageId,
         TreasureCofferRevealLogMessageId,
         TreasureHintImmediateLogMessageId,
         TreasureHintCloseLogMessageId,
@@ -38,6 +42,7 @@ public sealed class TreasureHintTracker : IDisposable
     {
         LastTransition = "Idle",
     };
+    private TreasureCofferSurveySnapshot cofferSurveySnapshot = new();
 
     private bool? lastTreasureBuffState;
     private DateTimeOffset lastProcessedScannerUpdate = DateTimeOffset.MinValue;
@@ -79,6 +84,17 @@ public sealed class TreasureHintTracker : IDisposable
 
     public bool HasInitialHint
         => Snapshot.HasInitialHint;
+
+    public TreasureCofferSurveySnapshot CofferSurveySnapshot
+    {
+        get
+        {
+            lock (gate)
+            {
+                return cofferSurveySnapshot;
+            }
+        }
+    }
 
     public int ArmDebugLogMessageCapture(string reason, TimeSpan duration)
     {
@@ -137,6 +153,10 @@ public sealed class TreasureHintTracker : IDisposable
                 LastTransition = "Idle",
                 LastResetReason = reason,
             };
+            cofferSurveySnapshot = new TreasureCofferSurveySnapshot
+            {
+                LastTransition = reason,
+            };
             lastTreasureBuffState = false;
             lastProcessedScannerUpdate = DateTimeOffset.MinValue;
         }
@@ -176,6 +196,19 @@ public sealed class TreasureHintTracker : IDisposable
         }
 
         treasureEvent = currentSnapshot.LastEvent;
+        return true;
+    }
+
+    public bool TryGetLatestCofferSurveySince(int revision, out TreasureCofferSurveySnapshot? survey)
+    {
+        var currentSurvey = CofferSurveySnapshot;
+        if (currentSurvey.Revision <= revision)
+        {
+            survey = null;
+            return false;
+        }
+
+        survey = currentSurvey;
         return true;
     }
 
@@ -286,6 +319,11 @@ public sealed class TreasureHintTracker : IDisposable
             logger.Info($"[TreasureHintTracker] op=treasure-logmessage-debug attempt={attemptId} source=testkeyitem reason=\"{SanitizeLogText(reason)}\" {summary}");
         }
 
+        if (TryParseCofferSurveyLogMessage(message, out var surveySnapshot))
+        {
+            ApplyCofferSurveySnapshot(surveySnapshot);
+        }
+
         if (!TryClassifyTreasureLogMessage(message, out var parsedEvent))
         {
             return;
@@ -344,6 +382,26 @@ public sealed class TreasureHintTracker : IDisposable
         }
 
         logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=event revision={updatedSnapshot.Revision} transition=\"{updatedSnapshot.LastTransition}\"");
+    }
+
+    private void ApplyCofferSurveySnapshot(TreasureCofferSurveySnapshot parsedSurvey)
+    {
+        TreasureCofferSurveySnapshot updatedSurvey;
+        lock (gate)
+        {
+            updatedSurvey = new TreasureCofferSurveySnapshot
+            {
+                Revision = cofferSurveySnapshot.Revision + 1,
+                ReceivedAt = DateTimeOffset.UtcNow,
+                LogMessageId = parsedSurvey.LogMessageId,
+                SilverCount = parsedSurvey.SilverCount,
+                BronzeCount = parsedSurvey.BronzeCount,
+                LastTransition = $"Survey silver={parsedSurvey.SilverCount} bronze={parsedSurvey.BronzeCount} via logmessage:{parsedSurvey.LogMessageId}.",
+            };
+            cofferSurveySnapshot = updatedSurvey;
+        }
+
+        logger.Info($"[TreasureHintTracker] op=coffer-survey revision={updatedSurvey.Revision} id={updatedSurvey.LogMessageId} silver={updatedSurvey.SilverCount} bronze={updatedSurvey.BronzeCount}");
     }
 
     private string CaptureDebugLogMessageSummary(ILogMessage message)
@@ -427,6 +485,92 @@ public sealed class TreasureHintTracker : IDisposable
                 return false;
         }
     }
+
+    private bool TryParseCofferSurveyLogMessage(ILogMessage message, out TreasureCofferSurveySnapshot parsedSurvey)
+    {
+        parsedSurvey = null!;
+
+        switch (message.LogMessageId)
+        {
+            case TreasureCofferSurveyCountsLogMessageId:
+                if (TryParseCofferSurveyCounts(message, out var silverCount, out var bronzeCount))
+                {
+                    parsedSurvey = new TreasureCofferSurveySnapshot
+                    {
+                        LogMessageId = message.LogMessageId,
+                        SilverCount = Math.Max(0, silverCount),
+                        BronzeCount = Math.Max(0, bronzeCount),
+                    };
+                    return true;
+                }
+
+                return false;
+            case TreasureCofferSurveyEmptyLogMessageId:
+                parsedSurvey = new TreasureCofferSurveySnapshot
+                {
+                    LogMessageId = message.LogMessageId,
+                    SilverCount = 0,
+                    BronzeCount = 0,
+                };
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool TryParseCofferSurveyCounts(ILogMessage message, out int silverCount, out int bronzeCount)
+    {
+        silverCount = 0;
+        bronzeCount = 0;
+
+        if (message.TryGetIntParameter(0, out silverCount)
+            && message.TryGetIntParameter(1, out bronzeCount)
+            && IsValidSurveyCountPair(silverCount, bronzeCount))
+        {
+            return true;
+        }
+
+        var intParameters = new List<(int Index, int Value)>();
+        for (var i = 0; i < message.ParameterCount; i++)
+        {
+            if (message.TryGetIntParameter(i, out var intValue))
+            {
+                intParameters.Add((i, intValue));
+            }
+        }
+
+        var candidatePairs = new List<(int SilverIndex, int BronzeIndex, int SilverCount, int BronzeCount)>();
+        for (var i = 0; i < intParameters.Count; i++)
+        {
+            for (var j = i + 1; j < intParameters.Count; j++)
+            {
+                var silverCandidate = intParameters[i];
+                var bronzeCandidate = intParameters[j];
+                if (!IsValidSurveyCountPair(silverCandidate.Value, bronzeCandidate.Value))
+                {
+                    continue;
+                }
+
+                candidatePairs.Add((silverCandidate.Index, bronzeCandidate.Index, silverCandidate.Value, bronzeCandidate.Value));
+            }
+        }
+
+        if (candidatePairs.Count == 1)
+        {
+            var candidate = candidatePairs[0];
+            silverCount = candidate.SilverCount;
+            bronzeCount = candidate.BronzeCount;
+            logger.Warning($"[TreasureHintTracker] op=coffer-survey-parse-fallback id={message.LogMessageId} silverIndex={candidate.SilverIndex} bronzeIndex={candidate.BronzeIndex} silver={silverCount} bronze={bronzeCount} summary={BuildDebugLogMessageSummary(message)}");
+            return true;
+        }
+
+        var failureReason = candidatePairs.Count == 0 ? "no-valid-int-pair" : "ambiguous-int-pairs";
+        logger.Warning($"[TreasureHintTracker] op=coffer-survey-parse-failed id={message.LogMessageId} reason={failureReason} summary={BuildDebugLogMessageSummary(message)}");
+        return false;
+    }
+
+    private static bool IsValidSurveyCountPair(int silverCount, int bronzeCount)
+        => silverCount is >= 0 and <= 8 && bronzeCount is >= 0 and <= 30;
 
     private static TreasureDirection MapDirection(int directionValue)
         => directionValue switch

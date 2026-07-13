@@ -80,6 +80,8 @@ public sealed class MainWindow : Window, IDisposable
         var snapshot = scanner.Snapshot;
         var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
         var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
+        var cofferSurveySnapshot = plugin.TreasureHintTracker.CofferSurveySnapshot;
+        var automaticCofferStatus = farmSessionController.AutomaticTreasureCofferStatus;
         var instanceTimeDecision = plugin.PotFarmController.LastInstanceTimeDecision;
 
         ImGui.TextWrapped($"Farm: {farmSessionController.State} | {farmSessionController.CurrentActivity}");
@@ -87,6 +89,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextWrapped($"Activity: {GetActivityLabel(snapshot)}");
         ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot)}");
         ImGui.TextWrapped($"Treasure: {GetTreasureSummary(treasureSnapshot)}");
+        ImGui.TextWrapped($"Auto Coffers: {GetAutomaticCofferSummary(cofferSurveySnapshot, automaticCofferStatus)}");
         if (plugin.PotFarmController.IsLeavePending || (instanceTimeDecision.ManageInstanceTimeEnabled && instanceTimeDecision.IsContentTimerAvailable && !instanceTimeDecision.AllowNextPotCycle))
         {
             ImGui.TextWrapped($"Instance: {FormatValue(instanceTimeDecision.Reason)}");
@@ -154,9 +157,9 @@ public sealed class MainWindow : Window, IDisposable
             return "Farm session is already running.";
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)
@@ -241,6 +244,14 @@ public sealed class MainWindow : Window, IDisposable
             : $"{treasureSnapshot.SessionState} | {FormatValue(treasureSnapshot.CompletionReason)}";
     }
 
+    private static string GetAutomaticCofferSummary(TreasureCofferSurveySnapshot surveySnapshot, TreasureCofferAutomaticModeStatus status)
+    {
+        var surveyText = surveySnapshot.HasSurvey
+            ? $"survey S{surveySnapshot.SilverCount}/B{surveySnapshot.BronzeCount}"
+            : "survey none";
+        return $"{surveyText} | next S{status.RemainingSilverCompletionsUntilRescan}/B{status.RemainingBronzeCompletionsUntilRescan} | {FormatValue(status.LastTransition)}";
+    }
+
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
 
@@ -265,6 +276,11 @@ public sealed class MainWindow : Window, IDisposable
         if (treasureCofferFarmController.IsRunning)
         {
             return "Visible coffer route is already running.";
+        }
+
+        if (farmSessionController.IsRunning)
+        {
+            return "Visible coffer route start is blocked while the farm session is running.";
         }
 
         if (!scanner.Snapshot.IsInSouthHorn)

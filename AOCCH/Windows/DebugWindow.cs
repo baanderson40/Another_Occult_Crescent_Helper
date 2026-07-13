@@ -585,10 +585,18 @@ public sealed class DebugWindow : Window, IDisposable
 
     private void DrawFarmSession()
     {
+        var automaticCofferStatus = farmSessionController.AutomaticTreasureCofferStatus;
+        var cofferSurveySnapshot = plugin.TreasureHintTracker.CofferSurveySnapshot;
+
         ImGui.TextUnformatted("Farm Session");
         ImGui.TextUnformatted($"State: {farmSessionController.State}");
         ImGui.TextWrapped($"Activity: {FormatValue(farmSessionController.CurrentActivity)}");
         ImGui.TextWrapped($"Last Transition: {farmSessionController.LastTransition}");
+        ImGui.TextWrapped($"Auto Coffer Status: {FormatValue(automaticCofferStatus.LastTransition)}");
+        ImGui.TextWrapped($"Auto Coffer Survey: {(cofferSurveySnapshot.HasSurvey ? $"silver={cofferSurveySnapshot.SilverCount} bronze={cofferSurveySnapshot.BronzeCount} @ {FormatTimestamp(cofferSurveySnapshot.ReceivedAt)}" : "None")}");
+        ImGui.TextWrapped($"Auto Coffer Rescan: silver={automaticCofferStatus.RemainingSilverCompletionsUntilRescan} bronze={automaticCofferStatus.RemainingBronzeCompletionsUntilRescan}");
+        ImGui.TextWrapped($"Auto Coffer Disabled For Run: {(automaticCofferStatus.DisabledForCurrentRun ? "Yes" : "No")}");
+        ImGui.TextWrapped($"Auto Coffer Restore Retry: {(automaticCofferStatus.RestoreRetryPending ? "Yes" : "No")}");
 
         if (!string.IsNullOrEmpty(farmSessionController.LastError))
         {
@@ -661,6 +669,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"FATE Fallback: {fateDecision.Reason}");
 
         var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
+        var cofferSurveySnapshot = plugin.TreasureHintTracker.CofferSurveySnapshot;
         ImGui.TextUnformatted($"Treasure Session: {treasureSnapshot.SessionState}");
         ImGui.TextUnformatted($"Treasure Session ID: {treasureSnapshot.SessionId}");
         ImGui.TextWrapped($"Treasure Started: {FormatTimestamp(treasureSnapshot.StartedAt)}");
@@ -672,6 +681,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped($"Treasure Last Event: {FormatTreasureEvent(treasureSnapshot.LastEvent)}");
         ImGui.TextWrapped($"Treasure Transition: {treasureSnapshot.LastTransition}");
         ImGui.TextWrapped($"Treasure Reset Reason: {FormatValue(treasureSnapshot.LastResetReason)}");
+        ImGui.TextWrapped($"Treasure Coffer Survey: {(cofferSurveySnapshot.HasSurvey ? $"revision={cofferSurveySnapshot.Revision} silver={cofferSurveySnapshot.SilverCount} bronze={cofferSurveySnapshot.BronzeCount} @ {FormatTimestamp(cofferSurveySnapshot.ReceivedAt)}" : "None")}");
 
         var treasureSearch = plugin.TreasureSearchController;
         ImGui.TextUnformatted($"Treasure Search State: {treasureSearch.State}");
@@ -899,9 +909,9 @@ public sealed class DebugWindow : Window, IDisposable
             return "Farm session is already running.";
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)

@@ -72,6 +72,7 @@ public sealed class Plugin : IDalamudPlugin
     public PotInstanceTimeEvaluator PotInstanceTimeEvaluator { get; init; }
     public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
+    public AutomaticTreasureCofferDebugController AutomaticTreasureCofferDebugController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -115,11 +116,12 @@ public sealed class Plugin : IDalamudPlugin
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferNameResolver, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
-        TreasureCofferFarmController = new TreasureCofferFarmController(Framework, ObjectTable, Scanner, MovementController, DangerousTreasureTravelController, CofferInteractionController, OccultCrescentData, VisibleCofferPositionOverrideStore, Configuration, Logger);
+        TreasureCofferFarmController = new TreasureCofferFarmController(Framework, ObjectTable, Scanner, MovementController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, OccultCrescentData, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, Configuration, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, Configuration, Logger);
+        AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -133,7 +135,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, debug-autocoffer, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -178,6 +180,7 @@ public sealed class Plugin : IDalamudPlugin
         LogWindow.Dispose();
         MainWindow.Dispose();
         DebugWindow.Dispose();
+        AutomaticTreasureCofferDebugController.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
         TreasureCofferFarmController.Dispose();
@@ -240,6 +243,13 @@ public sealed class Plugin : IDalamudPlugin
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
             case "coffer-start":
+                if (FarmSessionController.IsRunning)
+                {
+                    Logger.Warning("[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=farm-session-running");
+                    ChatGui.Print("Visible coffer route start is blocked while the farm session is running.");
+                    break;
+                }
+
                 Logger.Info("[Plugin] op=slash-command-action action=start-visible-coffer-farm");
                 TreasureCofferFarmController.Start();
                 break;
@@ -254,6 +264,9 @@ public sealed class Plugin : IDalamudPlugin
             case "debug-potcoffer":
                 Logger.Info("[Plugin] op=slash-command-action action=debug-potcoffer");
                 LogPotCofferDebugSnapshot();
+                break;
+            case "debug-autocoffer":
+                HandleDebugAutomaticCofferCommand();
                 break;
             default:
                 if (normalizedArgs.StartsWith("testkeyitem", StringComparison.Ordinal))
@@ -283,7 +296,34 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
         ChatGui.Print("/aocch testkeyitem [wait] - Use Magical Elixir via the production inventory path with detailed treasure logs");
         ChatGui.Print("/aocch debug-potcoffer - Log nearby raw objects for pot treasure reveal debugging");
+        ChatGui.Print("/aocch debug-autocoffer - Run the automatic coffer survey flow without starting the coffer route");
         ChatGui.Print("/aocch help - Show this help");
+    }
+
+    private void HandleDebugAutomaticCofferCommand()
+    {
+        if (AutomaticTreasureCofferDebugController.IsRunning)
+        {
+            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=already-running");
+            ChatGui.Print("Automatic coffer debug survey is already running.");
+            return;
+        }
+
+        if (FarmSessionController.IsRunning || TreasureCofferFarmController.IsRunning || BuffRotationController.IsRunning || CriticalEngagementAutomationController.IsRunning || FateAutomationController.IsRunning || PotFarmController.IsRunning)
+        {
+            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=conflicting-automation");
+            ChatGui.Print("Automatic coffer debug survey requires the farm session, visible coffer routing, CE/FATE automation, pot control, and buff rotation to be stopped.");
+            return;
+        }
+
+        if (!AutomaticTreasureCofferDebugController.Start())
+        {
+            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=controller-start-failed detail=\"{AutomaticTreasureCofferDebugController.LastTransition}\"");
+            ChatGui.Print(AutomaticTreasureCofferDebugController.LastTransition);
+            return;
+        }
+
+        Logger.Info("[Plugin] op=slash-command-action action=debug-autocoffer");
     }
 
     private void HandleTestKeyItemCommand(string rawArgs)

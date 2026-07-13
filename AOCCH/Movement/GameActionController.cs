@@ -8,6 +8,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
@@ -36,8 +37,10 @@ public sealed class GameActionController
     public const uint HideActionId = 2245;
     public const uint HiddenStatusId = 614;
     public const uint NinjaClassJobId = 30;
+    public const uint OccultTreasuresightActionId = 41651;
     public const uint MagicalElixirEventItemId = 2003296;
     public const string MagicalElixirKeyItemName = "Magical Elixir";
+    public const byte FreelancerSupportJobId = 0;
 
     private static readonly TimeSpan ReliableGearsetReadyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ReliableGearsetPollInterval = TimeSpan.FromMilliseconds(100);
@@ -524,6 +527,47 @@ public sealed class GameActionController
             MagicalElixirUseMethod.Command => TryUseMagicalElixirViaCommand(description),
             _ => false,
         };
+
+    public unsafe bool TryReadSupportJobState(out byte currentJob, out byte[] levels)
+    {
+        currentJob = 0;
+        levels = [];
+
+        var state = PublicContentOccultCrescent.GetState();
+        if (state == null)
+        {
+            return false;
+        }
+
+        currentJob = state->CurrentSupportJob;
+        levels = state->SupportJobLevels.ToArray();
+        return levels.Length >= 16;
+    }
+
+    public unsafe bool TryGetCurrentSupportJob(out byte currentJob)
+    {
+        currentJob = 0;
+        var state = PublicContentOccultCrescent.GetState();
+        if (state == null)
+        {
+            return false;
+        }
+
+        currentJob = state->CurrentSupportJob;
+        return true;
+    }
+
+    public unsafe bool TryChangeSupportJob(byte jobId, string description)
+    {
+        if (!PublicContentOccultCrescent.ChangeSupportJob(jobId))
+        {
+            logger.Warning($"[GameAction] op=support-job-change-failed targetJob={jobId} description=\"{description}\"");
+            return false;
+        }
+
+        logger.Info($"[GameAction] op=support-job-change targetJob={jobId} description=\"{description}\"");
+        return true;
+    }
 
     private static bool IsAcceptedUseItemResult(long result)
         => result is 0 or 1;

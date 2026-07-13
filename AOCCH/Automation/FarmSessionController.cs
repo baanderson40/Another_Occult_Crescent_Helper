@@ -11,6 +11,8 @@ namespace AOCCH.Automation;
 public sealed class FarmSessionController : IDisposable
 {
     private static int nextRunSequence;
+    private static readonly TimeSpan CofferSurveyWaitTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SupportJobSwitchTimeout = TimeSpan.FromSeconds(5);
     private enum InterruptedActivityKind
     {
         None,
@@ -27,6 +29,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly VNavmeshIpc vnavmesh;
     private readonly LifestreamIpc lifestream;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly AutorotationController autorotationController;
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
@@ -35,6 +38,8 @@ public sealed class FarmSessionController : IDisposable
     private readonly PotCycleTracker potCycleTracker;
     private readonly PotFallbackWindowEvaluator potFallbackWindowEvaluator;
     private readonly PotFarmController potFarmController;
+    private readonly TreasureHintTracker treasureHintTracker;
+    private readonly TreasureCofferFarmController treasureCofferFarmController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -53,6 +58,16 @@ public sealed class FarmSessionController : IDisposable
     private uint interruptedTargetId;
     private string interruptedTargetName = string.Empty;
     private FateRunCompletionBehavior interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
+    private int remainingSilverCompletionsUntilRescan;
+    private int remainingBronzeCompletionsUntilRescan;
+    private bool automaticTreasureCofferDisabledForRun;
+    private bool automaticTreasureCofferRestorePending;
+    private bool automaticTreasureCofferStartRouteAfterRestore;
+    private bool automaticTreasureCofferResumeAutomaticCheckAfterRestore;
+    private byte automaticTreasureCofferOriginalSupportJob;
+    private int requiredFreshCofferSurveyRevision;
+    private DateTimeOffset automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+    private string automaticTreasureCofferStatus = "Idle";
 
     public FarmSessionController(
         IFramework framework,
@@ -60,6 +75,7 @@ public sealed class FarmSessionController : IDisposable
         VNavmeshIpc vnavmesh,
         LifestreamIpc lifestream,
         MovementController movementController,
+        GameActionController gameActionController,
         AutorotationController autorotationController,
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
@@ -68,6 +84,8 @@ public sealed class FarmSessionController : IDisposable
         PotCycleTracker potCycleTracker,
         PotFallbackWindowEvaluator potFallbackWindowEvaluator,
         PotFarmController potFarmController,
+        TreasureHintTracker treasureHintTracker,
+        TreasureCofferFarmController treasureCofferFarmController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -76,6 +94,7 @@ public sealed class FarmSessionController : IDisposable
         this.vnavmesh = vnavmesh;
         this.lifestream = lifestream;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.autorotationController = autorotationController;
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
@@ -84,6 +103,8 @@ public sealed class FarmSessionController : IDisposable
         this.potCycleTracker = potCycleTracker;
         this.potFallbackWindowEvaluator = potFallbackWindowEvaluator;
         this.potFarmController = potFarmController;
+        this.treasureHintTracker = treasureHintTracker;
+        this.treasureCofferFarmController = treasureCofferFarmController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -139,6 +160,24 @@ public sealed class FarmSessionController : IDisposable
             and not FarmSessionState.Stopped
             and not FarmSessionState.Failed;
 
+    public TreasureCofferAutomaticModeStatus AutomaticTreasureCofferStatus
+    {
+        get
+        {
+            lock (gate)
+            {
+                return new TreasureCofferAutomaticModeStatus
+                {
+                    DisabledForCurrentRun = automaticTreasureCofferDisabledForRun,
+                    RestoreRetryPending = automaticTreasureCofferRestorePending,
+                    RemainingSilverCompletionsUntilRescan = remainingSilverCompletionsUntilRescan,
+                    RemainingBronzeCompletionsUntilRescan = remainingBronzeCompletionsUntilRescan,
+                    LastTransition = automaticTreasureCofferStatus,
+                };
+            }
+        }
+    }
+
     public bool Start()
     {
         if (IsRunning)
@@ -153,9 +192,9 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
-        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning)
+        if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            SetFailure("Stop CE/FATE automation, pot control, and buff rotation before starting the farm session.");
+            SetFailure("Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.");
             return false;
         }
 
@@ -171,6 +210,16 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
             interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
+            remainingSilverCompletionsUntilRescan = 0;
+            remainingBronzeCompletionsUntilRescan = 0;
+            automaticTreasureCofferDisabledForRun = false;
+            automaticTreasureCofferRestorePending = false;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            automaticTreasureCofferOriginalSupportJob = 0;
+            requiredFreshCofferSurveyRevision = 0;
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+            automaticTreasureCofferStatus = "Starting automatic coffer tracking.";
         }
 
         logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
@@ -187,6 +236,16 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
             interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
+            remainingSilverCompletionsUntilRescan = 0;
+            remainingBronzeCompletionsUntilRescan = 0;
+            automaticTreasureCofferDisabledForRun = false;
+            automaticTreasureCofferRestorePending = false;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            automaticTreasureCofferOriginalSupportJob = 0;
+            requiredFreshCofferSurveyRevision = 0;
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+            automaticTreasureCofferStatus = "Idle";
         }
 
         if (criticalEngagementAutomationController.IsRunning)
@@ -202,6 +261,11 @@ public sealed class FarmSessionController : IDisposable
         if (potFarmController.IsRunning)
         {
             potFarmController.Stop(reason);
+        }
+
+        if (treasureCofferFarmController.IsRunning)
+        {
+            treasureCofferFarmController.Stop(reason);
         }
 
         if (buffRotationController.IsRunning)
@@ -236,6 +300,16 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
             interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
+            remainingSilverCompletionsUntilRescan = 0;
+            remainingBronzeCompletionsUntilRescan = 0;
+            automaticTreasureCofferDisabledForRun = false;
+            automaticTreasureCofferRestorePending = false;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            automaticTreasureCofferOriginalSupportJob = 0;
+            requiredFreshCofferSurveyRevision = 0;
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+            automaticTreasureCofferStatus = reason;
         }
 
         logger.Info($"[Farm] op=reset reason={reason}");
@@ -345,6 +419,18 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case FarmSessionState.RunningFate:
                 TickFateRun();
+                break;
+            case FarmSessionState.SwitchingToFreelancerForCofferSurvey:
+                TickSwitchingToFreelancerForCofferSurvey();
+                break;
+            case FarmSessionState.WaitingForCofferSurvey:
+                TickWaitingForCofferSurvey();
+                break;
+            case FarmSessionState.RestoringOriginalJobAfterCofferSurvey:
+                TickRestoringOriginalJobAfterCofferSurvey();
+                break;
+            case FarmSessionState.RunningVisibleCofferRoute:
+                TickRunningVisibleCofferRoute();
                 break;
             case FarmSessionState.ResumingInterruptedCe:
             case FarmSessionState.ResumingInterruptedFate:
@@ -547,6 +633,11 @@ public sealed class FarmSessionController : IDisposable
                     return;
                 }
 
+                if (TryBeginAutomaticTreasureCofferFlow("Base Camp recovery completed."))
+                {
+                    return;
+                }
+
                 TransitionTo(FarmSessionState.SelectingTarget, "Ready to select the next target.", "Selecting target");
                 break;
             case MovementState.Failed:
@@ -680,6 +771,8 @@ public sealed class FarmSessionController : IDisposable
 
     private void StartPostCeFlow()
     {
+        DecrementAutomaticTreasureCofferRescanCounters("CE completion");
+
         if (!configuration.UseReturn)
         {
             lock (gate)
@@ -696,6 +789,8 @@ public sealed class FarmSessionController : IDisposable
 
     private void StartPostFateFlow()
     {
+        DecrementAutomaticTreasureCofferRescanCounters("FATE completion");
+
         if (!configuration.EnableBuffRotation)
         {
             TransitionTo(FarmSessionState.SelectingTarget, "Activity complete.", "Selecting target");
@@ -1035,6 +1130,441 @@ public sealed class FarmSessionController : IDisposable
             _ => "Running pots",
         };
 
+    private bool TryBeginAutomaticTreasureCofferFlow(string context)
+    {
+        if (!configuration.EnableAutomaticTreasureCofferRoute)
+        {
+            SetAutomaticTreasureCofferStatus("Automatic visible coffer mode is disabled.");
+            return false;
+        }
+
+        if (TryBeginAutomaticTreasureCofferRestoreRetry(context))
+        {
+            return true;
+        }
+
+        if (AutomaticTreasureCofferStatus.DisabledForCurrentRun)
+        {
+            SetAutomaticTreasureCofferStatus("Automatic visible coffer mode is disabled for this farm-session run because Freelancer is below level 10.");
+            return false;
+        }
+
+        var surveySnapshot = treasureHintTracker.CofferSurveySnapshot;
+        if (surveySnapshot.Revision >= requiredFreshCofferSurveyRevision && SurveyMeetsAutomaticTreasureCofferThresholds(surveySnapshot))
+        {
+            SetAutomaticTreasureCofferStatus($"Survey silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount} met automatic coffer thresholds.");
+            return StartAutomaticVisibleCofferRoute(context, surveySnapshot);
+        }
+
+        if (!IsAutomaticTreasureCofferRescanDue(surveySnapshot))
+        {
+            SetAutomaticTreasureCofferStatus($"Waiting for more completions before the next coffer rescan. silverRemaining={AutomaticTreasureCofferStatus.RemainingSilverCompletionsUntilRescan} bronzeRemaining={AutomaticTreasureCofferStatus.RemainingBronzeCompletionsUntilRescan}.");
+            return false;
+        }
+
+        return BeginAutomaticTreasureCofferSurvey(context, surveySnapshot.Revision);
+    }
+
+    private bool TryBeginAutomaticTreasureCofferRestoreRetry(string context)
+    {
+        if (!AutomaticTreasureCofferStatus.RestoreRetryPending)
+        {
+            return false;
+        }
+
+        if (!gameActionController.TryGetCurrentSupportJob(out var currentJob))
+        {
+            SetAutomaticTreasureCofferStatus("Automatic coffer restore retry is waiting because the current phantom job could not be read.");
+            return false;
+        }
+
+        if (currentJob == automaticTreasureCofferOriginalSupportJob)
+        {
+            lock (gate)
+            {
+                automaticTreasureCofferRestorePending = false;
+                automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            }
+
+            SetAutomaticTreasureCofferStatus($"Original phantom job {currentJob} was already restored before retry.");
+            return false;
+        }
+
+        if (!gameActionController.TryChangeSupportJob(automaticTreasureCofferOriginalSupportJob, $"automatic coffer restore retry after {context}"))
+        {
+            SetAutomaticTreasureCofferStatus($"Automatic coffer restore retry failed to request original phantom job {automaticTreasureCofferOriginalSupportJob}; will try again next recovery.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = true;
+        }
+
+        TransitionTo(FarmSessionState.RestoringOriginalJobAfterCofferSurvey, $"Retrying original phantom job restoration after {context}.", "Restoring original phantom job");
+        return true;
+    }
+
+    private bool BeginAutomaticTreasureCofferSurvey(string context, int currentSurveyRevision)
+    {
+        if (!gameActionController.TryReadSupportJobState(out var currentJob, out var supportJobLevels))
+        {
+            SetAutomaticTreasureCofferStatus("Automatic coffer survey skipped because phantom job state could not be read.");
+            return false;
+        }
+
+        var freelancerLevel = supportJobLevels.Length > GameActionController.FreelancerSupportJobId
+            ? supportJobLevels[GameActionController.FreelancerSupportJobId]
+            : (byte)0;
+        if (freelancerLevel < 10)
+        {
+            lock (gate)
+            {
+                automaticTreasureCofferDisabledForRun = true;
+            }
+
+            logger.Warning($"{BuildLogTag()} op=auto-coffer-disabled reason=freelancer-level-too-low freelancerLevel={freelancerLevel} requiredLevel=10");
+            SetAutomaticTreasureCofferStatus($"Automatic visible coffer mode disabled for this farm-session run because Freelancer is only level {freelancerLevel}.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            automaticTreasureCofferOriginalSupportJob = currentJob;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            requiredFreshCofferSurveyRevision = Math.Max(requiredFreshCofferSurveyRevision, currentSurveyRevision + 1);
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+        }
+
+        if (currentJob == GameActionController.FreelancerSupportJobId)
+        {
+            return BeginAutomaticTreasureCofferSurveyWait();
+        }
+
+        if (!gameActionController.TryChangeSupportJob(GameActionController.FreelancerSupportJobId, $"automatic coffer survey after {context}"))
+        {
+            SetAutomaticTreasureCofferStatus($"Automatic coffer survey could not switch to Freelancer after {context}; will retry next recovery.");
+            return false;
+        }
+
+        TransitionTo(FarmSessionState.SwitchingToFreelancerForCofferSurvey, $"Switching phantom job to Freelancer before Occult Treasuresight after {context}.", "Switching to Freelancer");
+        return true;
+    }
+
+    private bool BeginAutomaticTreasureCofferSurveyWait()
+    {
+        if (!gameActionController.TryExecuteAction(GameActionController.OccultTreasuresightActionId, "automatic coffer survey"))
+        {
+            SetAutomaticTreasureCofferStatus("Automatic coffer survey could not use Occult Treasuresight; will retry next recovery.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.UtcNow + CofferSurveyWaitTimeout;
+        }
+
+        TransitionTo(FarmSessionState.WaitingForCofferSurvey, "Waiting for an Occult Treasuresight coffer survey result.", "Waiting for coffer survey");
+        return true;
+    }
+
+    private void TickSwitchingToFreelancerForCofferSurvey()
+    {
+        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == GameActionController.FreelancerSupportJobId)
+        {
+            if (BeginAutomaticTreasureCofferSurveyWait())
+            {
+                return;
+            }
+
+            ContinueAfterAutomaticTreasureCofferSkip("Automatic coffer survey could not start after switching to Freelancer.");
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow - stateEnteredAt >= SupportJobSwitchTimeout)
+        {
+            ContinueAfterAutomaticTreasureCofferSkip("Switching to Freelancer for automatic coffer survey timed out; retrying on the next recovery.");
+        }
+    }
+
+    private void TickWaitingForCofferSurvey()
+    {
+        if (treasureHintTracker.TryGetLatestCofferSurveySince(requiredFreshCofferSurveyRevision - 1, out var surveySnapshot) && surveySnapshot != null)
+        {
+            ApplyAutomaticTreasureCofferSurveyResult(surveySnapshot);
+            return;
+        }
+
+        if (automaticTreasureCofferSurveyDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= automaticTreasureCofferSurveyDeadlineAt)
+        {
+            ContinueAfterAutomaticTreasureCofferSkip("Occult Treasuresight did not produce a coffer survey log message before timeout; retrying on the next recovery.");
+        }
+    }
+
+    private void ApplyAutomaticTreasureCofferSurveyResult(TreasureCofferSurveySnapshot surveySnapshot)
+    {
+        UpdateAutomaticTreasureCofferRescanCounters(surveySnapshot);
+        var shouldStartRoute = SurveyMeetsAutomaticTreasureCofferThresholds(surveySnapshot);
+        lock (gate)
+        {
+            automaticTreasureCofferStartRouteAfterRestore = shouldStartRoute;
+        }
+
+        SetAutomaticTreasureCofferStatus($"Survey silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount} thresholds={(shouldStartRoute ? "met" : "not-met")} silverRemaining={AutomaticTreasureCofferStatus.RemainingSilverCompletionsUntilRescan} bronzeRemaining={AutomaticTreasureCofferStatus.RemainingBronzeCompletionsUntilRescan}.");
+
+        if (automaticTreasureCofferOriginalSupportJob == GameActionController.FreelancerSupportJobId)
+        {
+            if (shouldStartRoute && StartAutomaticVisibleCofferRoute("survey result", surveySnapshot))
+            {
+                return;
+            }
+
+            TransitionTo(FarmSessionState.SelectingTarget, shouldStartRoute
+                ? "Automatic coffer survey met thresholds, but the route could not start."
+                : "Automatic coffer survey did not meet thresholds.", "Selecting target");
+            return;
+        }
+
+        if (!gameActionController.TryChangeSupportJob(automaticTreasureCofferOriginalSupportJob, "automatic coffer post-survey restore"))
+        {
+            lock (gate)
+            {
+                automaticTreasureCofferRestorePending = true;
+            }
+
+            ContinueAfterAutomaticTreasureCofferSkip($"Automatic coffer survey finished, but restoring the original phantom job {automaticTreasureCofferOriginalSupportJob} failed; will retry next recovery.");
+            return;
+        }
+
+        TransitionTo(FarmSessionState.RestoringOriginalJobAfterCofferSurvey, "Restoring the original phantom job after automatic coffer survey.", "Restoring original phantom job");
+    }
+
+    private void TickRestoringOriginalJobAfterCofferSurvey()
+    {
+        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == automaticTreasureCofferOriginalSupportJob)
+        {
+            var startRouteAfterRestore = automaticTreasureCofferStartRouteAfterRestore;
+            var resumeAutomaticCheck = automaticTreasureCofferResumeAutomaticCheckAfterRestore;
+            lock (gate)
+            {
+                automaticTreasureCofferRestorePending = false;
+                automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            }
+
+            if (startRouteAfterRestore && StartAutomaticVisibleCofferRoute("post-survey restore", treasureHintTracker.CofferSurveySnapshot))
+            {
+                return;
+            }
+
+            if (resumeAutomaticCheck && TryBeginAutomaticTreasureCofferFlow("original phantom job restore completed"))
+            {
+                return;
+            }
+
+            TransitionTo(FarmSessionState.SelectingTarget, startRouteAfterRestore
+                ? "Original phantom job restored after automatic coffer survey, but the route could not start."
+                : "Original phantom job restored after automatic coffer survey.", "Selecting target");
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow - stateEnteredAt >= SupportJobSwitchTimeout)
+        {
+            lock (gate)
+            {
+                automaticTreasureCofferRestorePending = true;
+                automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            }
+
+            ContinueAfterAutomaticTreasureCofferSkip($"Restoring the original phantom job {automaticTreasureCofferOriginalSupportJob} timed out; will retry on the next recovery.");
+        }
+    }
+
+    private bool StartAutomaticVisibleCofferRoute(string context, TreasureCofferSurveySnapshot surveySnapshot)
+    {
+        if (treasureCofferFarmController.IsRunning)
+        {
+            TransitionTo(FarmSessionState.RunningVisibleCofferRoute, "Waiting for the automatic visible coffer route to finish.", "Visible coffer route");
+            return true;
+        }
+
+        if (!treasureCofferFarmController.Start(startedByFarmSession: true))
+        {
+            SetAutomaticTreasureCofferStatus($"Automatic coffer route could not start after {context}. reason={treasureCofferFarmController.LastError}");
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=auto-coffer-route-start context=\"{context}\" surveySilver={surveySnapshot.SilverCount} surveyBronze={surveySnapshot.BronzeCount}");
+        TransitionTo(FarmSessionState.RunningVisibleCofferRoute, $"Starting automatic visible coffer route after {context}.", "Visible coffer route");
+        return true;
+    }
+
+    private void TickRunningVisibleCofferRoute()
+    {
+        if (treasureCofferFarmController.IsRunning)
+        {
+            return;
+        }
+
+        switch (treasureCofferFarmController.State)
+        {
+            case TreasureCofferFarmState.Completed:
+                ResetAutomaticTreasureCofferSurveyTrustAfterRoute();
+                if (treasureCofferFarmController.LastResult == TreasureCofferFarmResult.ReturnedToBase)
+                {
+                    if (TryBeginAutomaticTreasureCofferFlow("automatic visible coffer route recovery completed"))
+                    {
+                        return;
+                    }
+
+                    TransitionTo(FarmSessionState.SelectingTarget, "Automatic visible coffer route completed.", "Selecting target");
+                    return;
+                }
+
+                logger.Info($"{BuildLogTag()} op=auto-coffer-route-follow-up-deferred result={treasureCofferFarmController.LastResult} reason=base-recovery-not-confirmed");
+                StartRecoveryToBase("Automatic visible coffer route ended without a confirmed Base Camp return; recovering before the next automatic coffer decision.");
+                return;
+            case TreasureCofferFarmState.Stopped:
+                TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastTransition, "Selecting target");
+                return;
+            case TreasureCofferFarmState.Failed:
+                TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastError.Length == 0
+                    ? treasureCofferFarmController.LastTransition
+                    : treasureCofferFarmController.LastError, "Selecting target");
+                return;
+        }
+
+        TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastTransition, "Selecting target");
+    }
+
+    private void ContinueAfterAutomaticTreasureCofferSkip(string reason)
+    {
+        if (automaticTreasureCofferOriginalSupportJob != GameActionController.FreelancerSupportJobId
+            && gameActionController.TryGetCurrentSupportJob(out var currentJob)
+            && currentJob != automaticTreasureCofferOriginalSupportJob)
+        {
+            if (gameActionController.TryChangeSupportJob(automaticTreasureCofferOriginalSupportJob, "automatic coffer skip restore"))
+            {
+                lock (gate)
+                {
+                    automaticTreasureCofferStartRouteAfterRestore = false;
+                    automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+                }
+
+                SetAutomaticTreasureCofferStatus(reason);
+                TransitionTo(FarmSessionState.RestoringOriginalJobAfterCofferSurvey, $"{reason} Restoring the original phantom job before resuming farming.", "Restoring original phantom job");
+                return;
+            }
+
+            lock (gate)
+            {
+                automaticTreasureCofferRestorePending = true;
+            }
+        }
+
+        SetAutomaticTreasureCofferStatus(reason);
+        TransitionTo(FarmSessionState.SelectingTarget, reason, "Selecting target");
+    }
+
+    private void ResetAutomaticTreasureCofferSurveyTrustAfterRoute()
+    {
+        var currentSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision;
+        lock (gate)
+        {
+            remainingSilverCompletionsUntilRescan = 0;
+            remainingBronzeCompletionsUntilRescan = 0;
+            requiredFreshCofferSurveyRevision = currentSurveyRevision + 1;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+        }
+
+        SetAutomaticTreasureCofferStatus("Automatic visible coffer route completed; a fresh Occult Treasuresight survey is required on the next base-camp recovery.");
+    }
+
+    private void UpdateAutomaticTreasureCofferRescanCounters(TreasureCofferSurveySnapshot surveySnapshot)
+    {
+        var silverDeficit = GetAutomaticTreasureCofferDeficit(configuration.AutomaticTreasureCofferSilverThreshold, surveySnapshot.SilverCount);
+        var bronzeDeficit = GetAutomaticTreasureCofferDeficit(configuration.AutomaticTreasureCofferBronzeThreshold, surveySnapshot.BronzeCount);
+        if (configuration.AutomaticTreasureCofferSilverThreshold == 0
+            && configuration.AutomaticTreasureCofferBronzeThreshold == 0
+            && surveySnapshot.SilverCount + surveySnapshot.BronzeCount > 0)
+        {
+            silverDeficit = 0;
+            bronzeDeficit = 0;
+        }
+
+        lock (gate)
+        {
+            remainingSilverCompletionsUntilRescan = silverDeficit;
+            remainingBronzeCompletionsUntilRescan = bronzeDeficit;
+        }
+    }
+
+    private void DecrementAutomaticTreasureCofferRescanCounters(string reason)
+    {
+        lock (gate)
+        {
+            if (remainingSilverCompletionsUntilRescan > 0)
+            {
+                remainingSilverCompletionsUntilRescan--;
+            }
+
+            if (remainingBronzeCompletionsUntilRescan > 0)
+            {
+                remainingBronzeCompletionsUntilRescan--;
+            }
+
+            automaticTreasureCofferStatus = $"Automatic coffer rescan counters decremented after {reason}. silverRemaining={remainingSilverCompletionsUntilRescan} bronzeRemaining={remainingBronzeCompletionsUntilRescan}.";
+        }
+    }
+
+    private bool IsAutomaticTreasureCofferRescanDue(TreasureCofferSurveySnapshot surveySnapshot)
+    {
+        if (surveySnapshot.Revision < requiredFreshCofferSurveyRevision)
+        {
+            return true;
+        }
+
+        return AutomaticTreasureCofferStatus.RemainingSilverCompletionsUntilRescan == 0
+            && AutomaticTreasureCofferStatus.RemainingBronzeCompletionsUntilRescan == 0;
+    }
+
+    private bool SurveyMeetsAutomaticTreasureCofferThresholds(TreasureCofferSurveySnapshot surveySnapshot)
+    {
+        if (!surveySnapshot.HasSurvey)
+        {
+            return false;
+        }
+
+        if (configuration.AutomaticTreasureCofferSilverThreshold == 0
+            && configuration.AutomaticTreasureCofferBronzeThreshold == 0)
+        {
+            return surveySnapshot.SilverCount + surveySnapshot.BronzeCount > 0;
+        }
+
+        return SurveyMeetsAutomaticTreasureCofferThreshold(configuration.AutomaticTreasureCofferSilverThreshold, surveySnapshot.SilverCount)
+            && SurveyMeetsAutomaticTreasureCofferThreshold(configuration.AutomaticTreasureCofferBronzeThreshold, surveySnapshot.BronzeCount);
+    }
+
+    private static bool SurveyMeetsAutomaticTreasureCofferThreshold(int configuredThreshold, int observedCount)
+        => configuredThreshold == 0 ? observedCount > 0 : observedCount >= configuredThreshold;
+
+    private static int GetAutomaticTreasureCofferDeficit(int configuredThreshold, int observedCount)
+    {
+        var requiredCount = configuredThreshold == 0 ? 1 : configuredThreshold;
+        return Math.Max(0, requiredCount - observedCount);
+    }
+
+    private void SetAutomaticTreasureCofferStatus(string reason)
+    {
+        lock (gate)
+        {
+            automaticTreasureCofferStatus = reason;
+        }
+
+        logger.Info($"{BuildLogTag()} op=auto-coffer-status reason={reason}");
+    }
+
     private void TransitionTo(FarmSessionState nextState, string reason, string activity, bool clearError = true)
     {
         FarmSessionState previousState;
@@ -1059,6 +1589,11 @@ public sealed class FarmSessionController : IDisposable
         if (potFarmController.IsRunning)
         {
             potFarmController.Stop(reason);
+        }
+
+        if (treasureCofferFarmController.IsRunning)
+        {
+            treasureCofferFarmController.Stop(reason);
         }
 
         movementController.Stop(reason);

@@ -27,7 +27,7 @@ public class Configuration : IPluginConfiguration
     [JsonIgnore]
     private AocchLogger? logger;
 
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 1;
 
     public string AutorotationPresetName { get; set; } = "Occult";
     public bool EnableCriticalEngagementFarming { get; set; } = true;
@@ -50,6 +50,9 @@ public class Configuration : IPluginConfiguration
     public int SpawnArrivalRadius { get; set; } = 18;
     public int MaximumAggroLevel { get; set; } = 19;
     public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 19;
+    public bool EnableAutomaticTreasureCofferRoute { get; set; }
+    public int AutomaticTreasureCofferSilverThreshold { get; set; }
+    public int AutomaticTreasureCofferBronzeThreshold { get; set; }
     public bool UseNinjaForDangerousArea { get; set; }
     public int HideThresholdDistance { get; set; } = 120;
     public int NinjaGearsetNumber { get; set; }
@@ -102,13 +105,18 @@ public class Configuration : IPluginConfiguration
 
     public void Save()
     {
+        AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
+        AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         Plugin.PluginInterface.SavePluginConfig(this);
         logger?.Debug("Configuration saved.");
     }
 
     public bool Migrate(OccultCrescentData data)
     {
-        if (Version >= 2)
+        AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
+        AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+
+        if (Version >= 1)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -151,7 +159,7 @@ public class Configuration : IPluginConfiguration
             }
         }
 
-        if (Version < 2)
+        if (Version < 1)
         {
             VisibleTreasureCofferMaximumAggroLevel = MaximumAggroLevel;
             logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=VisibleTreasureCofferMaximumAggroLevel");
@@ -159,8 +167,8 @@ public class Configuration : IPluginConfiguration
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 2;
-        logger?.Info("[Configuration] op=migration-complete version=2");
+        Version = 1;
+        logger?.Info("[Configuration] op=migration-complete version=1");
         return true;
     }
 
