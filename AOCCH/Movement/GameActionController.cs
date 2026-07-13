@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using System.Threading;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -32,6 +34,7 @@ public sealed class GameActionController
     public const uint MountActionId = 9;
     public const uint DismountActionId = 23;
     public const uint HideActionId = 2245;
+    public const uint HiddenStatusId = 614;
     public const uint NinjaClassJobId = 30;
     public const uint MagicalElixirEventItemId = 2003296;
     public const string MagicalElixirKeyItemName = "Magical Elixir";
@@ -41,21 +44,23 @@ public sealed class GameActionController
 
     private readonly ICommandManager commandManager;
     private readonly ICondition condition;
+    private readonly IObjectTable objectTable;
     private readonly IPlayerState playerState;
     private readonly ITargetManager targetManager;
     private readonly AocchLogger logger;
 
-    public GameActionController(ICommandManager commandManager, ICondition condition, IPlayerState playerState, ITargetManager targetManager, AocchLogger logger)
+    public GameActionController(ICommandManager commandManager, ICondition condition, IObjectTable objectTable, IPlayerState playerState, ITargetManager targetManager, AocchLogger logger)
     {
         this.commandManager = commandManager;
         this.condition = condition;
+        this.objectTable = objectTable;
         this.playerState = playerState;
         this.targetManager = targetManager;
         this.logger = logger;
     }
 
     public bool IsStealthed
-        => condition[ConditionFlag.Stealthed];
+        => HasLocalPlayerStatus(HiddenStatusId);
 
     public uint CurrentClassJobId
         => playerState.ClassJob.RowId;
@@ -161,6 +166,9 @@ public sealed class GameActionController
 
     public bool CanUseHide()
         => CanUseAction(HideActionId);
+
+    public bool HasLocalPlayerStatus(uint statusId)
+        => objectTable.LocalPlayer?.StatusList.Any(status => status.StatusId == statusId) == true;
 
     public bool IsPlayerInChangeableState()
         => playerState.IsLoaded

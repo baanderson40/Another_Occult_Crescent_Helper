@@ -96,7 +96,7 @@ public sealed class Plugin : IDalamudPlugin
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
-        GameActionController = new GameActionController(CommandManager, Condition, PlayerState, TargetManager, Logger);
+        GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, Logger);

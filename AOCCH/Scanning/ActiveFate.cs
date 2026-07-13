@@ -19,4 +19,8 @@ public sealed class ActiveFate
     public string PreferredAethernet { get; init; } = string.Empty;
     public bool IsExcluded { get; init; }
     public bool IsCandidate { get; init; }
+    public bool HasLiveTarget { get; init; }
+    public ulong LiveTargetObjectId { get; init; }
+    public string LiveTargetName { get; init; } = string.Empty;
+    public Vector3 LiveTargetPosition { get; init; }
 }

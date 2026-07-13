@@ -60,6 +60,7 @@ public sealed class MovementController : IDisposable
     private bool stepStarted;
     private bool mountAttempted;
     private bool dismountAttempted;
+    private DateTimeOffset dismountAttemptedAt = DateTimeOffset.MinValue;
     private int stepAttemptCount;
     private int idlePathResetCount;
     private bool lifestreamOwned;
@@ -210,6 +211,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -225,7 +227,7 @@ public sealed class MovementController : IDisposable
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 
-    public bool PlanRoute(FateRunTarget target, bool allowReturn = true, Vector3? finalDestinationOverride = null, float? finalArrivalToleranceOverride = null)
+    public bool PlanRoute(FateRunTarget target, bool allowReturn = true, Vector3? finalDestinationOverride = null, float? finalArrivalToleranceOverride = null, float? earlyDismountDistance = null)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -235,7 +237,7 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlan(target, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride))
+        if (!routePlanner.TryPlan(target, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride, earlyDismountDistance))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -314,6 +316,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -358,6 +361,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -415,6 +419,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -451,6 +456,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -668,6 +674,7 @@ public sealed class MovementController : IDisposable
                 stepStarted = true;
                 mountAttempted = false;
                 dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
                 stepAttemptCount = 0;
                 idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
@@ -757,6 +764,7 @@ public sealed class MovementController : IDisposable
                 stepStarted = true;
                 mountAttempted = false;
                 dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
                 stepAttemptCount++;
                 idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
@@ -785,6 +793,8 @@ public sealed class MovementController : IDisposable
             SetFailure(MovementState.TimedOut, $"Movement stalled during step: {step.Description}.", stopMovement: true);
             return;
         }
+
+        ProcessEarlyDismount(step, playerPosition);
 
         if (pathBusy)
         {
@@ -820,6 +830,7 @@ public sealed class MovementController : IDisposable
                 stepStarted = false;
                 mountAttempted = false;
                 dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
             }
         }
     }
@@ -903,6 +914,7 @@ public sealed class MovementController : IDisposable
             stepStarted = true;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepStartedAt = DateTimeOffset.UtcNow;
             lastProgressAt = DateTimeOffset.UtcNow;
             lastDistance = distance;
@@ -1091,6 +1103,7 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             ResetTransitionTracking();
@@ -1119,6 +1132,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -1147,6 +1161,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -1181,6 +1196,7 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             mountAttempted = false;
             dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
             lifestreamOwned = false;
@@ -1568,6 +1584,76 @@ public sealed class MovementController : IDisposable
         return false;
     }
 
+    private void ProcessEarlyDismount(RouteStep step, Vector3 playerPosition)
+    {
+        if (step.EarlyDismountDistance <= 0f || IsZeroVector(step.EarlyDismountTarget))
+        {
+            return;
+        }
+
+        var distanceToDismountTarget = CalculateFlatDistance(playerPosition, step.EarlyDismountTarget);
+        if (distanceToDismountTarget > step.EarlyDismountDistance)
+        {
+            return;
+        }
+
+        if (!condition[ConditionFlag.Mounted])
+        {
+            return;
+        }
+
+        if (condition[ConditionFlag.InCombat]
+            || condition[ConditionFlag.Casting]
+            || condition[ConditionFlag.BetweenAreas]
+            || objectTable.LocalPlayer?.CurrentHp == 0)
+        {
+            logger.DebugThrottled(
+                BuildStepLogKey("early-dismount-blocked"),
+                TimeSpan.FromSeconds(1),
+                $"Early dismount is waiting during step '{step.Description}'. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} conditions={DescribeMovementConditions()}.");
+            return;
+        }
+
+        if (!dismountAttempted)
+        {
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, step.Description))
+            {
+                logger.DebugThrottled(
+                    BuildStepLogKey("early-dismount-failed"),
+                    TimeSpan.FromSeconds(1),
+                    $"Early dismount action dispatch failed for step '{step.Description}'. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} conditions={DescribeMovementConditions()}.");
+                return;
+            }
+
+            lock (gate)
+            {
+                dismountAttempted = true;
+                dismountAttemptedAt = DateTimeOffset.UtcNow;
+            }
+
+            logger.Info($"{BuildLogTag()} op=early-dismount-request step=\"{step.Description}\" distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} target={FormatVector(step.EarlyDismountTarget)}");
+            return;
+        }
+
+        logger.DebugThrottled(
+            BuildStepLogKey("early-dismount-wait"),
+            TimeSpan.FromSeconds(1),
+            $"Still waiting for early dismount during step '{step.Description}'. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} elapsed={(DateTimeOffset.UtcNow - dismountAttemptedAt).TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+
+        if (DateTimeOffset.UtcNow - dismountAttemptedAt <= MountTimeout)
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
+        }
+
+        logger.Warning($"{BuildLogTag()} op=early-dismount-timeout step=\"{step.Description}\" action=retry distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0}");
+    }
+
     private Vector3 GetPathStepTarget(RouteStep step, Vector3 playerPosition)
     {
         if (!IsAethernetBandStep(step))
@@ -1591,6 +1677,9 @@ public sealed class MovementController : IDisposable
         distance = CalculateFlatDistance(playerPosition, step.InteractionCenter);
         return distance >= step.InteractDistanceMin && distance <= step.InteractDistanceMax;
     }
+
+    private static bool IsZeroVector(Vector3 value)
+        => value.X == 0f && value.Y == 0f && value.Z == 0f;
 
     private static bool IsWithinAethernetInteractRange(Vector3 playerPosition, RouteStep step, out float distance)
     {

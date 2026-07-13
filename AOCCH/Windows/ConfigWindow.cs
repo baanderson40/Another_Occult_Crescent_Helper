@@ -131,6 +131,15 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
+        ImGui.SetNextItemWidth(PotsNumericInputWidth);
+        DrawClampedIntSetting(
+            "FATE Dismount Distance",
+            configuration.FateDismountDistance,
+            5,
+            50,
+            value => configuration.FateDismountDistance = value,
+            nameof(configuration.FateDismountDistance));
+
         ImGui.Separator();
         ImGui.TextUnformatted("Enabled FATEs");
         DrawFateCheckboxList();

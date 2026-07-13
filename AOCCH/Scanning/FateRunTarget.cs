@@ -14,6 +14,10 @@ public sealed class FateRunTarget
     public Vector3 Position { get; init; }
     public string PreferredAethernet { get; init; } = string.Empty;
     public bool IsPotTarget { get; init; }
+    public bool HasLiveTarget { get; init; }
+    public ulong LiveTargetObjectId { get; init; }
+    public string LiveTargetName { get; init; } = string.Empty;
+    public Vector3 LiveTargetPosition { get; init; }
 }
 
 public static class FateRunTargetExtensions
@@ -31,6 +35,10 @@ public static class FateRunTargetExtensions
             Position = fate.Position,
             PreferredAethernet = fate.PreferredAethernet,
             IsPotTarget = false,
+            HasLiveTarget = fate.HasLiveTarget,
+            LiveTargetObjectId = fate.LiveTargetObjectId,
+            LiveTargetName = fate.LiveTargetName,
+            LiveTargetPosition = fate.LiveTargetPosition,
         };
 
     public static FateRunTarget ToFateRunTarget(this ActivePotFate fate)

@@ -54,6 +54,7 @@ public class Configuration : IPluginConfiguration
     public int HideThresholdDistance { get; set; } = 120;
     public int NinjaGearsetNumber { get; set; }
     public int FateGearsetNumber { get; set; }
+    public int FateDismountDistance { get; set; } = 10;
     public int ArrivalDistance { get; set; } = 5;
     public bool SkipHighLevelCavernsDuringAshkin { get; set; }
     public int CeFallbackCutoffMinutes { get; set; } = 10;

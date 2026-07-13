@@ -17,6 +17,10 @@ public sealed class OccultCrescentScanner : IDisposable
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMilliseconds(500);
     private const float VisibleCofferDiagnosticRadius = 60f;
     private static readonly TimeSpan VisibleCofferDiagnosticLogInterval = TimeSpan.FromSeconds(5);
+    private const float FateEntityDiagnosticPlayerRadius = 40f;
+    private const float FateEntityDiagnosticPadding = 15f;
+    private const int MaxFateEntityDiagnosticEntries = 8;
+    private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private const uint TreasureBuffStatusId = 1531;
 
     private readonly IClientState clientState;
@@ -116,6 +120,7 @@ public sealed class OccultCrescentScanner : IDisposable
         {
             var territoryTypeId = clientState.TerritoryType;
             var isInSouthHorn = territoryTypeId == data.TerritoryTypeId;
+            var playerPosition = objectTable.LocalPlayer?.Position;
 
             if (lastSouthHornState != isInSouthHorn)
             {
@@ -150,6 +155,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
                 ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
                 ScanVisibleCoffers(visibleCoffers);
+                LogNearbyFateEntityDiagnostics(selectedFate, playerPosition);
             }
             else
             {
@@ -297,6 +303,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, fateLocation)
                 : float.MaxValue;
+            var liveTarget = TrySelectLiveFateTarget(fateLocation, fate.Radius, playerPosition);
 
             if (isPotFate)
             {
@@ -343,6 +350,10 @@ public sealed class OccultCrescentScanner : IDisposable
                 PreferredAethernet = metadata?.Aethernet ?? string.Empty,
                 IsExcluded = isExcluded,
                 IsCandidate = !isExcluded,
+                HasLiveTarget = liveTarget != null,
+                LiveTargetObjectId = liveTarget?.ObjectId ?? 0,
+                LiveTargetName = liveTarget?.Name ?? string.Empty,
+                LiveTargetPosition = liveTarget?.Position ?? Vector3.Zero,
             });
         }
 
@@ -463,6 +474,35 @@ public sealed class OccultCrescentScanner : IDisposable
         logger.Info(hasTreasureBuff
             ? "[Scanner] op=treasure-buff state=detected statusId=1531"
             : "[Scanner] op=treasure-buff state=cleared statusId=1531");
+    }
+
+    private void LogNearbyFateEntityDiagnostics(ActiveFate? selectedFate, Vector3? playerPosition)
+    {
+        if (selectedFate == null || !playerPosition.HasValue)
+        {
+            return;
+        }
+
+        var playerDistanceToFate = CalculateFlatDistance(playerPosition.Value, selectedFate.Position);
+        var diagnosticRadius = MathF.Max(selectedFate.Radius + FateEntityDiagnosticPadding, FateEntityDiagnosticPlayerRadius);
+        if (playerDistanceToFate > diagnosticRadius)
+        {
+            return;
+        }
+
+        var candidates = GetLiveFateTargetCandidates(selectedFate.Position, selectedFate.Radius, playerPosition)
+            .Take(MaxFateEntityDiagnosticEntries)
+            .Select(FormatLiveFateTargetCandidate)
+            .ToArray();
+
+        var details = candidates.Length == 0 ? "none" : string.Join(" | ", candidates);
+        var selected = selectedFate.HasLiveTarget
+            ? $"name='{selectedFate.LiveTargetName}' objectId={selectedFate.LiveTargetObjectId:X} pos={FormatVector3(selectedFate.LiveTargetPosition)} source=live-target"
+            : "none source=fate-center";
+        logger.DebugThrottled(
+            $"fate-entity-diag-{selectedFate.Id}",
+            FateEntityDiagnosticLogInterval,
+            $"[Scanner] op=fate-entity-diagnostics fate=\"{selectedFate.Name}\" ({selectedFate.Id}) playerDistance={playerDistanceToFate:0.0} radius={diagnosticRadius:0.0} selected={selected} candidates={details}");
     }
 
     private ActiveCriticalEncounter? SelectCriticalEncounter(IReadOnlyList<ActiveCriticalEncounter> criticalEncounters)
@@ -636,6 +676,49 @@ public sealed class OccultCrescentScanner : IDisposable
     private static bool IsPreBattleCeState(int stateCode)
         => stateCode > 0 && stateCode < 3;
 
+    private LiveFateTargetCandidate? TrySelectLiveFateTarget(Vector3 fatePosition, float fateRadius, Vector3? playerPosition)
+        => GetLiveFateTargetCandidates(fatePosition, fateRadius, playerPosition).FirstOrDefault();
+
+    private IEnumerable<LiveFateTargetCandidate> GetLiveFateTargetCandidates(Vector3 fatePosition, float fateRadius, Vector3? playerPosition)
+    {
+        var diagnosticRadius = MathF.Max(fateRadius + FateEntityDiagnosticPadding, FateEntityDiagnosticPlayerRadius);
+        return objectTable
+            .Where(gameObject => gameObject is IGameObject objectEntry && IsFateEntityDiagnosticCandidate(objectEntry, fatePosition, diagnosticRadius))
+            .OfType<IGameObject>()
+            .Select(objectEntry => new LiveFateTargetCandidate(
+                objectEntry.GameObjectId,
+                objectEntry.Name.ToString(),
+                objectEntry.Position,
+                objectEntry.ObjectKind.ToString(),
+                objectEntry.BaseId,
+                objectEntry.IsTargetable,
+                CalculateFlatDistance(objectEntry.Position, fatePosition),
+                playerPosition.HasValue ? CalculateFlatDistance(objectEntry.Position, playerPosition.Value) : float.MaxValue))
+            .OrderBy(candidate => candidate.DistanceToFate)
+            .ThenBy(candidate => candidate.DistanceToPlayer)
+            .ThenBy(candidate => candidate.ObjectId);
+    }
+
+    private static bool IsFateEntityDiagnosticCandidate(IGameObject gameObject, Vector3 fatePosition, float diagnosticRadius)
+    {
+        if (!gameObject.IsValid() || gameObject.GameObjectId == 0 || gameObject.BaseId == 0)
+        {
+            return false;
+        }
+
+        var objectKind = gameObject.ObjectKind.ToString();
+        if (!objectKind.StartsWith("Battle", StringComparison.OrdinalIgnoreCase)
+            || !gameObject.IsTargetable)
+        {
+            return false;
+        }
+
+        return CalculateFlatDistance(gameObject.Position, fatePosition) <= diagnosticRadius;
+    }
+
+    private static string FormatLiveFateTargetCandidate(LiveFateTargetCandidate candidate)
+        => $"name='{candidate.Name}' kind={candidate.Kind} baseId={candidate.BaseId} objectId={candidate.ObjectId:X} targetable={candidate.IsTargetable} distFate={candidate.DistanceToFate:0.0} distPlayer={candidate.DistanceToPlayer:0.0} pos={FormatVector3(candidate.Position)}";
+
     private static bool IsActiveFateState(string state)
         => !string.Equals(state, "Ended", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(state, "Failed", StringComparison.OrdinalIgnoreCase);
@@ -710,4 +793,14 @@ public sealed class OccultCrescentScanner : IDisposable
             SelectedTargetKind.Fate => $"fate:{selection.Fate?.Id}:{selection.Reason}:{selection.WouldPreemptFate}",
             _ => "none",
         };
+
+    private sealed record LiveFateTargetCandidate(
+        ulong ObjectId,
+        string Name,
+        Vector3 Position,
+        string Kind,
+        uint BaseId,
+        bool IsTargetable,
+        float DistanceToFate,
+        float DistanceToPlayer);
 }

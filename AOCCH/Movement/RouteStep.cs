@@ -16,4 +16,6 @@ public sealed class RouteStep
     public float InteractDistanceMax { get; init; }
     public bool ShouldMountBeforeStep { get; init; } = true;
     public bool ShouldDismountOnArrival { get; init; }
+    public Vector3 EarlyDismountTarget { get; init; }
+    public float EarlyDismountDistance { get; init; }
 }

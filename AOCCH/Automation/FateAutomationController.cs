@@ -15,6 +15,8 @@ public sealed class FateAutomationController : IDisposable
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MonitorLogInterval = TimeSpan.FromSeconds(10);
     private const float FateParticipationPadding = 5f;
+    private const int MinimumFateDismountDistance = 5;
+    private const int MaximumFateDismountDistance = 50;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -316,7 +318,7 @@ public sealed class FateAutomationController : IDisposable
     private bool BeginPlanning(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Planning route to FATE {target.Name} ({target.Id}).");
-        if (!movementController.PlanRoute(target))
+        if (!movementController.PlanRoute(target, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -625,7 +627,7 @@ public sealed class FateAutomationController : IDisposable
     private bool BeginPlanningWithoutReturn(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
-        if (!movementController.PlanRoute(target, allowReturn: false))
+        if (!movementController.PlanRoute(target, allowReturn: false, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
@@ -664,6 +666,11 @@ public sealed class FateAutomationController : IDisposable
         var elapsed = monitorStartedAt == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - monitorStartedAt;
         logger.Info($"{BuildLogTag()} op=completion-audit target=\"{TargetFateName}\" ({TargetFateId}) completion={completionKind} lastState={lastObservedState}({lastObservedStateCode}) lastProgress={lastObservedProgress}% monitorElapsed={elapsed:mm\\:ss}");
     }
+
+    private float? GetEarlyDismountDistance(FateRunTarget target)
+        => target.IsPotTarget
+            ? null
+            : Math.Clamp(configuration.FateDismountDistance, MinimumFateDismountDistance, MaximumFateDismountDistance);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
