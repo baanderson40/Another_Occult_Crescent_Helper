@@ -751,7 +751,6 @@ public sealed class MovementController : IDisposable
         {
             if (ShouldMountForStep(step, distance) && !EnsureMounted(step))
             {
-                logger.Debug($"Path step '{step.Description}' is waiting on mount. distance={distance:0.0} conditions={DescribeMovementConditions()}.");
                 return;
             }
 
