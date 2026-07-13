@@ -34,6 +34,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private CriticalEngagementAutomationState state = CriticalEngagementAutomationState.Idle;
     private uint targetCeId;
     private string targetCeName = string.Empty;
+    private uint lastTargetCeId;
+    private string lastTargetCeName = string.Empty;
     private string currentRunId = string.Empty;
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
@@ -95,6 +97,28 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             lock (gate)
             {
                 return targetCeName;
+            }
+        }
+    }
+
+    public uint LastTargetCeId
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastTargetCeId;
+            }
+        }
+    }
+
+    public string LastTargetCeName
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastTargetCeName;
             }
         }
     }
@@ -173,6 +197,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             currentRunId = $"CE#{Interlocked.Increment(ref nextRunSequence)}";
             targetCeId = target.Id;
             targetCeName = target.Name;
+            lastTargetCeId = target.Id;
+            lastTargetCeName = target.Name;
             lastError = string.Empty;
             lastResult = AutomationRunResult.None;
             lastCombatSeenAt = DateTimeOffset.MinValue;
@@ -205,6 +231,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             state = CriticalEngagementAutomationState.Idle;
             targetCeId = 0;
             targetCeName = string.Empty;
+            lastTargetCeId = 0;
+            lastTargetCeName = string.Empty;
             currentRunId = string.Empty;
             lastError = string.Empty;
             lastTransition = "Idle";

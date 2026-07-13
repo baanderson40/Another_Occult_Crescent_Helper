@@ -52,6 +52,7 @@ public sealed class FarmSessionController : IDisposable
     private InterruptedActivityKind interruptedActivity;
     private uint interruptedTargetId;
     private string interruptedTargetName = string.Empty;
+    private FateRunCompletionBehavior interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
 
     public FarmSessionController(
         IFramework framework,
@@ -169,6 +170,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
+            interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
         }
 
         logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
@@ -184,6 +186,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
+            interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
         }
 
         if (criticalEngagementAutomationController.IsRunning)
@@ -232,6 +235,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
+            interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
         }
 
         logger.Info($"[Farm] op=reset reason={reason}");
@@ -290,8 +294,15 @@ public sealed class FarmSessionController : IDisposable
                 return;
             }
 
-            if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised && TryResumeInterruptedActivityAfterRaise())
+            if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised)
             {
+                if (BeginInterruptedActivityResumeAfterRaise())
+                {
+                    return;
+                }
+
+                ClearInterruptedActivity();
+                TransitionTo(FarmSessionState.SelectingTarget, "Death recovery completed without an interrupted CE/FATE to resume.", "Selecting target");
                 return;
             }
 
@@ -334,6 +345,11 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case FarmSessionState.RunningFate:
                 TickFateRun();
+                break;
+            case FarmSessionState.ResumingInterruptedCe:
+            case FarmSessionState.ResumingInterruptedFate:
+            case FarmSessionState.ResumingInterruptedPotFate:
+                TickInterruptedActivityResume();
                 break;
             case FarmSessionState.IdleWaiting:
                 TickIdleWaiting();
@@ -777,23 +793,40 @@ public sealed class FarmSessionController : IDisposable
         var activity = InterruptedActivityKind.None;
         var targetId = 0u;
         var targetName = string.Empty;
+        var fateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
 
         switch (currentState)
         {
-            case FarmSessionState.RunningCe when criticalEngagementAutomationController.TargetCeId != 0:
+            case FarmSessionState.RunningCe when criticalEngagementAutomationController.TargetCeId != 0 || criticalEngagementAutomationController.LastTargetCeId != 0:
                 activity = InterruptedActivityKind.Ce;
-                targetId = criticalEngagementAutomationController.TargetCeId;
-                targetName = criticalEngagementAutomationController.TargetCeName;
+                targetId = criticalEngagementAutomationController.TargetCeId != 0
+                    ? criticalEngagementAutomationController.TargetCeId
+                    : criticalEngagementAutomationController.LastTargetCeId;
+                targetName = criticalEngagementAutomationController.TargetCeId != 0
+                    ? criticalEngagementAutomationController.TargetCeName
+                    : criticalEngagementAutomationController.LastTargetCeName;
                 break;
-            case FarmSessionState.RunningFate when fateAutomationController.TargetFateId != 0:
-                activity = fateAutomationController.TargetIsPot ? InterruptedActivityKind.PotFate : InterruptedActivityKind.Fate;
-                targetId = fateAutomationController.TargetFateId;
-                targetName = fateAutomationController.TargetFateName;
+            case FarmSessionState.RunningFate when fateAutomationController.TargetFateId != 0 || fateAutomationController.LastTargetFateId != 0:
+                activity = (fateAutomationController.TargetFateId != 0 ? fateAutomationController.TargetIsPot : fateAutomationController.LastTargetIsPot)
+                    ? InterruptedActivityKind.PotFate
+                    : InterruptedActivityKind.Fate;
+                targetId = fateAutomationController.TargetFateId != 0
+                    ? fateAutomationController.TargetFateId
+                    : fateAutomationController.LastTargetFateId;
+                targetName = fateAutomationController.TargetFateId != 0
+                    ? fateAutomationController.TargetFateName
+                    : fateAutomationController.LastTargetFateName;
+                fateCompletionBehavior = fateAutomationController.LastCompletionBehavior;
                 break;
-            case FarmSessionState.RunningPots when potFarmController.State == PotFarmState.RunningPotFate && fateAutomationController.TargetFateId != 0:
+            case FarmSessionState.RunningPots when potFarmController.State == PotFarmState.RunningPotFate && (fateAutomationController.TargetFateId != 0 || fateAutomationController.LastTargetFateId != 0):
                 activity = InterruptedActivityKind.PotFate;
-                targetId = fateAutomationController.TargetFateId;
-                targetName = fateAutomationController.TargetFateName;
+                targetId = fateAutomationController.TargetFateId != 0
+                    ? fateAutomationController.TargetFateId
+                    : fateAutomationController.LastTargetFateId;
+                targetName = fateAutomationController.TargetFateId != 0
+                    ? fateAutomationController.TargetFateName
+                    : fateAutomationController.LastTargetFateName;
+                fateCompletionBehavior = fateAutomationController.LastCompletionBehavior;
                 break;
         }
 
@@ -802,6 +835,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = activity;
             interruptedTargetId = targetId;
             interruptedTargetName = targetName;
+            interruptedFateCompletionBehavior = fateCompletionBehavior;
         }
 
         if (activity != InterruptedActivityKind.None)
@@ -810,9 +844,8 @@ public sealed class FarmSessionController : IDisposable
         }
     }
 
-    private bool TryResumeInterruptedActivityAfterRaise()
+    private bool BeginInterruptedActivityResumeAfterRaise()
     {
-        var snapshot = scanner.Snapshot;
         InterruptedActivityKind activity;
         uint targetId;
         string targetName;
@@ -829,71 +862,137 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        var nextState = activity switch
+        {
+            InterruptedActivityKind.Ce => FarmSessionState.ResumingInterruptedCe,
+            InterruptedActivityKind.Fate => FarmSessionState.ResumingInterruptedFate,
+            InterruptedActivityKind.PotFate => FarmSessionState.ResumingInterruptedPotFate,
+            _ => FarmSessionState.WaitingForDeathRecovery,
+        };
+
+        var activityLabel = activity switch
+        {
+            InterruptedActivityKind.Ce => "CE",
+            InterruptedActivityKind.Fate => "FATE",
+            InterruptedActivityKind.PotFate => "PotFate",
+            _ => "Unknown",
+        };
+
+        logger.Info($"{BuildLogTag()} op=resume-wait activity={activityLabel} target=\"{targetName}\" ({targetId}) reason=raised-after-death");
+        TransitionTo(nextState, $"Death recovery completed after raise; resuming {activityLabel} {targetName} ({targetId}).", $"Resuming {activityLabel}");
+        return true;
+    }
+
+    private void TickInterruptedActivityResume()
+    {
+        var snapshot = scanner.Snapshot;
+        InterruptedActivityKind activity;
+        uint targetId;
+        string targetName;
+        FateRunCompletionBehavior fateCompletionBehavior;
+
+        lock (gate)
+        {
+            activity = interruptedActivity;
+            targetId = interruptedTargetId;
+            targetName = interruptedTargetName;
+            fateCompletionBehavior = interruptedFateCompletionBehavior;
+        }
+
+        if (activity == InterruptedActivityKind.None || targetId == 0)
+        {
+            TransitionTo(FarmSessionState.SelectingTarget, "Interrupted activity data was cleared before resume could complete.", "Selecting target");
+            return;
+        }
+
         switch (activity)
         {
             case InterruptedActivityKind.Ce:
-                var ceTarget = snapshot.FindCriticalEncounter(targetId);
-                if (ceTarget == null)
-                {
-                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=CE target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
-                    return false;
-                }
-
-                logger.Info($"{BuildLogTag()} op=resume-attempt activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason=after-raise");
-                if (!criticalEngagementAutomationController.Start(ceTarget))
-                {
-                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason={criticalEngagementAutomationController.LastError}");
-                    return false;
-                }
-
-                ClearInterruptedActivity();
-                TransitionTo(FarmSessionState.RunningCe, $"Resumed CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}) after raise.", "Critical Engagement");
-                return true;
+                TickInterruptedCeResume(snapshot, targetId, targetName);
+                break;
             case InterruptedActivityKind.Fate:
-                var fateTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: false);
-                if (fateTarget == null)
-                {
-                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=FATE target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
-                    return false;
-                }
-
-                logger.Info($"{BuildLogTag()} op=resume-attempt activity=FATE target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason=after-raise");
-                if (!fateAutomationController.Start(fateTarget, FateRunCompletionBehavior.RecoverToBase))
-                {
-                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=FATE target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason={fateAutomationController.LastError}");
-                    return false;
-                }
-
-                ClearInterruptedActivity();
-                TransitionTo(FarmSessionState.RunningFate, $"Resumed FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise.", "FATE");
-                return true;
+                TickInterruptedFateResume(snapshot, targetId, targetName, isPotTarget: false, fateCompletionBehavior);
+                break;
             case InterruptedActivityKind.PotFate:
-                if (!potFarmController.IsRunning || potFarmController.State != PotFarmState.RunningPotFate)
-                {
-                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=PotFate target=\"{targetName}\" ({targetId}) reason=pot-state-{potFarmController.State}");
-                    return false;
-                }
-
-                var potTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: true);
-                if (potTarget == null)
-                {
-                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=PotFate target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
-                    return false;
-                }
-
-                logger.Info($"{BuildLogTag()} op=resume-attempt activity=PotFate target=\"{potTarget.Name}\" ({potTarget.Id}) reason=after-raise");
-                if (!fateAutomationController.Start(potTarget, FateRunCompletionBehavior.CompleteInPlace))
-                {
-                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=PotFate target=\"{potTarget.Name}\" ({potTarget.Id}) reason={fateAutomationController.LastError}");
-                    return false;
-                }
-
-                ClearInterruptedActivity();
-                TransitionTo(FarmSessionState.RunningPots, $"Resumed pot FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise.", "Running pots");
-                return true;
-            default:
-                return false;
+                TickInterruptedFateResume(snapshot, targetId, targetName, isPotTarget: true, fateCompletionBehavior);
+                break;
         }
+    }
+
+    private void TickInterruptedCeResume(ScannerSnapshot snapshot, uint targetId, string targetName)
+    {
+        var ceTarget = snapshot.FindCriticalEncounter(targetId);
+        if (ceTarget == null)
+        {
+            logger.ResetThrottle("farm-resume-ce");
+            ClearInterruptedActivity();
+            logger.Info($"{BuildLogTag()} op=resume-ended activity=CE target=\"{targetName}\" ({targetId}) reason=target-no-longer-active-after-raise");
+            StartPostCeFlow();
+            return;
+        }
+
+        logger.ResetThrottle("farm-resume-ce");
+        logger.Info($"{BuildLogTag()} op=resume-attempt activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason=after-raise");
+        if (!criticalEngagementAutomationController.Start(ceTarget))
+        {
+            SetFailure(criticalEngagementAutomationController.LastError.Length == 0
+                ? $"Failed to resume CE {ceTarget.Name} ({ceTarget.Id}) after raise."
+                : criticalEngagementAutomationController.LastError);
+            return;
+        }
+
+        ClearInterruptedActivity();
+        TransitionTo(FarmSessionState.RunningCe, $"Resumed CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}) after raise.", "Critical Engagement");
+    }
+
+    private void TickInterruptedFateResume(ScannerSnapshot snapshot, uint targetId, string targetName, bool isPotTarget, FateRunCompletionBehavior completionBehavior)
+    {
+        if (isPotTarget && (!potFarmController.IsRunning || potFarmController.State != PotFarmState.RunningPotFate))
+        {
+            logger.ResetThrottle("farm-resume-pot-fate");
+            ClearInterruptedActivity();
+            logger.Info($"{BuildLogTag()} op=resume-ended activity=PotFate target=\"{targetName}\" ({targetId}) reason=pot-state-{potFarmController.State}");
+            TransitionTo(FarmSessionState.SelectingTarget, "Interrupted pot FATE ended while death recovery completed.", "Selecting target");
+            return;
+        }
+
+        var fateTarget = snapshot.FindFateRunTarget(targetId, isPotTarget);
+        var throttleKey = isPotTarget ? "farm-resume-pot-fate" : "farm-resume-fate";
+        var activityLabel = isPotTarget ? "PotFate" : "FATE";
+        if (fateTarget == null)
+        {
+            logger.ResetThrottle(throttleKey);
+            ClearInterruptedActivity();
+            logger.Info($"{BuildLogTag()} op=resume-ended activity={activityLabel} target=\"{targetName}\" ({targetId}) reason=target-no-longer-active-after-raise");
+            if (isPotTarget)
+            {
+                TransitionTo(FarmSessionState.SelectingTarget, "Interrupted pot FATE ended while death recovery completed.", "Selecting target");
+            }
+            else
+            {
+                StartPostFateFlow();
+            }
+
+            return;
+        }
+
+        logger.ResetThrottle(throttleKey);
+        logger.Info($"{BuildLogTag()} op=resume-attempt activity={activityLabel} target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason=after-raise completionBehavior={completionBehavior}");
+        if (!fateAutomationController.Start(fateTarget, completionBehavior))
+        {
+            SetFailure(fateAutomationController.LastError.Length == 0
+                ? $"Failed to resume {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise."
+                : fateAutomationController.LastError);
+            return;
+        }
+
+        ClearInterruptedActivity();
+        TransitionTo(
+            isPotTarget ? FarmSessionState.RunningPots : FarmSessionState.RunningFate,
+            isPotTarget
+                ? $"Resumed pot FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise."
+                : $"Resumed FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}) after raise.",
+            isPotTarget ? "Running pots" : "FATE");
     }
 
     private bool TryStartOrResumePotControl(DateTimeOffset now)
@@ -978,6 +1077,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
+            interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
         }
 
         logger.Warning($"{BuildLogTag()} op=failure state={FarmSessionState.Failed} activity=Failed reason={reason}");
@@ -993,6 +1093,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
+            interruptedFateCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
         }
     }
 

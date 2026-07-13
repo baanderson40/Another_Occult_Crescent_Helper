@@ -31,9 +31,13 @@ public sealed class FateAutomationController : IDisposable
     private FateAutomationState state = FateAutomationState.Idle;
     private uint targetFateId;
     private string targetFateName = string.Empty;
+    private uint lastTargetFateId;
+    private string lastTargetFateName = string.Empty;
     private string currentRunId = string.Empty;
     private bool targetIsPot;
+    private bool lastTargetIsPot;
     private FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase;
+    private FateRunCompletionBehavior lastCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
@@ -112,6 +116,50 @@ public sealed class FateAutomationController : IDisposable
             lock (gate)
             {
                 return targetIsPot;
+            }
+        }
+    }
+
+    public uint LastTargetFateId
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastTargetFateId;
+            }
+        }
+    }
+
+    public string LastTargetFateName
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastTargetFateName;
+            }
+        }
+    }
+
+    public bool LastTargetIsPot
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastTargetIsPot;
+            }
+        }
+    }
+
+    public FateRunCompletionBehavior LastCompletionBehavior
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastCompletionBehavior;
             }
         }
     }
@@ -196,8 +244,12 @@ public sealed class FateAutomationController : IDisposable
             currentRunId = $"FATE#{Interlocked.Increment(ref nextRunSequence)}";
             targetFateId = target.Id;
             targetFateName = target.Name;
+            lastTargetFateId = target.Id;
+            lastTargetFateName = target.Name;
             targetIsPot = target.IsPotTarget;
+            lastTargetIsPot = target.IsPotTarget;
             this.completionBehavior = completionBehavior;
+            lastCompletionBehavior = completionBehavior;
             lastError = string.Empty;
             lastCombatSeenAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
@@ -238,9 +290,13 @@ public sealed class FateAutomationController : IDisposable
             state = FateAutomationState.Idle;
             targetFateId = 0;
             targetFateName = string.Empty;
+            lastTargetFateId = 0;
+            lastTargetFateName = string.Empty;
             currentRunId = string.Empty;
             targetIsPot = false;
+            lastTargetIsPot = false;
             completionBehavior = FateRunCompletionBehavior.RecoverToBase;
+            lastCompletionBehavior = FateRunCompletionBehavior.RecoverToBase;
             lastError = string.Empty;
             lastTransition = "Idle";
             lastCombatSeenAt = DateTimeOffset.MinValue;
