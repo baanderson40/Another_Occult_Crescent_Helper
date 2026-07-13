@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 using System.Threading;
 
 using AOCCH.Data;
@@ -20,6 +23,9 @@ namespace AOCCH;
 public sealed class Plugin : IDalamudPlugin
 {
     private const uint SouthHornTerritoryTypeId = 1252;
+    private static readonly HashSet<uint> KnownTreasureCofferBaseIds = [2014741u, 2014742u, 2014743u];
+    private const float PotCofferDebugRadius = 60f;
+    private const int PotCofferDebugEntryLimit = 30;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
@@ -127,7 +133,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -245,6 +251,10 @@ public sealed class Plugin : IDalamudPlugin
                 Logger.Warning("[Plugin] op=slash-command-action action=panic-stop");
                 PanicStopAll();
                 break;
+            case "debug-potcoffer":
+                Logger.Info("[Plugin] op=slash-command-action action=debug-potcoffer");
+                LogPotCofferDebugSnapshot();
+                break;
             default:
                 if (normalizedArgs.StartsWith("testkeyitem", StringComparison.Ordinal))
                 {
@@ -271,43 +281,32 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch coffer-start - Start visible coffer farm route");
         ChatGui.Print("/aocch coffer-stop - Stop visible coffer farm route");
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
-        ChatGui.Print("/aocch testkeyitem [slot|inventory|command|both] [wait] - Test Magical Elixir usage with detailed logs");
+        ChatGui.Print("/aocch testkeyitem [wait] - Use Magical Elixir via the production inventory path with detailed treasure logs");
+        ChatGui.Print("/aocch debug-potcoffer - Log nearby raw objects for pot treasure reveal debugging");
         ChatGui.Print("/aocch help - Show this help");
     }
 
     private void HandleTestKeyItemCommand(string rawArgs)
     {
         var tokens = rawArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var method = GameActionController.MagicalElixirUseMethod.Inventory;
-        var runBoth = false;
         var waitForReady = false;
+
+        TreasureHintTracker.ClearDebugLogMessageCapture();
 
         for (var i = 1; i < tokens.Length; i++)
         {
             switch (tokens[i].ToLowerInvariant())
             {
-                case "slot":
-                    method = GameActionController.MagicalElixirUseMethod.Slot;
-                    break;
-                case "inventory":
-                    method = GameActionController.MagicalElixirUseMethod.Inventory;
-                    break;
-                case "command":
-                    method = GameActionController.MagicalElixirUseMethod.Command;
-                    break;
-                case "both":
-                    runBoth = true;
-                    break;
                 case "wait":
                     waitForReady = true;
                     break;
                 default:
-                    Logger.Warning($"[Plugin] op=testkeyitem-option-unknown value=\"{tokens[i]}\"");
+                    Logger.Warning($"[Plugin] op=testkeyitem-option-ignored value=\"{tokens[i]}\" reason=inventory-path-only");
                     break;
             }
         }
 
-        Logger.Info($"[Plugin] op=slash-command-action action=test-magical-elixir mode={(runBoth ? "both" : method.ToString().ToLowerInvariant())} wait={waitForReady}");
+        Logger.Info($"[Plugin] op=slash-command-action action=test-magical-elixir mode=inventory wait={waitForReady}");
         LogMagicalElixirDebugSnapshot("preflight");
 
         if (waitForReady && !WaitForMagicalElixirReady())
@@ -321,24 +320,18 @@ public sealed class Plugin : IDalamudPlugin
             LogMagicalElixirDebugSnapshot("post-wait-ready");
         }
 
-        if (runBoth)
-        {
-            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Slot, "manual test slot attempt");
-            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Inventory, "manual test inventory attempt");
-            RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod.Command, "manual test command attempt");
-            return;
-        }
-
-        RunMagicalElixirDebugAttempt(method, $"manual test {method.ToString().ToLowerInvariant()} attempt");
+        RunMagicalElixirDebugAttempt();
     }
 
-    private void RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod method, string description)
+    private void RunMagicalElixirDebugAttempt()
     {
-        Logger.Info($"[Plugin] op=magical-elixir-attempt-start method={method.ToString().ToLowerInvariant()} description=\"{description}\"");
-        LogMagicalElixirDebugSnapshot($"before-{method.ToString().ToLowerInvariant()}");
-        var success = GameActionController.TryUseMagicalElixir(method, description);
-        Logger.Info($"[Plugin] op=magical-elixir-attempt-finish method={method.ToString().ToLowerInvariant()} success={success}");
-        LogMagicalElixirDebugSnapshot($"after-{method.ToString().ToLowerInvariant()}");
+        const string description = "manual test inventory attempt";
+        var attemptId = TreasureHintTracker.ArmDebugLogMessageCapture(description, TimeSpan.FromSeconds(5));
+        Logger.Info($"[Plugin] op=magical-elixir-attempt-start attempt={attemptId} method=inventory description=\"{description}\"");
+        LogMagicalElixirDebugSnapshot("before-inventory");
+        var success = GameActionController.TryUseMagicalElixirViaInventory(description);
+        Logger.Info($"[Plugin] op=magical-elixir-attempt-finish attempt={attemptId} method=inventory success={success}");
+        LogMagicalElixirDebugSnapshot("after-inventory");
     }
 
     private bool WaitForMagicalElixirReady()
@@ -363,7 +356,6 @@ public sealed class Plugin : IDalamudPlugin
     private void LogMagicalElixirDebugSnapshot(string label)
     {
         var snapshot = Scanner.Snapshot;
-        var treasureSnapshot = TreasureHintTracker.Snapshot;
         var player = ObjectTable.LocalPlayer;
         var position = player?.Position;
         var positionText = position == null
@@ -372,9 +364,90 @@ public sealed class Plugin : IDalamudPlugin
 
         Logger.Info($"[Plugin] op=magical-elixir-debug label={label} time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} hp={player?.CurrentHp ?? 0}");
         Logger.Info($"[Plugin] op=magical-elixir-debug-conditions label={label} inCombat={Condition[ConditionFlag.InCombat]} casting={Condition[ConditionFlag.Casting]} betweenAreas={Condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={Condition[ConditionFlag.OccupiedInQuestEvent]} mounted={Condition[ConditionFlag.Mounted]} occupied={Condition[ConditionFlag.Occupied]}");
-        Logger.Info($"[Plugin] op=magical-elixir-debug-controllers label={label} movement={MovementController.State} fate={FateAutomationController.State} pot={PotFarmController.State} farm={FarmSessionController.State} treasureSearch={TreasureSearchController.State} cofferRunning={CofferInteractionController.IsRunning}");
-        Logger.Info($"[Plugin] op=magical-elixir-debug-treasure label={label} buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s activePot={(snapshot.ActivePotFate == null ? "none" : $"{snapshot.ActivePotFate.Name} ({snapshot.ActivePotFate.Id})")} sessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-treasure label={label} buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-logmessages label={label} capture={TreasureHintTracker.GetDebugLogMessageCaptureSummary()}");
         Logger.Info($"[Plugin] op=magical-elixir-debug-inventory label={label} state={GameActionController.DescribeMagicalElixirState()}");
+    }
+
+    private void LogPotCofferDebugSnapshot()
+    {
+        var snapshot = Scanner.Snapshot;
+        var treasureSnapshot = TreasureHintTracker.Snapshot;
+        var player = ObjectTable.LocalPlayer;
+        var playerPosition = player?.Position;
+        var activeCandidate = TreasureSearchController.ActiveCandidateKey;
+        var activeCandidatePosition = TreasureSearchController.ActiveCandidateResolvedPosition;
+        var activeCandidatePositionKnown = activeCandidatePosition != Vector3.Zero;
+        var positionText = playerPosition == null
+            ? "unavailable"
+            : $"<{playerPosition.Value.X:0.0}, {playerPosition.Value.Y:0.0}, {playerPosition.Value.Z:0.0}>";
+        var candidatePositionText = activeCandidatePositionKnown
+            ? $"<{activeCandidatePosition.X:0.0}, {activeCandidatePosition.Y:0.0}, {activeCandidatePosition.Z:0.0}>"
+            : "unavailable";
+
+        Logger.Info($"[Plugin] op=pot-coffer-debug time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} activeCandidate={activeCandidate?.Label ?? "none"} candidatePos={candidatePositionText}");
+        Logger.Info($"[Plugin] op=pot-coffer-debug-treasure buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s treasureSessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} searchState={TreasureSearchController.State} searchTransition=\"{TreasureSearchController.LastTransition}\" visibleCoffers={snapshot.VisibleCoffers.Count}");
+
+        foreach (var visibleCoffer in snapshot.VisibleCoffers)
+        {
+            var candidateDistance = activeCandidatePositionKnown
+                ? CalculateFlatDistance(visibleCoffer.Position, activeCandidatePosition)
+                : float.NaN;
+            Logger.Info($"[Plugin] op=pot-coffer-debug-visible name='{visibleCoffer.Name}' baseId={visibleCoffer.DataId} objectId={visibleCoffer.GameObjectId:X} pos=<{visibleCoffer.Position.X:0.0}, {visibleCoffer.Position.Y:0.0}, {visibleCoffer.Position.Z:0.0}> playerDistance={visibleCoffer.DistanceToPlayer:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")}");
+        }
+
+        if (playerPosition == null)
+        {
+            Logger.Warning("[Plugin] op=pot-coffer-debug-skip reason=player-position-unavailable");
+            return;
+        }
+
+        var visibleObjectIds = snapshot.VisibleCoffers.Select(coffer => coffer.GameObjectId).ToHashSet();
+        var entries = new List<(float Distance, string Message)>();
+        foreach (var gameObject in ObjectTable)
+        {
+            if (gameObject is not Dalamud.Game.ClientState.Objects.Types.IGameObject objectEntry)
+            {
+                continue;
+            }
+
+            var playerDistance = CalculateFlatDistance(playerPosition.Value, objectEntry.Position);
+            if (playerDistance > PotCofferDebugRadius)
+            {
+                continue;
+            }
+
+            var candidateDistance = activeCandidatePositionKnown
+                ? CalculateFlatDistance(objectEntry.Position, activeCandidatePosition)
+                : float.NaN;
+            var objectKind = objectEntry.ObjectKind.ToString();
+            var recognizedByBaseId = KnownTreasureCofferBaseIds.Contains(objectEntry.BaseId);
+            var recognizedByLocalizedName = CofferNameResolver.IsKnownLocalizedName(objectEntry.Name.ToString());
+            var recognizedByTreasureKind = objectKind.StartsWith("Treasure", StringComparison.OrdinalIgnoreCase);
+            var includedInVisibleScan = visibleObjectIds.Contains(objectEntry.GameObjectId);
+            entries.Add((
+                playerDistance,
+                $"[Plugin] op=pot-coffer-debug-object name='{objectEntry.Name}' baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} kind={objectKind} pos=<{objectEntry.Position.X:0.0}, {objectEntry.Position.Y:0.0}, {objectEntry.Position.Z:0.0}> playerDistance={playerDistance:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")} targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()} recognizedByBaseId={recognizedByBaseId} recognizedByLocalizedName={recognizedByLocalizedName} recognizedByTreasureKind={recognizedByTreasureKind} includedInVisibleScan={includedInVisibleScan}"));
+        }
+
+        if (entries.Count == 0)
+        {
+            Logger.Info($"[Plugin] op=pot-coffer-debug-object-summary radius={PotCofferDebugRadius:0.0} entries=0");
+            return;
+        }
+
+        Logger.Info($"[Plugin] op=pot-coffer-debug-object-summary radius={PotCofferDebugRadius:0.0} entries={entries.Count} logged={Math.Min(entries.Count, PotCofferDebugEntryLimit)}");
+        foreach (var entry in entries.OrderBy(entry => entry.Distance).Take(PotCofferDebugEntryLimit))
+        {
+            Logger.Info(entry.Message);
+        }
+    }
+
+    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
     
     public void ToggleConfigUi()

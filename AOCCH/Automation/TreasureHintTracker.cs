@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 using AOCCH.Logging;
 using AOCCH.Scanning;
@@ -11,28 +10,23 @@ namespace AOCCH.Automation;
 
 public sealed class TreasureHintTracker : IDisposable
 {
-    private static readonly string[] DirectionScanOrder =
+    private const uint TreasureCofferRevealLogMessageId = 10985u;
+    private const uint TreasureHintImmediateLogMessageId = 10986u;
+    private const uint TreasureHintCloseLogMessageId = 10987u;
+    private const uint TreasureHintFarLogMessageId = 10988u;
+    private const uint TreasureHintBeyondFarLogMessageId = 10989u;
+    private const uint TreasureElixirPromptLogMessageId = 10990u;
+    private const uint TreasureBonusOfferLogMessageId = 10994u;
+    private static readonly HashSet<uint> DebugTreasureLogMessageIds =
     [
-        "north-east", "north-west", "south-east", "south-west",
-        "northeast", "northwest", "southeast", "southwest",
-        "north", "south", "east", "west",
+        TreasureCofferRevealLogMessageId,
+        TreasureHintImmediateLogMessageId,
+        TreasureHintCloseLogMessageId,
+        TreasureHintFarLogMessageId,
+        TreasureHintBeyondFarLogMessageId,
+        TreasureElixirPromptLogMessageId,
+        TreasureBonusOfferLogMessageId,
     ];
-
-    private static readonly Dictionary<string, TreasureDirection> DirectionAliases = new(StringComparer.Ordinal)
-    {
-        ["north"] = TreasureDirection.North,
-        ["north-east"] = TreasureDirection.Northeast,
-        ["northeast"] = TreasureDirection.Northeast,
-        ["east"] = TreasureDirection.East,
-        ["south-east"] = TreasureDirection.Southeast,
-        ["southeast"] = TreasureDirection.Southeast,
-        ["south"] = TreasureDirection.South,
-        ["south-west"] = TreasureDirection.Southwest,
-        ["southwest"] = TreasureDirection.Southwest,
-        ["west"] = TreasureDirection.West,
-        ["north-west"] = TreasureDirection.Northwest,
-        ["northwest"] = TreasureDirection.Northwest,
-    };
 
     private readonly IFramework framework;
     private readonly IChatGui chatGui;
@@ -47,6 +41,11 @@ public sealed class TreasureHintTracker : IDisposable
 
     private bool? lastTreasureBuffState;
     private DateTimeOffset lastProcessedScannerUpdate = DateTimeOffset.MinValue;
+    private DateTimeOffset debugLogCaptureDeadlineAt = DateTimeOffset.MinValue;
+    private string debugLogCaptureReason = string.Empty;
+    private int debugLogCaptureAttemptId;
+    private readonly List<string> debugLogCaptureEntries = [];
+    private string latestDebugLogMessageSummary = string.Empty;
 
     public TreasureHintTracker(
         IFramework framework,
@@ -60,7 +59,7 @@ public sealed class TreasureHintTracker : IDisposable
         this.logger = logger;
 
         framework.Update += OnFrameworkUpdate;
-        chatGui.ChatMessage += OnChatMessage;
+        chatGui.LogMessage += OnLogMessage;
         logger.Info("[TreasureHintTracker] op=init");
     }
 
@@ -81,6 +80,54 @@ public sealed class TreasureHintTracker : IDisposable
     public bool HasInitialHint
         => Snapshot.HasInitialHint;
 
+    public int ArmDebugLogMessageCapture(string reason, TimeSpan duration)
+    {
+        int attemptId;
+        lock (gate)
+        {
+            debugLogCaptureAttemptId++;
+            attemptId = debugLogCaptureAttemptId;
+            debugLogCaptureReason = reason;
+            debugLogCaptureDeadlineAt = DateTimeOffset.UtcNow + duration;
+            debugLogCaptureEntries.Clear();
+            latestDebugLogMessageSummary = string.Empty;
+        }
+
+        logger.Info($"[TreasureHintTracker] op=debug-logmessage-capture-arm attempt={attemptId} reason=\"{SanitizeLogText(reason)}\" duration={duration.TotalSeconds:0.0}s ids={string.Join(",", DebugTreasureLogMessageIds)}");
+        return attemptId;
+    }
+
+    public void ClearDebugLogMessageCapture()
+    {
+        lock (gate)
+        {
+            debugLogCaptureDeadlineAt = DateTimeOffset.MinValue;
+            debugLogCaptureReason = string.Empty;
+            debugLogCaptureEntries.Clear();
+            latestDebugLogMessageSummary = string.Empty;
+        }
+    }
+
+    public string GetDebugLogMessageCaptureSummary()
+    {
+        lock (gate)
+        {
+            if (debugLogCaptureEntries.Count == 0)
+            {
+                if (debugLogCaptureDeadlineAt > DateTimeOffset.UtcNow)
+                {
+                    return $"attempt={debugLogCaptureAttemptId} armed reason=\"{debugLogCaptureReason}\" entries=0 latestLog=none";
+                }
+
+                return string.IsNullOrEmpty(debugLogCaptureReason)
+                    ? "none"
+                    : $"attempt={debugLogCaptureAttemptId} reason=\"{debugLogCaptureReason}\" entries=0 latestLog=none";
+            }
+
+            return $"attempt={debugLogCaptureAttemptId} reason=\"{debugLogCaptureReason}\" entries={debugLogCaptureEntries.Count} latestLog={FormatDebugValue(latestDebugLogMessageSummary)}";
+        }
+    }
+
     public void ResetInstanceState(string reason)
     {
         lock (gate)
@@ -99,7 +146,7 @@ public sealed class TreasureHintTracker : IDisposable
 
     public void Dispose()
     {
-        chatGui.ChatMessage -= OnChatMessage;
+        chatGui.LogMessage -= OnLogMessage;
         framework.Update -= OnFrameworkUpdate;
 
         if (Snapshot.HasActiveSession)
@@ -223,25 +270,32 @@ public sealed class TreasureHintTracker : IDisposable
         lastTreasureBuffState = scannerSnapshot.HasTreasureBuff;
     }
 
-    private void OnChatMessage(IHandleableChatMessage message)
+    private void OnLogMessage(ILogMessage message)
     {
-        if (!Snapshot.HasActiveSession)
+        var summary = CaptureDebugLogMessageSummary(message);
+        if (summary.Length > 0)
+        {
+            int attemptId;
+            string reason;
+            lock (gate)
+            {
+                attemptId = debugLogCaptureAttemptId;
+                reason = debugLogCaptureReason;
+            }
+
+            logger.Info($"[TreasureHintTracker] op=treasure-logmessage-debug attempt={attemptId} source=testkeyitem reason=\"{SanitizeLogText(reason)}\" {summary}");
+        }
+
+        if (!TryClassifyTreasureLogMessage(message, out var parsedEvent))
         {
             return;
         }
 
-        var chatText = message.Message.TextValue;
-        if (chatText.Length == 0)
-        {
-            return;
-        }
+        ApplyParsedTreasureEvent(parsedEvent);
+    }
 
-        var parsedEvent = ClassifyMessage(chatText);
-        if (parsedEvent == null)
-        {
-            return;
-        }
-
+    private void ApplyParsedTreasureEvent(TreasureHintEvent parsedEvent)
+    {
         TreasureHintSnapshot updatedSnapshot;
         lock (gate)
         {
@@ -292,172 +346,111 @@ public sealed class TreasureHintTracker : IDisposable
         logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=event revision={updatedSnapshot.Revision} transition=\"{updatedSnapshot.LastTransition}\"");
     }
 
-    private static TreasureHintEvent? ClassifyMessage(string message)
+    private string CaptureDebugLogMessageSummary(ILogMessage message)
     {
-        var normalized = NormalizeMessage(message);
-        if (normalized.Length == 0)
+        lock (gate)
         {
-            return null;
-        }
-
-        if (normalized.Contains("guide you to another treasure coffer", StringComparison.Ordinal)
-            || normalized.Contains("willing to guide you to another treasure coffer", StringComparison.Ordinal)
-            || normalized.Contains("find another treasure", StringComparison.Ordinal))
-        {
-            return new TreasureHintEvent
+            if (debugLogCaptureDeadlineAt == DateTimeOffset.MinValue || DateTimeOffset.UtcNow > debugLogCaptureDeadlineAt)
             {
-                Kind = TreasureHintKind.BonusOffer,
-                RawText = message,
-                NormalizedText = normalized,
-            };
-        }
+                return string.Empty;
+            }
 
-        if (normalized.Contains("seems to be thirsty for elixir", StringComparison.Ordinal)
-            || normalized.Contains("use a magical elixir", StringComparison.Ordinal))
-        {
-            return new TreasureHintEvent
+            if (!DebugTreasureLogMessageIds.Contains(message.LogMessageId))
             {
-                Kind = TreasureHintKind.ElixirPrompt,
-                RawText = message,
-                NormalizedText = normalized,
-            };
-        }
+                return string.Empty;
+            }
 
-        if (normalized.Contains("you discover a treasure coffer", StringComparison.Ordinal))
-        {
-            return new TreasureHintEvent
-            {
-                Kind = TreasureHintKind.CofferReveal,
-                RawText = message,
-                NormalizedText = normalized,
-            };
+            var summary = BuildDebugLogMessageSummary(message);
+            debugLogCaptureEntries.Add(summary);
+            latestDebugLogMessageSummary = summary;
+            return summary;
         }
-
-        if (TryParseHint(normalized, out var direction, out var distanceBucket, out var distanceText))
-        {
-            return new TreasureHintEvent
-            {
-                Kind = TreasureHintKind.Hint,
-                RawText = message,
-                NormalizedText = normalized,
-                Direction = direction,
-                DistanceBucket = distanceBucket,
-                DistanceText = distanceText,
-            };
-        }
-
-        if (normalized.Contains("treasure coffer", StringComparison.Ordinal))
-        {
-            return new TreasureHintEvent
-            {
-                Kind = TreasureHintKind.CofferMessage,
-                RawText = message,
-                NormalizedText = normalized,
-            };
-        }
-
-        return null;
     }
 
-    private static bool TryParseHint(string normalizedMessage, out TreasureDirection direction, out string distanceBucket, out string distanceText)
+    private bool TryClassifyTreasureLogMessage(ILogMessage message, out TreasureHintEvent parsedEvent)
     {
-        const string fullPrefix = "you sense something ";
-        const string directionOnlyPrefix = "you sense something to the ";
+        parsedEvent = null!;
 
-        direction = TreasureDirection.Unknown;
-        distanceBucket = string.Empty;
-        distanceText = string.Empty;
-
-        if (normalizedMessage.StartsWith(directionOnlyPrefix, StringComparison.Ordinal))
+        switch (message.LogMessageId)
         {
-            var directionText = normalizedMessage[directionOnlyPrefix.Length..];
-            direction = FindDirection(directionText);
-            if (direction == TreasureDirection.Unknown)
-            {
+            case TreasureCofferRevealLogMessageId:
+                parsedEvent = new TreasureHintEvent
+                {
+                    Kind = TreasureHintKind.CofferReveal,
+                    RawText = $"LogMessageId={message.LogMessageId}",
+                    NormalizedText = $"logmessage:{message.LogMessageId}",
+                };
+                return true;
+            case TreasureElixirPromptLogMessageId:
+                parsedEvent = new TreasureHintEvent
+                {
+                    Kind = TreasureHintKind.ElixirPrompt,
+                    RawText = $"LogMessageId={message.LogMessageId}",
+                    NormalizedText = $"logmessage:{message.LogMessageId}",
+                };
+                return true;
+            case TreasureBonusOfferLogMessageId:
+                parsedEvent = new TreasureHintEvent
+                {
+                    Kind = TreasureHintKind.BonusOffer,
+                    RawText = $"LogMessageId={message.LogMessageId}",
+                    NormalizedText = $"logmessage:{message.LogMessageId}",
+                };
+                return true;
+            case TreasureHintImmediateLogMessageId:
+            case TreasureHintCloseLogMessageId:
+            case TreasureHintFarLogMessageId:
+            case TreasureHintBeyondFarLogMessageId:
+                if (!message.TryGetIntParameter(0, out var directionValue))
+                {
+                    logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=missing-direction-param");
+                    return false;
+                }
+
+                var direction = MapDirection(directionValue);
+                if (direction == TreasureDirection.Unknown)
+                {
+                    logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=unknown-direction value={directionValue}");
+                }
+
+                parsedEvent = new TreasureHintEvent
+                {
+                    Kind = TreasureHintKind.Hint,
+                    RawText = $"LogMessageId={message.LogMessageId}",
+                    NormalizedText = $"logmessage:{message.LogMessageId}",
+                    Direction = direction,
+                    DistanceBucket = MapDistanceBucket(message.LogMessageId),
+                    DistanceText = MapDistanceBucket(message.LogMessageId),
+                };
+                return true;
+            default:
                 return false;
-            }
-
-            distanceBucket = "close";
-            return true;
         }
-
-        if (!normalizedMessage.StartsWith(fullPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var toTheIndex = normalizedMessage.IndexOf(" to the ", fullPrefix.Length, StringComparison.Ordinal);
-        if (toTheIndex < 0)
-        {
-            return false;
-        }
-
-        distanceText = normalizedMessage[fullPrefix.Length..toTheIndex].Trim();
-        if (distanceText.Length == 0)
-        {
-            return false;
-        }
-
-        var directionTextRaw = normalizedMessage[(toTheIndex + " to the ".Length)..].Trim();
-        direction = FindDirection(directionTextRaw);
-        if (direction == TreasureDirection.Unknown)
-        {
-            return false;
-        }
-
-        distanceBucket = NormalizeDistanceBucket(distanceText);
-        return true;
     }
 
-    private static string NormalizeDistanceBucket(string distanceText)
-    {
-        var parts = distanceText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length == 2 && string.Equals(parts[0], parts[1], StringComparison.Ordinal)
-            ? $"beyond_{parts[0]}"
-            : distanceText;
-    }
-
-    private static TreasureDirection FindDirection(string message)
-    {
-        foreach (var rawDirection in DirectionScanOrder)
+    private static TreasureDirection MapDirection(int directionValue)
+        => directionValue switch
         {
-            if (!message.Contains(rawDirection, StringComparison.Ordinal))
-            {
-                continue;
-            }
+            1 => TreasureDirection.North,
+            2 => TreasureDirection.Northeast,
+            3 => TreasureDirection.East,
+            4 => TreasureDirection.Southeast,
+            5 => TreasureDirection.South,
+            6 => TreasureDirection.Southwest,
+            7 => TreasureDirection.West,
+            8 => TreasureDirection.Northwest,
+            _ => TreasureDirection.Unknown,
+        };
 
-            return DirectionAliases.GetValueOrDefault(rawDirection, TreasureDirection.Unknown);
-        }
-
-        return TreasureDirection.Unknown;
-    }
-
-    private static string NormalizeMessage(string message)
-    {
-        var builder = new StringBuilder(message.Length);
-        var previousWasWhitespace = true;
-        foreach (var character in message)
+    private static string MapDistanceBucket(uint logMessageId)
+        => logMessageId switch
         {
-            var normalizedCharacter = char.ToLowerInvariant(character);
-            var isAllowed = char.IsLetterOrDigit(normalizedCharacter) || normalizedCharacter == '-' || normalizedCharacter == '\'';
-            if (isAllowed)
-            {
-                builder.Append(normalizedCharacter);
-                previousWasWhitespace = false;
-                continue;
-            }
-
-            if (previousWasWhitespace)
-            {
-                continue;
-            }
-
-            builder.Append(' ');
-            previousWasWhitespace = true;
-        }
-
-        return builder.ToString().Trim();
-    }
+            TreasureHintImmediateLogMessageId => "immediate",
+            TreasureHintCloseLogMessageId => "close",
+            TreasureHintFarLogMessageId => "far",
+            TreasureHintBeyondFarLogMessageId => "beyond_far",
+            _ => string.Empty,
+        };
 
     private static string BuildTransitionMessage(TreasureHintEvent treasureEvent)
         => treasureEvent.Kind switch
@@ -475,4 +468,32 @@ public sealed class TreasureHintTracker : IDisposable
 
     private static string FormatValue(string value)
         => value.Length == 0 ? "unknown" : value;
+
+    private static string BuildDebugLogMessageSummary(ILogMessage message)
+    {
+        var ints = new List<string>();
+        var strings = new List<string>();
+        for (var i = 0; i < message.ParameterCount; i++)
+        {
+            if (message.TryGetIntParameter(i, out var intValue))
+            {
+                ints.Add($"{i}:{intValue}");
+            }
+
+            if (message.TryGetStringParameter(i, out var stringValue))
+            {
+                strings.Add($"{i}:\"{SanitizeLogText(stringValue.ExtractText())}\"");
+            }
+        }
+
+        return $"id={message.LogMessageId} gameDataRow={message.GameData.RowId} paramCount={message.ParameterCount} ints=[{string.Join(", ", ints)}] strings=[{string.Join(", ", strings)}]";
+    }
+
+    private static string SanitizeLogText(string text)
+        => text.Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Replace("\"", "'", StringComparison.Ordinal);
+
+    private static string FormatDebugValue(string value)
+        => value.Length == 0 ? "none" : value;
 }
