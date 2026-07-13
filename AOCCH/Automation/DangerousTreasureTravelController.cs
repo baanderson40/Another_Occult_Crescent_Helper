@@ -91,6 +91,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private DangerousTreasureWalkingPhase activeWalkingPhase;
     private Vector3 pendingHiddenMoveDestination;
     private float pendingHiddenMoveArrivalTolerance;
+    private bool restorePending;
+    private bool restoreAttemptInFlight;
+    private int restoreAttemptCount;
+    private int restoreTargetGearsetNumber;
+    private uint restoreTargetClassJobId;
+    private string restoreGearsetName = string.Empty;
+    private string lastRestoreReason = string.Empty;
+    private string lastRestoreError = string.Empty;
+    private DateTimeOffset restoreRequestedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset restoreAttemptAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset restoreAttemptStartedAt = DateTimeOffset.MinValue;
 
     public DangerousTreasureTravelController(
         IFramework framework,
@@ -251,6 +262,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeWalkingPhase = DangerousTreasureWalkingPhase.None;
             pendingHiddenMoveDestination = Vector3.Zero;
             pendingHiddenMoveArrivalTolerance = 0f;
+            restorePending = false;
+            restoreAttemptInFlight = false;
+            restoreAttemptCount = 0;
+            restoreTargetGearsetNumber = 0;
+            restoreTargetClassJobId = 0;
+            restoreGearsetName = string.Empty;
+            lastRestoreReason = string.Empty;
+            lastRestoreError = string.Empty;
+            restoreRequestedAt = DateTimeOffset.MinValue;
+            restoreAttemptAvailableAt = DateTimeOffset.MinValue;
+            restoreAttemptStartedAt = DateTimeOffset.MinValue;
         }
 
         logger.Info($"[DangerousTravel] op=reset reason={reason}");
@@ -270,6 +292,116 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lock (gate)
             {
                 return ninjaGearsetEquippedByController;
+            }
+        }
+    }
+
+    public bool IsFateGearsetRestorePending
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restorePending;
+            }
+        }
+    }
+
+    public bool IsFateGearsetRestoreInProgress
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreAttemptInFlight;
+            }
+        }
+    }
+
+    public int FateGearsetRestoreAttemptCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreAttemptCount;
+            }
+        }
+    }
+
+    public int PendingFateGearsetNumber
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreTargetGearsetNumber;
+            }
+        }
+    }
+
+    public uint PendingFateGearsetTargetClassJobId
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreTargetClassJobId;
+            }
+        }
+    }
+
+    public string PendingFateGearsetName
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreGearsetName;
+            }
+        }
+    }
+
+    public string LastFateGearsetRestoreReason
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRestoreReason;
+            }
+        }
+    }
+
+    public string LastFateGearsetRestoreError
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRestoreError;
+            }
+        }
+    }
+
+    public DateTimeOffset FateGearsetRestoreRequestedAt
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreRequestedAt;
+            }
+        }
+    }
+
+    public DateTimeOffset FateGearsetRestoreAttemptAvailableAt
+    {
+        get
+        {
+            lock (gate)
+            {
+                return restoreAttemptAvailableAt;
             }
         }
     }
@@ -347,6 +479,11 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (!HasEquippedNinjaGearset)
         {
+            if (IsFateGearsetRestorePending)
+            {
+                ClearPendingFateGearsetRestore();
+            }
+
             return true;
         }
 
@@ -355,31 +492,126 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lock (gate)
             {
                 ninjaGearsetEquippedByController = false;
+                restorePending = false;
+                restoreAttemptInFlight = false;
+                restoreAttemptCount = 0;
+                restoreTargetGearsetNumber = 0;
+                restoreTargetClassJobId = 0;
+                restoreGearsetName = string.Empty;
+                lastRestoreError = string.Empty;
+                restoreRequestedAt = DateTimeOffset.MinValue;
+                restoreAttemptAvailableAt = DateTimeOffset.MinValue;
+                restoreAttemptStartedAt = DateTimeOffset.MinValue;
             }
 
             logger.Info($"{BuildLogTag()} op=restore-gearset-skip reason=\"{reason}\" fateGearsetConfigured=false");
             return true;
         }
 
-        var result = gameActionController.TryEquipGearsetReliably(
-            configuration.FateGearsetNumber,
-            reason,
-            GearsetEquipTimeout,
-            MaximumGearsetEquipAttempts,
-            GearsetRetryDelay);
-        if (!result.Success)
-        {
-            logger.Warning($"{BuildLogTag()} op=restore-gearset-failed reason=\"{reason}\" gearset={configuration.FateGearsetNumber} error={result.Error}");
-            return false;
-        }
-
         lock (gate)
         {
-            ninjaGearsetEquippedByController = false;
+            lastRestoreReason = reason;
+            restorePending = true;
+            restoreTargetGearsetNumber = configuration.FateGearsetNumber;
+            restoreRequestedAt = restoreRequestedAt == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : restoreRequestedAt;
+            if (restoreAttemptAvailableAt == DateTimeOffset.MinValue)
+            {
+                restoreAttemptAvailableAt = DateTimeOffset.UtcNow;
+            }
         }
 
-        logger.Info($"{BuildLogTag()} op=restore-gearset reason=\"{reason}\" gearset={configuration.FateGearsetNumber} gearsetName=\"{result.Gearset?.Name ?? "unknown"}\" targetClassJob={(result.TargetClassJobId?.ToString() ?? "unknown")} currentClassJob={gameActionController.CurrentClassJobId}");
+        logger.Info($"{BuildLogTag()} op=restore-gearset-requested reason=\"{reason}\" gearset={configuration.FateGearsetNumber} currentClassJob={gameActionController.CurrentClassJobId}");
         return true;
+    }
+
+    public void TryProcessPendingFateGearsetRestore(string context)
+    {
+        if (IsRunning || !IsFateGearsetRestorePending)
+        {
+            return;
+        }
+
+        if (!HasEquippedNinjaGearset)
+        {
+            ClearPendingFateGearsetRestore();
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
+        if (restoreAttemptInFlight)
+        {
+            if (restoreTargetClassJobId != 0 && gameActionController.IsOnClassJob(restoreTargetClassJobId))
+            {
+                var completedReason = lastRestoreReason;
+                var completedGearsetNumber = restoreTargetGearsetNumber;
+                var completedGearsetName = restoreGearsetName.Length == 0 ? $"Gearset {restoreTargetGearsetNumber}" : restoreGearsetName;
+                var completedTargetClassJobId = restoreTargetClassJobId;
+                ClearPendingFateGearsetRestore(clearNinjaOwnership: true);
+                logger.ResetThrottle("dangerous-treasure-restore-confirmation");
+                logger.Info($"{BuildLogTag()} op=restore-gearset-success context=\"{context}\" reason=\"{completedReason}\" gearset={completedGearsetNumber} gearsetName=\"{completedGearsetName}\" targetClassJob={completedTargetClassJobId} currentClassJob={gameActionController.CurrentClassJobId}");
+                return;
+            }
+
+            if (now - restoreAttemptStartedAt >= GearsetEquipTimeout)
+            {
+                var timeoutError = $"FATE gearset restore attempt {restoreAttemptCount} did not activate ClassJob {restoreTargetClassJobId} within {GearsetEquipTimeout.TotalSeconds:0.0}s. currentClassJob={gameActionController.CurrentClassJobId}.";
+                SchedulePendingFateGearsetRestoreRetry(timeoutError, now, context, "timeout");
+                return;
+            }
+
+            logger.DebugThrottled(
+                "dangerous-treasure-restore-confirmation",
+                WaitLogInterval,
+                $"Pending FATE gearset restore is waiting for class/job confirmation. context={context} gearset={restoreTargetGearsetNumber} gearsetName={restoreGearsetName} currentClassJob={gameActionController.CurrentClassJobId} targetClassJob={restoreTargetClassJobId}.");
+            return;
+        }
+
+        if (now < restoreAttemptAvailableAt)
+        {
+            logger.DebugThrottled(
+                "dangerous-treasure-restore-delay",
+                TimeSpan.FromMilliseconds(250),
+                $"Pending FATE gearset restore is waiting {(restoreAttemptAvailableAt - now).TotalSeconds:0.0}s before the next throttled retry. context={context} gearset={restoreTargetGearsetNumber} currentClassJob={gameActionController.CurrentClassJobId}.");
+            return;
+        }
+
+        if (!gameActionController.IsPlayerInChangeableState())
+        {
+            logger.DebugThrottled(
+                "dangerous-treasure-restore-ready",
+                WaitLogInterval,
+                $"Pending FATE gearset restore is waiting for a changeable state. context={context} gearset={restoreTargetGearsetNumber} {gameActionController.GetChangeableStateSummary()}");
+            return;
+        }
+
+        restoreAttemptCount++;
+        var result = gameActionController.TryEquipGearset(restoreTargetGearsetNumber, $"FATE gearset restore ({context})");
+        if (!result.Success)
+        {
+            SchedulePendingFateGearsetRestoreRetry(result.Error, now, context, "equip-failed");
+            return;
+        }
+
+        restoreGearsetName = result.Gearset?.Name ?? $"Gearset {restoreTargetGearsetNumber}";
+        restoreTargetClassJobId = result.TargetClassJobId ?? 0;
+
+        if (restoreTargetClassJobId != 0 && gameActionController.IsOnClassJob(restoreTargetClassJobId))
+        {
+            var completedReason = lastRestoreReason;
+            var completedGearsetNumber = restoreTargetGearsetNumber;
+            var completedGearsetName = restoreGearsetName;
+            var completedTargetClassJobId = restoreTargetClassJobId;
+            ClearPendingFateGearsetRestore(clearNinjaOwnership: true);
+            logger.Info($"{BuildLogTag()} op=restore-gearset-success context=\"{context}\" reason=\"{completedReason}\" gearset={completedGearsetNumber} gearsetName=\"{completedGearsetName}\" targetClassJob={completedTargetClassJobId} currentClassJob={gameActionController.CurrentClassJobId}");
+            return;
+        }
+
+        restoreAttemptInFlight = true;
+        restoreAttemptStartedAt = now;
+        lastRestoreError = string.Empty;
+
+        logger.Info($"{BuildLogTag()} op=restore-gearset-attempt context=\"{context}\" attempt={restoreAttemptCount} gearset={restoreTargetGearsetNumber} gearsetName=\"{restoreGearsetName}\" targetClassJob={restoreTargetClassJobId} currentClassJob={gameActionController.CurrentClassJobId}");
     }
 
     public void AcknowledgeTerminalState()
@@ -789,6 +1021,41 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.ResetThrottle("dangerous-treasure-travel");
         TransitionTo(DangerousTreasureTravelState.CandidateSkipped, reason, error: reason, result: DangerousTreasureTravelResult.CandidateSkipped);
         logger.Warning($"{BuildLogTag()} op=skip state={DangerousTreasureTravelState.CandidateSkipped} candidate={activeCandidateLabel} reason={reason}");
+    }
+
+    private void SchedulePendingFateGearsetRestoreRetry(string error, DateTimeOffset now, string context, string outcome)
+    {
+        lock (gate)
+        {
+            restoreAttemptInFlight = false;
+            restoreAttemptStartedAt = DateTimeOffset.MinValue;
+            restoreAttemptAvailableAt = now + GearsetRetryDelay;
+            lastRestoreError = error;
+        }
+
+        logger.Warning($"{BuildLogTag()} op=restore-gearset-retry context=\"{context}\" outcome={outcome} reason=\"{LastFateGearsetRestoreReason}\" gearset={PendingFateGearsetNumber} attempt={FateGearsetRestoreAttemptCount} retryDelay={GearsetRetryDelay.TotalSeconds:0.0}s error={error}");
+    }
+
+    private void ClearPendingFateGearsetRestore(bool clearNinjaOwnership = false)
+    {
+        lock (gate)
+        {
+            if (clearNinjaOwnership)
+            {
+                ninjaGearsetEquippedByController = false;
+            }
+
+            restorePending = false;
+            restoreAttemptInFlight = false;
+            restoreAttemptCount = 0;
+            restoreTargetGearsetNumber = 0;
+            restoreTargetClassJobId = 0;
+            restoreGearsetName = string.Empty;
+            lastRestoreError = string.Empty;
+            restoreRequestedAt = DateTimeOffset.MinValue;
+            restoreAttemptAvailableAt = DateTimeOffset.MinValue;
+            restoreAttemptStartedAt = DateTimeOffset.MinValue;
+        }
     }
 
     private void SetFailure(string reason)

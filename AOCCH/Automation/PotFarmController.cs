@@ -545,6 +545,8 @@ public sealed class PotFarmController : IDisposable
 
     private void TickBootstrapping()
     {
+        TryHandlePendingFateGearsetRestore("bootstrapping");
+
         if (TryHandleInstanceTimeManagement("before starting the next pot cycle", PotFarmState.WaitingForPredictedWindow))
         {
             return;
@@ -576,6 +578,8 @@ public sealed class PotFarmController : IDisposable
 
     private void TickWaitingForPredictedWindow()
     {
+        TryHandlePendingFateGearsetRestore("waiting-for-predicted-window");
+
         if (TryHandleInstanceTimeManagement("while waiting for the next pot cycle", PotFarmState.WaitingForPredictedWindow))
         {
             return;
@@ -620,6 +624,8 @@ public sealed class PotFarmController : IDisposable
 
     private void TickWaitingAtSpawn()
     {
+        TryHandlePendingFateGearsetRestore("waiting-at-spawn");
+
         var potCycleSnapshot = potCycleTracker.Snapshot;
         if ((WaitDeadlineAt == DateTimeOffset.MinValue || isWaitingForConfiguredBootstrapPot)
             && potCycleSnapshot.HasPredictedNextPot
@@ -1135,6 +1141,11 @@ public sealed class PotFarmController : IDisposable
         }
 
         dangerousTreasureTravelController.RestoreFateGearset($"starting pot FATE {activePotFate.Name}");
+        dangerousTreasureTravelController.TryProcessPendingFateGearsetRestore("starting-pot-fate");
+        if (dangerousTreasureTravelController.IsFateGearsetRestorePending)
+        {
+            logger.Warning($"{BuildLogTag()} op=fate-gearset-restore-pending pot=\"{activePotFate.Name}\" ({activePotFate.Id}) reason=continuing-without-confirmed-restore restoreReason=\"{dangerousTreasureTravelController.LastFateGearsetRestoreReason}\" restoreError={FormatOptionalValue(dangerousTreasureTravelController.LastFateGearsetRestoreError)} targetGearset={dangerousTreasureTravelController.PendingFateGearsetNumber} currentClassJob={gameActionController.CurrentClassJobId}");
+        }
 
         if (!fateAutomationController.Start(activePotFate, FateRunCompletionBehavior.CompleteInPlace))
         {
@@ -1249,6 +1260,16 @@ public sealed class PotFarmController : IDisposable
         => runStartedAt == DateTimeOffset.MinValue
             ? DateTimeOffset.UtcNow + BootstrapWaitTimeout
             : runStartedAt + BootstrapWaitTimeout;
+
+    private void TryHandlePendingFateGearsetRestore(string context)
+    {
+        if (!dangerousTreasureTravelController.IsFateGearsetRestorePending)
+        {
+            return;
+        }
+
+        dangerousTreasureTravelController.TryProcessPendingFateGearsetRestore(context);
+    }
 
     private void SetFailure(string reason)
     {
@@ -1504,4 +1525,7 @@ public sealed class PotFarmController : IDisposable
 
     private string BuildLogTag()
         => currentRunId.Length == 0 ? "[Pot]" : $"[Pot run={currentRunId}]";
+
+    private static string FormatOptionalValue(string value)
+        => string.IsNullOrWhiteSpace(value) ? "none" : value;
 }

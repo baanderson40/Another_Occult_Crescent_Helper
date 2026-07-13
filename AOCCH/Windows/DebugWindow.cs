@@ -722,6 +722,13 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Stealthed: {(gameActionController.IsStealthed ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Walking Phase: {dangerousTreasureTravelController.ActiveWalkingPhase}");
         ImGui.TextUnformatted($"Pending Hidden Move: {dangerousTreasureTravelController.PendingHiddenMovePhase}");
+        ImGui.TextUnformatted($"FATE Gearset Restore Pending: {(dangerousTreasureTravelController.IsFateGearsetRestorePending ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"FATE Gearset Restore In Progress: {(dangerousTreasureTravelController.IsFateGearsetRestoreInProgress ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"FATE Gearset Restore Attempts: {dangerousTreasureTravelController.FateGearsetRestoreAttemptCount}");
+        ImGui.TextWrapped($"FATE Gearset Restore Target: {(dangerousTreasureTravelController.PendingFateGearsetNumber <= 0 ? "None" : $"{dangerousTreasureTravelController.PendingFateGearsetNumber} / {FormatValue(dangerousTreasureTravelController.PendingFateGearsetName)} / ClassJob {dangerousTreasureTravelController.PendingFateGearsetTargetClassJobId}")}");
+        ImGui.TextWrapped($"FATE Gearset Restore Reason: {FormatValue(dangerousTreasureTravelController.LastFateGearsetRestoreReason)}");
+        ImGui.TextWrapped($"FATE Gearset Restore Requested At: {FormatTimestamp(dangerousTreasureTravelController.FateGearsetRestoreRequestedAt)}");
+        ImGui.TextWrapped($"FATE Gearset Restore Next Attempt: {FormatTimestamp(dangerousTreasureTravelController.FateGearsetRestoreAttemptAvailableAt)}");
         ImGui.TextWrapped($"Pending Hidden Destination: {FormatDangerousPendingDestination(dangerousTreasureTravelController.PendingHiddenMovePhase, dangerousTreasureTravelController.PendingHiddenMoveDestination)}");
         ImGui.TextWrapped($"Pending Hidden Arrival Tolerance: {FormatDangerousPendingArrivalTolerance(dangerousTreasureTravelController.PendingHiddenMovePhase, dangerousTreasureTravelController.PendingHiddenMoveArrivalTolerance)}");
         ImGui.TextWrapped($"Last Transition: {dangerousTreasureTravelController.LastTransition}");
@@ -729,6 +736,11 @@ public sealed class DebugWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(dangerousTreasureTravelController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {dangerousTreasureTravelController.LastError}");
+        }
+
+        if (!string.IsNullOrEmpty(dangerousTreasureTravelController.LastFateGearsetRestoreError))
+        {
+            ImGui.TextWrapped($"FATE Gearset Restore Error: {dangerousTreasureTravelController.LastFateGearsetRestoreError}");
         }
     }
 
