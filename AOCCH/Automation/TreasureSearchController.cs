@@ -1150,7 +1150,7 @@ public sealed class TreasureSearchController : IDisposable
                 return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because aggro level {candidate.AggroLevel} exceeds Maximum Aggro Level {configuration.MaximumAggroLevel} and Ninja travel is disabled.");
             }
 
-            if (!dangerousTreasureTravelController.Start(candidate, destination.Value, CandidateArrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1451,7 +1451,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
 
-            if (!dangerousTreasureTravelController.Start(activeCandidate, resolvedDestination, arrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), activeCandidate, resolvedDestination, arrivalTolerance))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1560,7 +1560,7 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.DangerousTransitionStarted;
         }
 
-        if (!dangerousTreasureTravelController.Start(handoffCandidate, destination.Value, CandidateArrivalTolerance))
+        if (!dangerousTreasureTravelController.Start(currentCandidate, handoffCandidate, destination.Value, CandidateArrivalTolerance))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
@@ -1576,7 +1576,7 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.DangerousTransitionStarted;
         }
 
-        logger.Info($"{BuildLogTag()} op=handoff-dangerous candidate={handoffCandidate.Label} action=start-dangerous-travel");
+        logger.Info($"{BuildLogTag()} op=handoff-dangerous fromCandidate={currentCandidate.Label} toCandidate={handoffCandidate.Label} context=handoff-source-as-previous-threshold reason={reason} action=start-dangerous-travel");
         return CandidateHandoffResult.DangerousTransitionStarted;
     }
 
@@ -1643,6 +1643,11 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool IsHandledCandidate(string label)
         => handledCandidateLabels.Contains(label);
+
+    private TreasureCofferCandidateData? GetTraversalPreviousCandidate(int candidateIndex)
+        => candidateIndex > 0 && candidateIndex - 1 < orderedCandidates.Count
+            ? orderedCandidates[candidateIndex - 1]
+            : null;
 
     private RefinementMovePlan? ResolveRefinementMove(Vector3 playerPosition, TreasureDirection direction, float baseStep)
     {

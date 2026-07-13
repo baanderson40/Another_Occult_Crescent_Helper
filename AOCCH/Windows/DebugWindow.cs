@@ -714,10 +714,16 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Dangerous Treasure Travel");
         ImGui.TextUnformatted($"State: {dangerousTreasureTravelController.State}");
+        ImGui.TextWrapped($"Active Candidate: {FormatValue(dangerousTreasureTravelController.ActiveCandidateLabel)}");
+        ImGui.TextWrapped($"Previous Candidate: {FormatValue(dangerousTreasureTravelController.PreviousCandidateLabel)}");
         ImGui.TextUnformatted($"Ninja Gearset Equipped By Controller: {(dangerousTreasureTravelController.HasEquippedNinjaGearset ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Current Class Job: {gameActionController.CurrentClassJobId}");
         ImGui.TextUnformatted($"Hide Available: {(gameActionController.CanUseHide() ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Stealthed: {(gameActionController.IsStealthed ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Walking Phase: {dangerousTreasureTravelController.ActiveWalkingPhase}");
+        ImGui.TextUnformatted($"Pending Hidden Move: {dangerousTreasureTravelController.PendingHiddenMovePhase}");
+        ImGui.TextWrapped($"Pending Hidden Destination: {FormatDangerousPendingDestination(dangerousTreasureTravelController.PendingHiddenMovePhase, dangerousTreasureTravelController.PendingHiddenMoveDestination)}");
+        ImGui.TextWrapped($"Pending Hidden Arrival Tolerance: {FormatDangerousPendingArrivalTolerance(dangerousTreasureTravelController.PendingHiddenMovePhase, dangerousTreasureTravelController.PendingHiddenMoveArrivalTolerance)}");
         ImGui.TextWrapped($"Last Transition: {dangerousTreasureTravelController.LastTransition}");
 
         if (!string.IsNullOrEmpty(dangerousTreasureTravelController.LastError))
@@ -962,6 +968,12 @@ public sealed class DebugWindow : Window, IDisposable
 
     private static string FormatValue(string? value)
         => string.IsNullOrEmpty(value) ? "None" : value;
+
+    private static string FormatDangerousPendingDestination(DangerousTreasureWalkingPhase phase, Vector3 destination)
+        => phase == DangerousTreasureWalkingPhase.None ? "None" : FormatVector3(destination);
+
+    private static string FormatDangerousPendingArrivalTolerance(DangerousTreasureWalkingPhase phase, float arrivalTolerance)
+        => phase == DangerousTreasureWalkingPhase.None ? "None" : arrivalTolerance.ToString("0.0", CultureInfo.InvariantCulture);
 
     private static string FormatStringList(System.Collections.Generic.IReadOnlyList<string> values)
         => values.Count == 0 ? "None" : string.Join(", ", values);

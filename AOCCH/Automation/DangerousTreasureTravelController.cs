@@ -35,6 +35,13 @@ public enum DangerousTreasureTravelResult
     Failed,
 }
 
+public enum DangerousTreasureWalkingPhase
+{
+    None,
+    ClearingPreviousThreshold,
+    FinalApproach,
+}
+
 public sealed class DangerousTreasureTravelController : IDisposable
 {
     private static int nextRunSequence;
@@ -47,6 +54,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
+    private const float ThresholdArrivalTolerance = 3.5f;
+    private const float PreviousThresholdExtraDistance = 6f;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -63,11 +72,10 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private string activeCandidateLabel = string.Empty;
+    private string previousCandidateLabel = string.Empty;
     private Vector3 finalDestination;
-    private Vector3 hideThresholdPoint;
     private float arrivalTolerance;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
-    private bool hideThresholdTravelRequired;
     private bool ninjaGearsetEquippedByController;
     private bool gearsetAttemptInFlight;
     private int gearsetAttemptCount;
@@ -77,6 +85,12 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private DateTimeOffset gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
     private bool hideRetryUsed;
     private DateTimeOffset lastHideActivatedAt = DateTimeOffset.MinValue;
+    private TreasureCofferCandidateData? previousCandidate;
+    private TreasureCofferCandidateData? currentCandidate;
+    private DangerousTreasureWalkingPhase pendingHiddenMovePhase;
+    private DangerousTreasureWalkingPhase activeWalkingPhase;
+    private Vector3 pendingHiddenMoveDestination;
+    private float pendingHiddenMoveArrivalTolerance;
 
     public DangerousTreasureTravelController(
         IFramework framework,
@@ -142,6 +156,72 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
     }
 
+    public string ActiveCandidateLabel
+    {
+        get
+        {
+            lock (gate)
+            {
+                return activeCandidateLabel;
+            }
+        }
+    }
+
+    public string PreviousCandidateLabel
+    {
+        get
+        {
+            lock (gate)
+            {
+                return previousCandidateLabel;
+            }
+        }
+    }
+
+    public DangerousTreasureWalkingPhase ActiveWalkingPhase
+    {
+        get
+        {
+            lock (gate)
+            {
+                return activeWalkingPhase;
+            }
+        }
+    }
+
+    public DangerousTreasureWalkingPhase PendingHiddenMovePhase
+    {
+        get
+        {
+            lock (gate)
+            {
+                return pendingHiddenMovePhase;
+            }
+        }
+    }
+
+    public Vector3 PendingHiddenMoveDestination
+    {
+        get
+        {
+            lock (gate)
+            {
+                return pendingHiddenMoveDestination;
+            }
+        }
+    }
+
+    public float PendingHiddenMoveArrivalTolerance
+    {
+        get
+        {
+            lock (gate)
+            {
+                return pendingHiddenMoveArrivalTolerance;
+            }
+        }
+    }
+
     public void ResetInstanceState(string reason)
     {
         lock (gate)
@@ -152,11 +232,10 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lastTransition = "Idle";
             lastError = string.Empty;
             activeCandidateLabel = string.Empty;
+            previousCandidateLabel = string.Empty;
             finalDestination = Vector3.Zero;
-            hideThresholdPoint = Vector3.Zero;
             arrivalTolerance = 0f;
             stateEnteredAt = DateTimeOffset.MinValue;
-            hideThresholdTravelRequired = false;
             ninjaGearsetEquippedByController = false;
             gearsetAttemptInFlight = false;
             gearsetAttemptCount = 0;
@@ -166,6 +245,12 @@ public sealed class DangerousTreasureTravelController : IDisposable
             gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
             hideRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
+            previousCandidate = null;
+            currentCandidate = null;
+            pendingHiddenMovePhase = DangerousTreasureWalkingPhase.None;
+            activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+            pendingHiddenMoveDestination = Vector3.Zero;
+            pendingHiddenMoveArrivalTolerance = 0f;
         }
 
         logger.Info($"[DangerousTravel] op=reset reason={reason}");
@@ -189,7 +274,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
     }
 
-    public bool Start(TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance)
+    public bool Start(TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance)
     {
         if (IsRunning)
         {
@@ -215,25 +300,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return false;
         }
 
-        var hideThresholdDistance = Math.Max(
-            finalArrivalTolerance + 1f,
-            candidate.HideThresholdDistance ?? configuration.HideThresholdDistance);
-        var thresholdPoint = CalculateHideThresholdPoint(playerPosition.Value, destination, hideThresholdDistance);
-        var resolvedThresholdPoint = movementController.FindNearestNavigablePoint(thresholdPoint, halfExtentXZ: 5f, halfExtentY: 5f);
-        if (!resolvedThresholdPoint.HasValue)
-        {
-            SkipCandidate($"Dangerous treasure candidate {candidate.Label} has no reliable vnavmesh hide-threshold point. target=<{thresholdPoint.X:0.000}, {thresholdPoint.Y:0.000}, {thresholdPoint.Z:0.000}> destination=<{destination.X:0.000}, {destination.Y:0.000}, {destination.Z:0.000}>.");
-            return false;
-        }
-
         lock (gate)
         {
             currentRunId = $"DangerousTravel#{Interlocked.Increment(ref nextRunSequence)}";
             activeCandidateLabel = candidate.Label;
+            previousCandidateLabel = previousCandidate?.Label ?? string.Empty;
             finalDestination = destination;
-            hideThresholdPoint = resolvedThresholdPoint.Value;
             arrivalTolerance = finalArrivalTolerance;
-            hideThresholdTravelRequired = CalculateFlatDistance(playerPosition.Value, resolvedThresholdPoint.Value) > arrivalTolerance;
             lastError = string.Empty;
             lastResult = DangerousTreasureTravelResult.None;
             gearsetAttemptInFlight = false;
@@ -244,11 +317,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
             gearsetAttemptAvailableAt = DateTimeOffset.UtcNow + GearsetPostElixirDelay;
             hideRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
+            this.previousCandidate = previousCandidate;
+            currentCandidate = candidate;
+            pendingHiddenMovePhase = DangerousTreasureWalkingPhase.None;
+            activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+            pendingHiddenMoveDestination = Vector3.Zero;
+            pendingHiddenMoveArrivalTolerance = 0f;
         }
 
-        logger.Info($"{BuildLogTag()} op=start candidate={candidate.Label} arrivalTolerance={finalArrivalTolerance:0.0} hideThreshold=<{resolvedThresholdPoint.Value.X:0.0}, {resolvedThresholdPoint.Value.Y:0.0}, {resolvedThresholdPoint.Value.Z:0.0}>");
+        logger.Info($"{BuildLogTag()} op=start candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} arrivalTolerance={finalArrivalTolerance:0.0}");
         movementController.SetLogOwner(currentRunId);
-        TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous treasure candidate {candidate.Label}.");
+        TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous candidate {candidate.Label}.");
         return true;
     }
 
@@ -372,20 +451,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
                 activeGearsetName = activeGearsetName.Length == 0 ? $"Gearset {activeGearsetNumber}" : activeGearsetName;
             }
 
-            if (!hideThresholdTravelRequired)
-            {
-                TransitionTo(DangerousTreasureTravelState.Dismounting, $"Confirmed Ninja gearset for dangerous treasure candidate {activeCandidateLabel}; already inside the hide threshold and preparing to Hide.");
-                return;
-            }
-
-            TransitionTo(DangerousTreasureTravelState.TravelingToHideThreshold, $"Confirmed Ninja gearset for dangerous treasure candidate {activeCandidateLabel}; continuing to the hide threshold.");
-            movementController.SetLogOwner(currentRunId);
-            if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", hideThresholdPoint, arrivalTolerance, shouldMountBeforeStep: true))
-            {
-                SkipCandidate(movementController.LastError.Length == 0
-                    ? $"Failed to start mounted travel to the hide threshold for dangerous treasure candidate {activeCandidateLabel}."
-                    : movementController.LastError);
-            }
+            ContinueDangerousApproach($"Confirmed Ninja gearset for dangerous candidate {activeCandidateLabel}.");
             return;
         }
 
@@ -506,7 +572,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             case MovementState.Arrived:
                 movementController.Stop("Reached dangerous treasure hide threshold.");
                 logger.ResetThrottle("dangerous-treasure-travel");
-                TransitionTo(DangerousTreasureTravelState.Dismounting, $"Reached the hide threshold for dangerous treasure candidate {activeCandidateLabel}.");
+                ContinueDangerousApproach($"Reached current dangerous threshold for {activeCandidateLabel}.");
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
@@ -526,14 +592,14 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (condition[ConditionFlag.InCombat])
         {
-            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} entered combat inside the hide threshold.");
+            ContinueDangerousApproach($"Combat started before Hide for dangerous candidate {activeCandidateLabel}.");
             return;
         }
 
         if (!condition[ConditionFlag.Mounted])
         {
             logger.ResetThrottle("dangerous-treasure-travel");
-            TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Dismounted inside the hide threshold for dangerous treasure candidate {activeCandidateLabel}; waiting for Hide to become ready.");
+            TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Dismounted at dangerous threshold for {activeCandidateLabel}; waiting for Hide.");
             return;
         }
 
@@ -562,13 +628,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (condition[ConditionFlag.InCombat])
         {
-            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} entered combat before Hide became ready.");
+            ContinueDangerousApproach($"Combat started while waiting for Hide on dangerous candidate {activeCandidateLabel}.");
             return;
         }
 
         if (gameActionController.IsStealthed)
         {
-            TransitionTo(DangerousTreasureTravelState.VerifyingHide, $"Hide is already active for dangerous treasure candidate {activeCandidateLabel}; verifying stealth before the final approach.");
+            TransitionTo(DangerousTreasureTravelState.VerifyingHide, $"Hide already active for dangerous candidate {activeCandidateLabel}; verifying stealth before continuing.");
             return;
         }
 
@@ -590,7 +656,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         if (gameActionController.CanUseHide())
         {
             logger.ResetThrottle("dangerous-treasure-travel-hide-ready");
-            TransitionTo(DangerousTreasureTravelState.UsingHide, $"Hide is ready for dangerous treasure candidate {activeCandidateLabel}; attempting stealth.");
+            TransitionTo(DangerousTreasureTravelState.UsingHide, $"Hide ready for dangerous candidate {activeCandidateLabel}; attempting stealth.");
             return;
         }
 
@@ -610,7 +676,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (condition[ConditionFlag.InCombat])
         {
-            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} entered combat before Hide could be applied.");
+            ContinueDangerousApproach($"Combat started before Hide application on dangerous candidate {activeCandidateLabel}.");
             return;
         }
 
@@ -643,17 +709,19 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (gameActionController.IsStealthed)
         {
-            movementController.SetLogOwner(currentRunId);
-            if (!movementController.StartDirectMove($"Hidden final approach for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: false))
-            {
-                SkipCandidate(movementController.LastError.Length == 0
-                    ? $"Failed to start the hidden final approach for dangerous treasure candidate {activeCandidateLabel}."
-                    : movementController.LastError);
-                return;
-            }
+            StartWalkingPhase(
+                pendingHiddenMovePhase,
+                pendingHiddenMoveDestination,
+                pendingHiddenMoveArrivalTolerance,
+                allowMount: false,
+                $"Hidden movement for {activeCandidateLabel}",
+                $"Hide verified for dangerous treasure candidate {activeCandidateLabel}; continuing the hidden approach.");
+            return;
+        }
 
-            logger.ResetThrottle("dangerous-treasure-travel");
-            TransitionTo(DangerousTreasureTravelState.WalkingToCandidate, $"Hide verified for dangerous treasure candidate {activeCandidateLabel}; starting the final on-foot approach.");
+        if (condition[ConditionFlag.InCombat])
+        {
+            ContinueDangerousApproach($"Combat started during Hide verification for dangerous candidate {activeCandidateLabel}.");
             return;
         }
 
@@ -682,23 +750,25 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     private void TickWalkingToCandidate()
     {
-        if (condition[ConditionFlag.InCombat] || !gameActionController.IsStealthed)
-        {
-            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} lost Hide or entered combat during the final approach.");
-            return;
-        }
-
         switch (movementController.State)
         {
             case MovementState.Arrived:
-                movementController.Stop("Reached dangerous treasure candidate after Hide approach.");
+                movementController.Stop("Reached dangerous treasure travel waypoint.");
                 logger.ResetThrottle("dangerous-treasure-travel");
-                TransitionTo(DangerousTreasureTravelState.Arrived, $"Reached dangerous treasure candidate {activeCandidateLabel} after Ninja/Hide travel.", result: DangerousTreasureTravelResult.Arrived);
+                if (activeWalkingPhase == DangerousTreasureWalkingPhase.ClearingPreviousThreshold)
+                {
+                    activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+                    ContinueDangerousApproach($"Cleared previous dangerous threshold while routing to {activeCandidateLabel}.");
+                    return;
+                }
+
+                activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+                TransitionTo(DangerousTreasureTravelState.Arrived, $"Reached dangerous treasure candidate {activeCandidateLabel} after Ninja travel.", result: DangerousTreasureTravelResult.Arrived);
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
                 SkipCandidate(movementController.LastError.Length == 0
-                    ? $"Failed the hidden final approach for dangerous treasure candidate {activeCandidateLabel}."
+                    ? $"Failed movement for dangerous treasure candidate {activeCandidateLabel}."
                     : movementController.LastError);
                 return;
         }
@@ -706,7 +776,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.DebugThrottled(
             "dangerous-treasure-travel",
             WaitLogInterval,
-            $"Dangerous treasure travel is on the hidden final approach for {activeCandidateLabel}. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed}.");
+            $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]}.");
     }
 
     private void SkipCandidate(string reason)
@@ -757,26 +827,207 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
         }
 
-        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={activeCandidateLabel} gearset={activeGearsetNumber} hideThresholdRequired={hideThresholdTravelRequired} result={LastResult} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={activeCandidateLabel} previousCandidate={(previousCandidateLabel.Length == 0 ? "none" : previousCandidateLabel)} gearset={activeGearsetNumber} walkingPhase={activeWalkingPhase} pendingHiddenMove={pendingHiddenMovePhase} result={LastResult} reason={reason}");
     }
 
     private string BuildLogTag()
         => currentRunId.Length == 0 ? "[DangerousTravel]" : $"[DangerousTravel run={currentRunId}]";
 
-    private static Vector3 CalculateHideThresholdPoint(Vector3 playerPosition, Vector3 destination, float hideThresholdDistance)
+    private bool ContinueDangerousApproach(string reason)
     {
-        var delta = new Vector2(playerPosition.X - destination.X, playerPosition.Z - destination.Z);
-        var distance = delta.Length();
-        if (distance <= hideThresholdDistance || distance <= float.Epsilon)
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue || currentCandidate == null)
         {
-            return playerPosition;
+            SetFailure($"Dangerous treasure candidate {activeCandidateLabel} could not continue because the player position or candidate context is unavailable.");
+            return false;
+        }
+
+        activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+        if (TryBeginPreviousThresholdClear(playerPosition.Value, reason))
+        {
+            return true;
+        }
+
+        playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue)
+        {
+            SetFailure($"Dangerous treasure candidate {activeCandidateLabel} lost player position while continuing the dangerous route.");
+            return false;
+        }
+
+        if (TryBeginCurrentThresholdTravel(playerPosition.Value, reason))
+        {
+            return true;
+        }
+
+        if (condition[ConditionFlag.InCombat])
+        {
+            return StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: true,
+                $"Dangerous treasure final approach for {activeCandidateLabel}",
+                $"{reason} Continuing dangerous approach without Hide because combat is active.");
+        }
+
+        if (gameActionController.IsStealthed)
+        {
+            return StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: false,
+                $"Hidden final approach for {activeCandidateLabel}",
+                $"{reason} Reusing active Hide for the final on-foot approach to dangerous candidate {activeCandidateLabel}.");
+        }
+
+        pendingHiddenMovePhase = DangerousTreasureWalkingPhase.FinalApproach;
+        pendingHiddenMoveDestination = finalDestination;
+        pendingHiddenMoveArrivalTolerance = arrivalTolerance;
+        TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Preparing Hide before the final approach to dangerous candidate {activeCandidateLabel}.");
+        return true;
+    }
+
+    private bool TryBeginPreviousThresholdClear(Vector3 playerPosition, string reason)
+    {
+        if (!IsWithinHideThreshold(previousCandidate, playerPosition))
+        {
+            return false;
+        }
+
+        if (condition[ConditionFlag.InCombat])
+        {
+            logger.Info($"{BuildLogTag()} op=previous-threshold-combat previousCandidate={(previousCandidateLabel.Length == 0 ? "none" : previousCandidateLabel)} candidate={activeCandidateLabel} reason={reason}");
+            return false;
+        }
+
+        var clearPoint = GetThresholdApproachPoint(previousCandidate, finalDestination, PreviousThresholdExtraDistance);
+        if (!clearPoint.HasValue)
+        {
+            return false;
+        }
+
+        var resolvedClearPoint = movementController.FindNearestNavigablePoint(clearPoint.Value, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!resolvedClearPoint.HasValue)
+        {
+            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} could not resolve a reliable vnavmesh clear point while leaving previous threshold {previousCandidateLabel}.");
+            return true;
+        }
+
+        if (gameActionController.IsStealthed)
+        {
+            return StartWalkingPhase(
+                DangerousTreasureWalkingPhase.ClearingPreviousThreshold,
+                resolvedClearPoint.Value,
+                ThresholdArrivalTolerance,
+                allowMount: false,
+                $"Dangerous treasure previous threshold clear for {activeCandidateLabel}",
+                $"{reason} Reusing active Hide to clear previous dangerous threshold {previousCandidateLabel} before continuing.");
+        }
+
+        pendingHiddenMovePhase = DangerousTreasureWalkingPhase.ClearingPreviousThreshold;
+        pendingHiddenMoveDestination = resolvedClearPoint.Value;
+        pendingHiddenMoveArrivalTolerance = ThresholdArrivalTolerance;
+        TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Inside previous dangerous threshold {previousCandidateLabel}; preparing Hide to clear it.");
+        return true;
+    }
+
+    private bool TryBeginCurrentThresholdTravel(Vector3 playerPosition, string reason)
+    {
+        if (currentCandidate == null || IsWithinHideThreshold(currentCandidate, playerPosition))
+        {
+            return false;
+        }
+
+        var thresholdPoint = GetThresholdApproachPoint(currentCandidate, playerPosition, 0f);
+        if (!thresholdPoint.HasValue)
+        {
+            return false;
+        }
+
+        var resolvedThresholdPoint = movementController.FindNearestNavigablePoint(thresholdPoint.Value, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!resolvedThresholdPoint.HasValue)
+        {
+            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} has no reliable vnavmesh hide-threshold point near <{thresholdPoint.Value.X:0.000}, {thresholdPoint.Value.Y:0.000}, {thresholdPoint.Value.Z:0.000}>.");
+            return true;
+        }
+
+        movementController.SetLogOwner(currentRunId);
+        if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", resolvedThresholdPoint.Value, ThresholdArrivalTolerance, shouldMountBeforeStep: true))
+        {
+            SkipCandidate(movementController.LastError.Length == 0
+                ? $"Failed to start mounted travel to the hide threshold for dangerous treasure candidate {activeCandidateLabel}."
+                : movementController.LastError);
+            return true;
+        }
+
+        TransitionTo(DangerousTreasureTravelState.TravelingToHideThreshold, $"{reason} Moving to current dangerous threshold for {activeCandidateLabel}.");
+        return true;
+    }
+
+    private bool StartWalkingPhase(
+        DangerousTreasureWalkingPhase phase,
+        Vector3 destination,
+        float destinationArrivalTolerance,
+        bool allowMount,
+        string description,
+        string reason)
+    {
+        movementController.SetLogOwner(currentRunId);
+        if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount))
+        {
+            SkipCandidate(movementController.LastError.Length == 0
+                ? $"Failed to start movement for dangerous treasure candidate {activeCandidateLabel}."
+                : movementController.LastError);
+            return false;
+        }
+
+        activeWalkingPhase = phase;
+        pendingHiddenMovePhase = DangerousTreasureWalkingPhase.None;
+        pendingHiddenMoveDestination = Vector3.Zero;
+        pendingHiddenMoveArrivalTolerance = 0f;
+        TransitionTo(DangerousTreasureTravelState.WalkingToCandidate, reason);
+        return true;
+    }
+
+    private int GetHideThresholdDistance(TreasureCofferCandidateData? candidate)
+        => Math.Max(10, candidate?.HideThresholdDistance ?? configuration.HideThresholdDistance);
+
+    private bool IsWithinHideThreshold(TreasureCofferCandidateData? candidate, Vector3 position)
+    {
+        if (candidate == null || !IsDangerousCandidate(candidate))
+        {
+            return false;
+        }
+
+        return CalculateFlatDistance(position, candidate.Position.ToVector3()) <= GetHideThresholdDistance(candidate);
+    }
+
+    private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
+        => candidate.AggroLevel > configuration.MaximumAggroLevel;
+
+    private Vector3? GetThresholdApproachPoint(TreasureCofferCandidateData? candidate, Vector3 fromPosition, float extraDistance)
+    {
+        if (candidate == null)
+        {
+            return null;
+        }
+
+        var reference = candidate.Position.ToVector3();
+        var delta = new Vector2(fromPosition.X - reference.X, fromPosition.Z - reference.Z);
+        var distance = delta.Length();
+        if (distance <= float.Epsilon)
+        {
+            return null;
         }
 
         var direction = Vector2.Normalize(delta);
+        var radius = GetHideThresholdDistance(candidate) + MathF.Max(0f, extraDistance);
         return new Vector3(
-            destination.X + (direction.X * hideThresholdDistance),
-            destination.Y,
-            destination.Z + (direction.Y * hideThresholdDistance));
+            reference.X + (direction.X * radius),
+            reference.Y,
+            reference.Z + (direction.Y * radius));
     }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
