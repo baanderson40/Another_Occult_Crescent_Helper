@@ -103,6 +103,7 @@ public sealed class TreasureSearchController : IDisposable
     private bool activeCandidateUsesOverride;
     private Vector3 activeCandidateResolvedPosition;
     private DateTimeOffset revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+    private bool revealedCofferLatched;
     private string lastNavmeshRejectionSummary = string.Empty;
     private string pendingCandidateAdvanceReason = string.Empty;
 
@@ -345,6 +346,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
             lastError = string.Empty;
             lastResult = TreasureSearchRunResult.None;
         }
@@ -407,6 +409,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
         }
 
         logger.Info($"[Treasure] op=reset reason={reason}");
@@ -447,6 +450,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineSessionId = 0;
             refinementProbeBaselineRevision = 0;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
         }
 
         return BeginCurrentCandidate(reason);
@@ -569,9 +573,21 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickProbingCandidate()
     {
+        if (TryAcquireVisibleCofferFromActiveCandidate("probe-scan"))
+        {
+            return;
+        }
+
         var scannerSnapshot = scanner.Snapshot;
         if (!scannerSnapshot.HasTreasureBuff)
         {
+            if (revealedCofferLatched)
+            {
+                logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=probe-expiry action=continue-post-reveal");
+                BeginRevealedCofferAcquisition(refinementEvent);
+                return;
+            }
+
             AdvanceCandidate($"Treasure buff expired before probing treasure candidate {activeCandidateKey?.Label}.");
             return;
         }
@@ -651,10 +667,22 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickRefiningCandidate()
     {
+        if (TryAcquireVisibleCofferFromActiveCandidate("refine-scan"))
+        {
+            return;
+        }
+
         var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.HasTreasureBuff && refinementEvent is not { Kind: TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage })
+        if (!scannerSnapshot.HasTreasureBuff && !revealedCofferLatched)
         {
             AdvanceCandidate($"Treasure buff expired while refining candidate {activeCandidateKey?.Label}.");
+            return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff && revealedCofferLatched)
+        {
+            logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=refine-expiry action=continue-post-reveal");
+            BeginRevealedCofferAcquisition(refinementEvent);
             return;
         }
 
@@ -873,6 +901,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
+            revealedCofferLatched = false;
         }
 
         logger.ResetThrottle("treasure-search-travel");
@@ -881,18 +910,29 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TryHandleVisibleCoffer()
     {
-        var scannerSnapshot = scanner.Snapshot;
         if (State != TreasureSearchState.AcquiringRevealedCoffer)
         {
             return false;
         }
 
+        return TryAcquireVisibleCofferFromActiveCandidate("revealed-acquire");
+    }
+
+    private bool TryAcquireVisibleCofferFromActiveCandidate(string source)
+    {
+        var scannerSnapshot = scanner.Snapshot;
         if (scannerSnapshot.VisibleCoffers.Count == 0)
         {
             return false;
         }
 
         if (orderedCandidates.Count == 0 || ActiveCandidateKey == null)
+        {
+            return false;
+        }
+
+        var activeCandidateKey = ActiveCandidateKey;
+        if (activeCandidateKey == null)
         {
             return false;
         }
@@ -912,7 +952,7 @@ public sealed class TreasureSearchController : IDisposable
 
         foreach (var candidate in orderedCandidates)
         {
-            if (string.Equals(candidate.CandidateKey, ActiveCandidateKey.CandidateKey, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(candidate.CandidateKey, activeCandidateKey.CandidateKey, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -930,20 +970,19 @@ public sealed class TreasureSearchController : IDisposable
         var isTrustworthy = distanceToActive <= MaximumTrustedAttributionDistance
             && (nearestOtherCandidateKey == null || distanceToActive <= nearestOtherDistance);
         var reason = isTrustworthy
-            ? $"Attributed visible coffer {coffer.Name} to active route candidate {ActiveCandidateKey.Label} by route context. candidateDistance={distanceToActive:0.0}y"
+            ? $"Attributed visible coffer {coffer.Name} to active route candidate {activeCandidateKey.Label} by route context. candidateDistance={distanceToActive:0.0}y"
             : nearestOtherCandidateKey == null
-                ? $"Visible coffer {coffer.Name} was found while routing {ActiveCandidateKey.Label}, but the mapped candidate distance {distanceToActive:0.0}y exceeds the trust threshold {MaximumTrustedAttributionDistance:0.0}y. Interaction will continue without learning an override."
-                : $"Visible coffer {coffer.Name} was found while routing {ActiveCandidateKey.Label}, but {nearestOtherCandidateKey.Label} is closer ({nearestOtherDistance:0.0}y vs {distanceToActive:0.0}y). Interaction will continue without learning an override.";
+                ? $"Visible coffer {coffer.Name} was found while routing {activeCandidateKey.Label}, but the mapped candidate distance {distanceToActive:0.0}y exceeds the trust threshold {MaximumTrustedAttributionDistance:0.0}y. Interaction will continue without learning an override."
+                : $"Visible coffer {coffer.Name} was found while routing {activeCandidateKey.Label}, but {nearestOtherCandidateKey.Label} is closer ({nearestOtherDistance:0.0}y vs {distanceToActive:0.0}y). Interaction will continue without learning an override.";
 
         CompleteWithVisibleCoffer(
             coffer,
-            ActiveCandidateKey,
+            activeCandidateKey,
             distanceToActive,
             isTrustworthy,
             nearestOtherDistance,
-            reason);
+            $"{reason} source={source}.");
         return true;
-
     }
 
     private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, bool isTrustworthy, float nearestOtherDistance, string reason)
@@ -962,6 +1001,7 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             activeCandidateKey = candidateKey;
+            revealedCofferLatched = true;
             activeVisibleCofferMatch = new VisibleCofferMatch
             {
                 CandidateKey = candidateKey,
@@ -1068,6 +1108,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
             lastNavmeshRejectionSummary = string.Empty;
             pendingCandidateAdvanceReason = string.Empty;
         }
@@ -1155,6 +1196,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = usedOverride;
             activeCandidateResolvedPosition = targetPosition;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
             lastNavmeshRejectionSummary = string.Empty;
             pendingCandidateAdvanceReason = string.Empty;
         }
@@ -1265,6 +1307,7 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            revealedCofferLatched = false;
         }
 
         return BeginCurrentCandidate(reason);
@@ -1849,9 +1892,11 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             revealedCofferAcquireDeadlineAt = deadline;
+            revealedCofferLatched = true;
         }
 
         logger.ResetThrottle("treasure-search-revealed-acquire");
+        logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source={(revealEvent == null ? "fallback" : kind.ToString())}");
         TransitionTo(
             TreasureSearchState.AcquiringRevealedCoffer,
             $"Treasure candidate {activeCandidateKey?.Label} produced event {kind}; entering post-reveal coffer acquisition until {deadline:O}.");
@@ -1986,6 +2031,7 @@ public sealed class TreasureSearchController : IDisposable
                 traversalOriginCenter = Vector3.Zero;
                 pendingCandidateAdvanceReason = string.Empty;
                 lastNavmeshRejectionSummary = string.Empty;
+                revealedCofferLatched = false;
             }
 
             state = nextState;
