@@ -18,7 +18,7 @@ public sealed class PotFarmController : IDisposable
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan BootstrapWaitTimeout = TimeSpan.FromMinutes(35);
     private static readonly TimeSpan PotSpawnGrace = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan TreasureBuffWaitTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TreasureHintWaitTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TreasureElixirRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan TreasureCenterSettleDelay = TimeSpan.FromMilliseconds(300);
@@ -26,6 +26,7 @@ public sealed class PotFarmController : IDisposable
     private const int MaximumTreasureElixirAttempts = 3;
     private const int PotWaitPointCandidateCount = 10;
     private const float PotWaitPointStopDistance = 4f;
+    private const float PotWaitPointDuplicateTolerance = 1f;
     private const float TreasureCenterArrivalTolerance = 5f;
 
     private readonly IFramework framework;
@@ -1421,16 +1422,33 @@ public sealed class PotFarmController : IDisposable
                 continue;
             }
 
+            var isDuplicate = false;
+            for (var candidateIndex = 0; candidateIndex < validCount; candidateIndex++)
+            {
+                if (CalculateFlatDistance(candidates[candidateIndex], snappedCandidate.Value) <= PotWaitPointDuplicateTolerance)
+                {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (isDuplicate)
+            {
+                continue;
+            }
+
             candidates[validCount++] = snappedCandidate.Value;
         }
 
         if (validCount == 0)
         {
+            logger.Warning($"{BuildLogTag()} op=pot-wait-point-none minRadius={minRadius:0.0} maxRadius={maxRadius:0.0}");
             waitPoint = default;
             return false;
         }
 
         waitPoint = candidates[Random.Shared.Next(validCount)];
+        logger.Info($"{BuildLogTag()} op=pot-wait-point-candidates validCandidates={validCount}/{PotWaitPointCandidateCount} point=<{waitPoint.X:0.000}, {waitPoint.Y:0.000}, {waitPoint.Z:0.000}>");
         return true;
     }
 
