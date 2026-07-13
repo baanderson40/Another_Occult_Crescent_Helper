@@ -724,7 +724,9 @@ public sealed class FateAutomationController : IDisposable
     }
 
     private float? GetEarlyDismountDistance(FateRunTarget target)
-        => Math.Clamp(configuration.FateDismountDistance, MinimumFateDismountDistance, MaximumFateDismountDistance);
+        => target.IsPotTarget
+            ? null
+            : Math.Clamp(configuration.FateDismountDistance, MinimumFateDismountDistance, MaximumFateDismountDistance);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

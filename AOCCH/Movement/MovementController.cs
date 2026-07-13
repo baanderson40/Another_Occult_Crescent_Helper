@@ -248,7 +248,14 @@ public sealed class MovementController : IDisposable
         return true;
     }
 
-    public bool PlanRouteToLocation(string description, string preferredAethernet, Vector3 destination, float arrivalTolerance, bool allowReturn = true)
+    public bool PlanRouteToLocation(
+        string description,
+        string preferredAethernet,
+        Vector3 destination,
+        float arrivalTolerance,
+        bool allowReturn = true,
+        float? earlyDismountDistance = null,
+        Vector3? earlyDismountTarget = null)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -258,7 +265,7 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlanToLocation(description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance))
+        if (!routePlanner.TryPlanToLocation(description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance, earlyDismountDistance, earlyDismountTarget))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;

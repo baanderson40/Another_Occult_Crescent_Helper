@@ -24,6 +24,8 @@ public sealed class PotFarmController : IDisposable
     private static readonly TimeSpan TreasureCenterSettleDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LeaveTransitionTimeout = TimeSpan.FromSeconds(15);
     private const int MaximumTreasureElixirAttempts = 3;
+    private const int MinimumPotApproachDismountDistance = 5;
+    private const int MaximumPotApproachDismountDistance = 50;
     private const int PotWaitPointCandidateCount = 10;
     private const float PotWaitPointStopDistance = 4f;
     private const float PotWaitPointDuplicateTolerance = 1f;
@@ -1094,9 +1096,16 @@ public sealed class PotFarmController : IDisposable
         var arrivalTolerance = destination == stagingCenter
             ? Math.Max(1, configuration.SpawnArrivalRadius)
             : PotWaitPointStopDistance;
+        var earlyDismountDistance = Math.Clamp(configuration.FateDismountDistance, MinimumPotApproachDismountDistance, MaximumPotApproachDismountDistance);
         var description = $"Stage for {potFate.Name} ({context})";
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.PlanRouteToLocation(description, potFate.PreferredAethernet, destination, arrivalTolerance))
+        if (!movementController.PlanRouteToLocation(
+            description,
+            potFate.PreferredAethernet,
+            destination,
+            arrivalTolerance,
+            earlyDismountDistance: earlyDismountDistance,
+            earlyDismountTarget: destination))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to plan pot staging route for {potFate.Name}."
