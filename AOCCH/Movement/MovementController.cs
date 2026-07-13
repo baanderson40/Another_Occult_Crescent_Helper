@@ -1435,22 +1435,18 @@ public sealed class MovementController : IDisposable
             return true;
         }
 
-        if (condition[ConditionFlag.InCombat]
-            || condition[ConditionFlag.Casting]
+        if (!mountAttempted
+            && (condition[ConditionFlag.InCombat]
             || condition[ConditionFlag.BetweenAreas]
-            || objectTable.LocalPlayer?.CurrentHp == 0)
+            || objectTable.LocalPlayer?.CurrentHp == 0))
         {
-            if (!mountAttempted)
+            lock (gate)
             {
-                lock (gate)
-                {
-                    mountAttempted = true;
-                }
-
-                logger.Debug($"Mount attempt suppressed for '{step.Description}' because mounting is currently unavailable. conditions={DescribeMovementConditions()}.");
-                logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-unavailable action=proceed-on-foot");
+                mountAttempted = true;
             }
 
+            logger.Debug($"Mount attempt suppressed for '{step.Description}' because mounting is currently unavailable. conditions={DescribeMovementConditions()}.");
+            logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-unavailable action=proceed-on-foot");
             return true;
         }
 

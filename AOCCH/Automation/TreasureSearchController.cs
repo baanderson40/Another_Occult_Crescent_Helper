@@ -1892,7 +1892,7 @@ public sealed class TreasureSearchController : IDisposable
         {
             "beyond_far" => 100f,
             "far" => 40f,
-            "immediately" => 8f,
+            "immediate" => 8f,
             _ => 20f,
         };
 
@@ -2205,7 +2205,7 @@ public sealed class TreasureSearchController : IDisposable
 
     private static bool IsLocalTreasureDistance(string distanceBucket)
         => string.Equals(distanceBucket, "close", StringComparison.Ordinal)
-            || string.Equals(distanceBucket, "immediately", StringComparison.Ordinal);
+            || string.Equals(distanceBucket, "immediate", StringComparison.Ordinal);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
