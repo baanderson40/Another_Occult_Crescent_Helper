@@ -64,6 +64,8 @@ public sealed class FarmSessionController : IDisposable
     private bool automaticTreasureCofferRestorePending;
     private bool automaticTreasureCofferStartRouteAfterRestore;
     private bool automaticTreasureCofferResumeAutomaticCheckAfterRestore;
+    private bool pendingAutomaticTreasureCofferCheckAfterExternalRecovery;
+    private string pendingAutomaticTreasureCofferCheckSource = string.Empty;
     private byte automaticTreasureCofferOriginalSupportJob;
     private int requiredFreshCofferSurveyRevision;
     private DateTimeOffset automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
@@ -216,6 +218,8 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
+            pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
             requiredFreshCofferSurveyRevision = 0;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
@@ -242,6 +246,8 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
+            pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
             requiredFreshCofferSurveyRevision = 0;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
@@ -306,6 +312,8 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
+            pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
             requiredFreshCofferSurveyRevision = 0;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
@@ -581,6 +589,11 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryHandlePendingAutomaticTreasureCofferCheckAfterExternalRecovery(reason))
+        {
+            return;
+        }
+
         TransitionTo(FarmSessionState.SelectingTarget, reason, "Selecting target");
     }
 
@@ -727,6 +740,11 @@ public sealed class FarmSessionController : IDisposable
         switch (criticalEngagementAutomationController.LastResult)
         {
             case AutomationRunResult.Completed:
+                if (configuration.UseReturn)
+                {
+                    LatchAutomaticTreasureCofferCheckAfterExternalRecovery("CE");
+                }
+
                 StartPostCeFlow();
                 break;
             case AutomationRunResult.Stopped when pendingStop:
@@ -753,6 +771,11 @@ public sealed class FarmSessionController : IDisposable
         switch (fateAutomationController.LastResult)
         {
             case AutomationRunResult.Completed:
+                if (!fateAutomationController.LastTargetIsPot && fateAutomationController.LastCompletionBehavior == FateRunCompletionBehavior.RecoverToBase)
+                {
+                    LatchAutomaticTreasureCofferCheckAfterExternalRecovery("FATE");
+                }
+
                 StartPostFateFlow();
                 break;
             case AutomationRunResult.Preempted:
@@ -784,15 +807,26 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        StartPostFateFlow();
+        StartPostActivityFlow();
     }
 
     private void StartPostFateFlow()
     {
         DecrementAutomaticTreasureCofferRescanCounters("FATE completion");
 
+        StartPostActivityFlow();
+    }
+
+    private void StartPostActivityFlow()
+    {
+        
         if (!configuration.EnableBuffRotation)
         {
+            if (TryHandlePendingAutomaticTreasureCofferCheckAfterExternalRecovery("Activity complete."))
+            {
+                return;
+            }
+
             TransitionTo(FarmSessionState.SelectingTarget, "Activity complete.", "Selecting target");
             return;
         }
@@ -844,6 +878,7 @@ public sealed class FarmSessionController : IDisposable
             switch (potFarmController.LastResult)
             {
                 case PotFarmRunResult.Completed:
+                    LatchAutomaticTreasureCofferCheckAfterExternalRecovery("Pot");
                     StartPostFateFlow();
                     return;
                 case PotFarmRunResult.LeftContent:
@@ -1465,6 +1500,45 @@ public sealed class FarmSessionController : IDisposable
         SetAutomaticTreasureCofferStatus(reason);
         TransitionTo(FarmSessionState.SelectingTarget, reason, "Selecting target");
     }
+
+    private bool TryHandlePendingAutomaticTreasureCofferCheckAfterExternalRecovery(string fallbackReason)
+    {
+        string recoverySource;
+        lock (gate)
+        {
+            if (!pendingAutomaticTreasureCofferCheckAfterExternalRecovery)
+            {
+                return false;
+            }
+
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
+            recoverySource = pendingAutomaticTreasureCofferCheckSource;
+            pendingAutomaticTreasureCofferCheckSource = string.Empty;
+        }
+
+        logger.Info($"{BuildLogTag()} op=auto-coffer-recovery-consume source={FormatAutoCofferRecoverySource(recoverySource)}");
+        if (TryBeginAutomaticTreasureCofferFlow($"{FormatAutoCofferRecoverySource(recoverySource)} recovery completed."))
+        {
+            return true;
+        }
+
+        TransitionTo(FarmSessionState.SelectingTarget, fallbackReason, "Selecting target");
+        return true;
+    }
+
+    private void LatchAutomaticTreasureCofferCheckAfterExternalRecovery(string source)
+    {
+        lock (gate)
+        {
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = true;
+            pendingAutomaticTreasureCofferCheckSource = source;
+        }
+
+        logger.Info($"{BuildLogTag()} op=auto-coffer-recovery-latch source={FormatAutoCofferRecoverySource(source)}");
+    }
+
+    private static string FormatAutoCofferRecoverySource(string source)
+        => string.IsNullOrWhiteSpace(source) ? "external-recovery" : source;
 
     private void ResetAutomaticTreasureCofferSurveyTrustAfterRoute()
     {
