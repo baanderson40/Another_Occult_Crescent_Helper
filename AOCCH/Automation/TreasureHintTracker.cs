@@ -61,7 +61,7 @@ public sealed class TreasureHintTracker : IDisposable
 
         framework.Update += OnFrameworkUpdate;
         chatGui.ChatMessage += OnChatMessage;
-        logger.Info("Treasure hint tracker initialized.");
+        logger.Info("[TreasureHintTracker] op=init");
     }
 
     public TreasureHintSnapshot Snapshot
@@ -94,7 +94,7 @@ public sealed class TreasureHintTracker : IDisposable
             lastProcessedScannerUpdate = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"Treasure hint tracker reset: {reason}");
+        logger.Info($"[TreasureHintTracker] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -107,7 +107,7 @@ public sealed class TreasureHintTracker : IDisposable
             CompleteCurrentTreasureSession("Treasure hint tracker disposal.", TreasureSessionState.Abandoned);
         }
 
-        logger.Info("Treasure hint tracker stopped.");
+        logger.Info("[TreasureHintTracker] op=stop");
     }
 
     public bool TryGetLatestHint(out TreasureHintEvent? hint)
@@ -150,7 +150,7 @@ public sealed class TreasureHintTracker : IDisposable
             snapshot = next;
         }
 
-        logger.Info($"Treasure session {next.SessionId} started: {reason}");
+        logger.Info($"[TreasureHintTracker session={next.SessionId}] op=session-start reason={reason}");
     }
 
     public void CompleteCurrentTreasureSession(string reason, TreasureSessionState terminalState)
@@ -182,7 +182,7 @@ public sealed class TreasureHintTracker : IDisposable
             snapshot = completedSnapshot;
         }
 
-        logger.Info($"Treasure session {completedSnapshot.SessionId} ended: {reason}");
+        logger.Info($"[TreasureHintTracker session={completedSnapshot.SessionId}] op=session-end state={terminalState} reason={reason}");
     }
 
     private void OnFrameworkUpdate(IFramework _)
@@ -289,7 +289,7 @@ public sealed class TreasureHintTracker : IDisposable
             snapshot = updatedSnapshot;
         }
 
-        logger.Info($"Treasure session {updatedSnapshot.SessionId}: {updatedSnapshot.LastTransition}");
+        logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=event revision={updatedSnapshot.Revision} transition=\"{updatedSnapshot.LastTransition}\"");
     }
 
     private static TreasureHintEvent? ClassifyMessage(string message)

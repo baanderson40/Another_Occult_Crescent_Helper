@@ -17,7 +17,7 @@ public sealed class OccultCrescentNameResolver
         this.logger = logger;
         BuildCriticalEncounterNames(dataManager, data);
         BuildFateNames(dataManager, data);
-        this.logger.Info($"Occult Crescent name resolver initialized with {criticalEncounterNames.Count} CE name(s) and {fateNames.Count} FATE name(s).");
+        this.logger.Info($"[OccultCrescentNameResolver] op=init ceNames={criticalEncounterNames.Count} fateNames={fateNames.Count}");
     }
 
     public string GetCriticalEncounterName(uint id, string fallbackName)
@@ -31,7 +31,7 @@ public sealed class OccultCrescentNameResolver
         var sheet = dataManager.GetExcelSheet<DynamicEvent>();
         if (sheet == null)
         {
-            logger.Warning("Occult Crescent name resolver could not load the DynamicEvent sheet.");
+            logger.Warning("[OccultCrescentNameResolver] op=sheet-load-failed sheet=DynamicEvent");
             return;
         }
 
@@ -44,7 +44,7 @@ public sealed class OccultCrescentNameResolver
                 continue;
             }
 
-            logger.Warning($"Occult Crescent name resolver could not resolve a CE name for {criticalEncounter.Id}.");
+            logger.Warning($"[OccultCrescentNameResolver] op=name-resolve-failed type=CE id={criticalEncounter.Id}");
         }
     }
 
@@ -53,7 +53,7 @@ public sealed class OccultCrescentNameResolver
         var sheet = dataManager.GetExcelSheet<Fate>();
         if (sheet == null)
         {
-            logger.Warning("Occult Crescent name resolver could not load the Fate sheet.");
+            logger.Warning("[OccultCrescentNameResolver] op=sheet-load-failed sheet=Fate");
             return;
         }
 
@@ -66,7 +66,7 @@ public sealed class OccultCrescentNameResolver
                 continue;
             }
 
-            logger.Warning($"Occult Crescent name resolver could not resolve a FATE name for {fate.Id}.");
+            logger.Warning($"[OccultCrescentNameResolver] op=name-resolve-failed type=FATE id={fate.Id}");
         }
     }
 

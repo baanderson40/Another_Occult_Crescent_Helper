@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
@@ -10,6 +11,7 @@ namespace AOCCH.Automation;
 
 public sealed class CriticalEngagementAutomationController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const int WaitPointCandidateCount = 10;
@@ -32,6 +34,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private CriticalEngagementAutomationState state = CriticalEngagementAutomationState.Idle;
     private uint targetCeId;
     private string targetCeName = string.Empty;
+    private string currentRunId = string.Empty;
     private string lastError = string.Empty;
     private string lastTransition = "Idle";
     private AutomationRunResult lastResult;
@@ -167,6 +170,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"CE#{Interlocked.Increment(ref nextRunSequence)}";
             targetCeId = target.Id;
             targetCeName = target.Name;
             lastError = string.Empty;
@@ -178,17 +182,20 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             ceWaitPointArrivalTolerance = 0f;
         }
 
-        logger.Info($"CE automation starting for {target.Name} ({target.Id}).");
+        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id})");
+        movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
         return BeginPlanning(target);
     }
 
     public void Stop(string reason)
     {
+        var targetId = TargetCeId;
+        var targetName = TargetCeName;
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
         TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason, result: AutomationRunResult.Stopped);
-        logger.Info($"CE automation stopped: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) reason={reason}");
     }
 
     public void ResetInstanceState(string reason)
@@ -198,6 +205,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             state = CriticalEngagementAutomationState.Idle;
             targetCeId = 0;
             targetCeName = string.Empty;
+            currentRunId = string.Empty;
             lastError = string.Empty;
             lastTransition = "Idle";
             lastResult = AutomationRunResult.None;
@@ -208,7 +216,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             ceWaitPointArrivalTolerance = 0f;
         }
 
-        logger.Info($"CE automation reset: {reason}");
+        logger.Info($"[CE] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -411,7 +419,6 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             : $"CE {target.Name} no longer has the player engaged.";
 
         logger.ResetThrottle("ce-in-battle");
-        logger.Info(reason);
         autorotationController.ReleaseOwnership(reason);
         if (configuration.UseReturn)
         {
@@ -474,19 +481,18 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return true;
         }
 
-        logger.Info($"Player drifted outside CE engage radius for {target.Name} ({target.Id}); repositioning.");
+        logger.Info($"{BuildLogTag()} op=reposition target=\"{target.Name}\" ({target.Id}) reason=outside-engage-radius");
         return BeginWaitPointReposition(target, playerPosition.Value);
     }
 
     private void StartRecovery(string reason)
     {
-        logger.Info(reason);
         if (!movementController.RecoverToBaseCamp())
         {
             if (!returnRecoveryFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
             {
                 returnRecoveryFallbackAttempted = true;
-                logger.Warning("CE recovery Return setup failed; falling back to direct Base Camp recovery.");
+                logger.Warning($"{BuildLogTag()} op=recovery-fallback target=\"{TargetCeName}\" ({TargetCeId}) reason=return-setup-failed fallback=direct-base-camp");
                 TransitionTo(CriticalEngagementAutomationState.Recovering, "Recovering to Base Camp after CE with Return fallback.");
                 return;
             }
@@ -509,7 +515,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         returnTravelFallbackAttempted = true;
-        logger.Warning($"Return route failed while traveling to CE {target.Name} ({target.Id}); retrying without Return.");
+        logger.Warning($"{BuildLogTag()} op=travel-fallback target=\"{target.Name}\" ({target.Id}) routeType=Return reason=route-failed fallback=without-return");
         return BeginPlanningWithoutReturn(target);
     }
 
@@ -539,13 +545,13 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
         if (!movementController.PlanRoute(selection, allowReturn: false, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance))
         {
-            logger.Warning($"CE fallback route planning failed: {movementController.LastError}");
+            logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
         }
 
         if (!movementController.StartPlannedRoute())
         {
-            logger.Warning($"CE fallback route start failed: {movementController.LastError}");
+            logger.Warning($"{BuildLogTag()} op=fallback-start-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
         }
 
@@ -566,7 +572,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         returnRecoveryFallbackAttempted = true;
-        logger.Warning("Return recovery failed after CE; retrying Base Camp recovery without Return.");
+        logger.Warning($"{BuildLogTag()} op=recovery-fallback target=\"{TargetCeName}\" ({TargetCeId}) reason=return-recovery-failed fallback=without-return");
         TransitionTo(CriticalEngagementAutomationState.Recovering, "Recovering to Base Camp after CE with direct fallback.");
         return true;
     }
@@ -581,13 +587,19 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         autorotationController.ReleaseOwnership(reason);
         TransitionTo(CriticalEngagementAutomationState.Failed, reason, clearTarget: false, error: reason, result: AutomationRunResult.Failed);
-        logger.Warning(reason);
+        logger.Warning($"{BuildLogTag()} op=failure state={CriticalEngagementAutomationState.Failed} target=\"{TargetCeName}\" ({TargetCeId}) reason={reason}");
     }
 
     private void TransitionTo(CriticalEngagementAutomationState nextState, string reason, bool clearTarget = false, string? error = null, AutomationRunResult? result = null)
     {
+        CriticalEngagementAutomationState previousState;
+        uint targetId;
+        string targetName;
         lock (gate)
         {
+            previousState = state;
+            targetId = targetCeId;
+            targetName = targetCeName;
             state = nextState;
             lastTransition = reason;
             if (result.HasValue)
@@ -608,8 +620,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             }
         }
 
-        logger.Info($"CE automation state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} target=\"{targetName}\" ({targetId}) reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[CE]" : $"[CE run={currentRunId}]";
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
@@ -638,7 +653,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             ceWaitPointArrivalTolerance = fallbackTolerance;
         }
 
-        logger.Warning($"No valid CE wait point found for {target.Name} ({target.Id}); falling back to the staging center with inner-radius tolerance.");
+        logger.Warning($"{BuildLogTag()} op=wait-point-fallback target=\"{target.Name}\" ({target.Id}) reason=no-valid-wait-point fallback=staging-center");
         return movementController.StartDirectMove($"Reposition inside CE radius for {target.Name} ({target.Id})", target.StagingPoint, fallbackTolerance);
     }
 
@@ -674,12 +689,12 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
         if (validCount == 0)
         {
-            logger.Warning($"CE wait-point selection found no valid navigable positions for {target.Name} ({target.Id}) inside {minRadius:0.0}..{safeOuterRadius:0.0} yalms.");
+            logger.Warning($"{BuildLogTag()} op=wait-point-none target=\"{target.Name}\" ({target.Id}) minRadius={minRadius:0.0} maxRadius={safeOuterRadius:0.0}");
             return false;
         }
 
         waitPoint = candidates[Random.Shared.Next(validCount)];
-        logger.Info($"Selected CE wait point for {target.Name} ({target.Id}) from {validCount}/{WaitPointCandidateCount} valid candidates at {FormatVector(waitPoint)}.");
+        logger.Info($"{BuildLogTag()} op=wait-point-selected target=\"{target.Name}\" ({target.Id}) validCandidates={validCount}/{WaitPointCandidateCount} point={FormatVector(waitPoint)}");
         return true;
     }
 

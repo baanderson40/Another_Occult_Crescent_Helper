@@ -76,6 +76,7 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset returnRetryNotBeforeAt = DateTimeOffset.MinValue;
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
+    private string logOwner = string.Empty;
     private MovementState state = MovementState.Idle;
 
     public MovementController(
@@ -175,9 +176,19 @@ public sealed class MovementController : IDisposable
     public bool IsLifestreamAvailable
         => lifestream.IsAvailable();
 
+    public bool IsPathBusy
+        => vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
 
     public bool CanUseReturnAction
         => gameActionController.CanUseGeneralAction(GameActionController.ReturnActionId);
+
+    public void SetLogOwner(string? owner)
+    {
+        lock (gate)
+        {
+            logOwner = owner ?? string.Empty;
+        }
+    }
 
     public void ResetInstanceState(string reason)
     {
@@ -208,7 +219,7 @@ public sealed class MovementController : IDisposable
             state = MovementState.Idle;
         }
 
-        logger.Info($"Movement reset: {reason}");
+        logger.Info($"{BuildLogTag()} op=reset reason={reason}");
     }
 
     public bool PlanRouteToSelectedTarget()
@@ -231,7 +242,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
+        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -252,7 +263,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
+        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -277,7 +288,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"Planned {route.RouteType} route to {route.TargetDescription} with {route.Steps.Count} step(s).");
+        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -314,7 +325,7 @@ public sealed class MovementController : IDisposable
                 : MovementState.Pathfinding;
         }
 
-        logger.Info($"Starting route to {plannedRoute!.TargetDescription}.");
+        logger.Info($"{BuildLogTag()} op=start routeType={plannedRoute!.RouteType} target=\"{plannedRoute.TargetDescription}\" steps={plannedRoute.Steps.Count}");
         return true;
     }
 
@@ -358,13 +369,15 @@ public sealed class MovementController : IDisposable
                 : MovementState.Pathfinding;
         }
 
-        logger.Info("Starting Base Camp recovery route.");
+        logger.Info($"{BuildLogTag()} op=start routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count} reason=RecoverToBaseCamp");
         return true;
     }
 
-    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true)
+    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true, bool destinationAlreadyResolved = false)
     {
-        var resolvedDestination = ResolveNavigablePoint(destination, halfExtentXZ: 5f, halfExtentY: 5f);
+        var resolvedDestination = destinationAlreadyResolved
+            ? new Vector3?(destination)
+            : ResolveNavigablePoint(destination, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!resolvedDestination.HasValue)
         {
             SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for direct movement: {description}. target={FormatVector(destination)}.");
@@ -411,13 +424,18 @@ public sealed class MovementController : IDisposable
             state = MovementState.Pathfinding;
         }
 
-        logger.Info($"Starting direct movement: {description}. requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)}.");
+        logger.Info($"{BuildLogTag()} op=start-direct target=\"{description}\" requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)} arrivalTolerance={arrivalTolerance:0.0}");
         return true;
     }
 
     public Vector3? FindNearestNavigablePoint(Vector3 position, float halfExtentXZ = 5f, float halfExtentY = 5f)
         => ResolveNavigablePoint(position, halfExtentXZ, halfExtentY);
 
+    public Vector3? FindPointOnFloor(Vector3 position, float halfExtentXZ = 2f, bool allowUnlandable = false)
+        => vnavmesh.FindPointOnFloor(position, allowUnlandable, halfExtentXZ);
+
+    public bool HasPathfindRoute(Vector3 fromPosition, Vector3 toPosition, bool fly = false)
+        => vnavmesh.HasRoute(fromPosition, toPosition, fly);
 
     public void Stop(string reason)
     {
@@ -441,7 +459,7 @@ public sealed class MovementController : IDisposable
             lastError = reason;
         }
 
-        logger.Info($"Movement stopped: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
     }
 
     public void Dispose()
@@ -668,7 +686,7 @@ public sealed class MovementController : IDisposable
                 stableSince = DateTimeOffset.MinValue;
             }
 
-            logger.Info($"Started route step: {step.Description} (attempt {returnAttemptCount}/{MaxReturnAttempts}).");
+            logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind} attempt={returnAttemptCount}/{MaxReturnAttempts}");
             return;
         }
 
@@ -681,7 +699,7 @@ public sealed class MovementController : IDisposable
                     returnPromptHandled = true;
                 }
 
-                logger.Info("Confirmed SelectYesno prompt during Return.");
+                logger.Info($"{BuildLogTag()} op=return-confirm step=\"{step.Description}\" prompt=SelectYesno");
             }
         }
 
@@ -703,7 +721,7 @@ public sealed class MovementController : IDisposable
                 return;
             }
 
-            logger.Info($"Completed route step: {step.Description}.");
+            logger.Info($"{BuildLogTag()} op=step-complete step=\"{step.Description}\" kind={step.Kind}");
             AdvanceStep();
             return;
         }
@@ -747,7 +765,7 @@ public sealed class MovementController : IDisposable
                 progressDistance = distance;
             }
 
-            logger.Info($"Started route step: {step.Description}.");
+            logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind}");
             return;
         }
 
@@ -795,7 +813,7 @@ public sealed class MovementController : IDisposable
             }
 
             logger.Warning(
-                $"Resetting path step '{step.Description}' because vnavmesh is idle before arrival. resetAttempt={resetAttempt}/{MaxIdlePathResets} distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions={DescribeMovementConditions()} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}.");
+                $"{BuildLogTag()} op=path-reset step=\"{step.Description}\" resetAttempt={resetAttempt}/{MaxIdlePathResets} distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} sinceStart={(DateTimeOffset.UtcNow - stepStartedAt).TotalSeconds:0.0}s lastProgressAgo={(DateTimeOffset.UtcNow - lastProgressAt).TotalSeconds:0.0}s mountAttempted={mountAttempted} mounted={condition[ConditionFlag.Mounted]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} conditions=\"{DescribeMovementConditions()}\" expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)}");
             lock (gate)
             {
                 idlePathResetCount = resetAttempt;
@@ -895,7 +913,7 @@ public sealed class MovementController : IDisposable
             lifestreamOwned = true;
         }
 
-        logger.Info($"Started route step: {step.Description} (attempt {attemptCount}/{MaxAethernetAttempts}).");
+        logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind} attempt={attemptCount}/{MaxAethernetAttempts}");
     }
 
     private bool EnsureDismountedForAethernet(RouteStep step)
@@ -917,7 +935,7 @@ public sealed class MovementController : IDisposable
                     dismountAttempted = true;
                 }
 
-                logger.Warning($"Delaying aethernet teleport for step {step.Description} because dismount is currently unavailable.");
+                logger.Warning($"{BuildLogTag()} op=aethernet-delay step=\"{step.Description}\" reason=dismount-unavailable");
             }
 
             return false;
@@ -927,7 +945,7 @@ public sealed class MovementController : IDisposable
         {
             if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, step.Description))
             {
-                logger.Warning($"Failed to dismount before aethernet teleport for step {step.Description}; retrying.");
+                logger.Warning($"{BuildLogTag()} op=aethernet-dismount-failed step=\"{step.Description}\" action=retry");
                 return false;
             }
 
@@ -937,7 +955,7 @@ public sealed class MovementController : IDisposable
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
-            logger.Info($"Waiting to dismount before aethernet teleport: {step.Description}.");
+            logger.Info($"{BuildLogTag()} op=aethernet-dismount-wait step=\"{step.Description}\"");
             return false;
         }
 
@@ -949,7 +967,7 @@ public sealed class MovementController : IDisposable
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
-            logger.Warning($"Dismount confirmation timed out before aethernet teleport for step {step.Description}; retrying.");
+            logger.Warning($"{BuildLogTag()} op=aethernet-dismount-timeout step=\"{step.Description}\" action=retry");
         }
 
         return false;
@@ -998,7 +1016,7 @@ public sealed class MovementController : IDisposable
 
             if (now - nextStableStart >= TransitionStableTime)
             {
-                logger.Info($"Completed route step: {step.Description}.");
+                logger.Info($"{BuildLogTag()} op=step-complete step=\"{step.Description}\" kind={step.Kind}");
                 AdvanceStep();
             }
 
@@ -1051,7 +1069,7 @@ public sealed class MovementController : IDisposable
             }
 
             logger.Warning(
-                $"Retrying aethernet {step.AethernetName} after attempt {attemptCount}/{MaxAethernetAttempts} during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} observedTransition={observedTransition} {detail}");
+                $"{BuildLogTag()} op=aethernet-retry step=\"{step.Description}\" aethernet=\"{step.AethernetName}\" attempt={attemptCount}/{MaxAethernetAttempts} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} observedTransition={observedTransition} detail=\"{detail}\"");
             return;
         }
 
@@ -1081,7 +1099,7 @@ public sealed class MovementController : IDisposable
             {
                 state = MovementState.Arrived;
                 lifestreamOwned = false;
-                logger.Info("Movement route completed.");
+                logger.Info($"{BuildLogTag()} op=complete state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
                 return;
             }
 
@@ -1109,7 +1127,7 @@ public sealed class MovementController : IDisposable
             lastError = string.Empty;
         }
 
-        logger.Info("Movement route completed.");
+        logger.Info($"{BuildLogTag()} op=complete state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
     }
 
     private void SetFailure(MovementState failureState, string reason, bool stopMovement = false)
@@ -1138,7 +1156,7 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
         }
 
-        logger.Warning(reason);
+        logger.Warning($"{BuildLogTag()} op=failure state={failureState} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
     }
 
     private void SetState(MovementState nextState)
@@ -1171,6 +1189,23 @@ public sealed class MovementController : IDisposable
             lastError = string.Empty;
             state = MovementState.Idle;
         }
+    }
+
+    private string BuildLogTag()
+        => logOwner.Length == 0 ? "[Movement]" : $"[Movement owner={logOwner}]";
+
+    private string GetRouteSummary()
+        => plannedRoute == null ? "none" : $"{plannedRoute.RouteType}:\"{plannedRoute.TargetDescription}\"";
+
+    private string GetStepSummary()
+    {
+        if (plannedRoute == null || currentStepIndex < 0 || currentStepIndex >= plannedRoute.Steps.Count)
+        {
+            return "none";
+        }
+
+        var step = plannedRoute.Steps[currentStepIndex];
+        return $"{currentStepIndex + 1}/{plannedRoute.Steps.Count}:{step.Kind}:\"{step.Description}\"";
     }
 
     private void WaitForReturnCompletion(RouteStep step, Vector3 playerPosition, float distance)
@@ -1234,7 +1269,7 @@ public sealed class MovementController : IDisposable
 
             if (now - nextStableStart >= TransitionStableTime)
             {
-                logger.Info($"Completed route step: {step.Description}.");
+                logger.Info($"{BuildLogTag()} op=step-complete step=\"{step.Description}\" kind={step.Kind}");
                 AdvanceStep();
             }
 
@@ -1292,7 +1327,7 @@ public sealed class MovementController : IDisposable
             }
 
             logger.Warning(
-                $"Retrying Return after attempt {attemptCount}/{MaxReturnAttempts} during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} {detail}");
+                $"{BuildLogTag()} op=return-retry step=\"{step.Description}\" attempt={attemptCount}/{MaxReturnAttempts} expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} detail=\"{detail}\"");
             return;
         }
 
@@ -1352,7 +1387,7 @@ public sealed class MovementController : IDisposable
 
             if (now - nextStableStart >= TransitionStableTime)
             {
-                logger.Info($"Completed route step: {step.Description}.");
+                logger.Info($"{BuildLogTag()} op=step-complete step=\"{step.Description}\" kind={step.Kind}");
                 AdvanceStep();
             }
 
@@ -1397,7 +1432,7 @@ public sealed class MovementController : IDisposable
                 }
 
                 logger.Debug($"Mount attempt suppressed for '{step.Description}' because mounting is currently unavailable. conditions={DescribeMovementConditions()}.");
-                logger.Warning($"Proceeding on foot for step {step.Description} because mounting is currently unavailable.");
+                logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-unavailable action=proceed-on-foot");
             }
 
             return true;
@@ -1420,7 +1455,7 @@ public sealed class MovementController : IDisposable
                 }
 
                 logger.Debug($"Mount action dispatch failed for '{step.Description}'. conditions={DescribeMovementConditions()}.");
-                logger.Warning($"Mount action unavailable; proceeding on foot for step {step.Description}.");
+                logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-dispatch-unavailable action=proceed-on-foot");
                 return true;
             }
 
@@ -1432,14 +1467,14 @@ public sealed class MovementController : IDisposable
                 state = MovementState.Pathfinding;
             }
 
-            logger.Info($"Waiting for mount before route step: {step.Description}.");
+            logger.Info($"{BuildLogTag()} op=mount-wait step=\"{step.Description}\"");
             return false;
         }
 
         if (DateTimeOffset.UtcNow - stepStartedAt > MountTimeout)
         {
             logger.Debug($"Mount confirmation timed out for '{step.Description}'. conditions={DescribeMovementConditions()}.");
-            logger.Warning($"Mount confirmation timed out; proceeding on foot for step {step.Description}.");
+            logger.Warning($"{BuildLogTag()} op=mount-timeout step=\"{step.Description}\" action=proceed-on-foot");
             return true;
         }
 
@@ -1494,7 +1529,7 @@ public sealed class MovementController : IDisposable
                     dismountAttempted = true;
                 }
 
-                logger.Warning($"Delaying dismount for step {step.Description} because dismount is currently unavailable.");
+                logger.Warning($"{BuildLogTag()} op=dismount-delay step=\"{step.Description}\" reason=dismount-unavailable");
             }
 
             return false;
@@ -1504,7 +1539,7 @@ public sealed class MovementController : IDisposable
         {
             if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, step.Description))
             {
-                logger.Warning($"Failed to dismount on arrival for step {step.Description}; retrying.");
+                logger.Warning($"{BuildLogTag()} op=dismount-failed step=\"{step.Description}\" action=retry");
                 return false;
             }
 
@@ -1514,7 +1549,7 @@ public sealed class MovementController : IDisposable
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
-            logger.Info($"Waiting to dismount after route step: {step.Description}.");
+            logger.Info($"{BuildLogTag()} op=dismount-wait step=\"{step.Description}\"");
             return false;
         }
 
@@ -1526,7 +1561,7 @@ public sealed class MovementController : IDisposable
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
-            logger.Warning($"Dismount confirmation timed out for step {step.Description}; retrying.");
+            logger.Warning($"{BuildLogTag()} op=dismount-timeout step=\"{step.Description}\" action=retry");
             return false;
         }
 

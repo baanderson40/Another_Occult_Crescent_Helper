@@ -86,7 +86,7 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.Migrate(OccultCrescentData))
         {
             Configuration.Save();
-            Logger.Info("Migrated configuration settings.");
+            Logger.Info("[Plugin] op=config-migrated");
         }
 
         OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData, Logger);
@@ -142,7 +142,7 @@ public sealed class Plugin : IDalamudPlugin
         wasInSouthHorn = ClientState.TerritoryType == SouthHornTerritoryTypeId;
         ClientState.TerritoryChanged += OnTerritoryChanged;
 
-        Logger.Info($"{PluginInterface.Manifest.Name} loaded.");
+        Logger.Info($"[Plugin] op=loaded name=\"{PluginInterface.Manifest.Name}\"");
     }
 
     public void Dispose()
@@ -159,7 +159,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
-        Logger.Info("AOCCH cleanup starting.");
+        Logger.Info("[Plugin] op=cleanup-start");
 
         ConfigWindow.IsOpen = false;
         LogWindow.IsOpen = false;
@@ -189,7 +189,7 @@ public sealed class Plugin : IDalamudPlugin
         Scanner.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
-        Logger.Info("AOCCH cleanup finished.");
+        Logger.Info("[Plugin] op=cleanup-finish");
     }
 
     private void OnCommand(string command, string args)
@@ -200,49 +200,49 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var normalizedArgs = args.Trim().ToLowerInvariant();
-        Logger.Info($"Slash command received: {command} {args}".TrimEnd());
+        Logger.Info($"[Plugin] op=slash-command command=\"{command}\" args=\"{args.Trim()}\"");
 
         switch (normalizedArgs)
         {
             case "":
             case "main":
-                Logger.Info("Slash command action: toggle main window.");
+                Logger.Info("[Plugin] op=slash-command-action action=toggle-main-window");
                 MainWindow.Toggle();
                 break;
             case "config":
-                Logger.Info("Slash command action: toggle config window.");
+                Logger.Info("[Plugin] op=slash-command-action action=toggle-config-window");
                 ConfigWindow.Toggle();
                 break;
             case "debug":
-                Logger.Info("Slash command action: toggle debug window.");
+                Logger.Info("[Plugin] op=slash-command-action action=toggle-debug-window");
                 DebugWindow.Toggle();
                 break;
             case "log":
-                Logger.Info("Slash command action: toggle log window.");
+                Logger.Info("[Plugin] op=slash-command-action action=toggle-log-window");
                 LogWindow.Toggle();
                 break;
             case "help":
-                Logger.Info("Slash command action: show help.");
+                Logger.Info("[Plugin] op=slash-command-action action=show-help");
                 PrintCommandHelp();
                 break;
             case "start":
-                Logger.Info("Slash command action: start farm session.");
+                Logger.Info("[Plugin] op=slash-command-action action=start-farm-session");
                 FarmSessionController.Start();
                 break;
             case "stop":
-                Logger.Info("Slash command action: stop farm session.");
+                Logger.Info("[Plugin] op=slash-command-action action=stop-farm-session");
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
             case "coffer-start":
-                Logger.Info("Slash command action: start visible coffer farm.");
+                Logger.Info("[Plugin] op=slash-command-action action=start-visible-coffer-farm");
                 TreasureCofferFarmController.Start();
                 break;
             case "coffer-stop":
-                Logger.Info("Slash command action: stop visible coffer farm.");
+                Logger.Info("[Plugin] op=slash-command-action action=stop-visible-coffer-farm");
                 TreasureCofferFarmController.Stop("Slash command visible coffer stop requested.");
                 break;
             case "panic":
-                Logger.Warning("Slash command action: panic stop.");
+                Logger.Warning("[Plugin] op=slash-command-action action=panic-stop");
                 PanicStopAll();
                 break;
             default:
@@ -252,7 +252,7 @@ public sealed class Plugin : IDalamudPlugin
                     break;
                 }
 
-                Logger.Warning($"Unknown command argument: {args}");
+                Logger.Warning($"[Plugin] op=slash-command-unknown args=\"{args}\"");
                 PrintCommandHelp();
                 break;
         }
@@ -302,22 +302,22 @@ public sealed class Plugin : IDalamudPlugin
                     waitForReady = true;
                     break;
                 default:
-                    Logger.Warning($"Unknown testkeyitem option: {tokens[i]}");
+                    Logger.Warning($"[Plugin] op=testkeyitem-option-unknown value=\"{tokens[i]}\"");
                     break;
             }
         }
 
-        Logger.Info($"Slash command action: test Magical Elixir use. mode={(runBoth ? "both" : method.ToString().ToLowerInvariant())} wait={waitForReady}.");
+        Logger.Info($"[Plugin] op=slash-command-action action=test-magical-elixir mode={(runBoth ? "both" : method.ToString().ToLowerInvariant())} wait={waitForReady}");
         LogMagicalElixirDebugSnapshot("preflight");
 
         if (waitForReady && !WaitForMagicalElixirReady())
         {
-            Logger.Warning("Manual Magical Elixir test readiness wait timed out; continuing with the requested method(s).");
+            Logger.Warning("[Plugin] op=magical-elixir-ready-wait result=timeout action=continue");
             LogMagicalElixirDebugSnapshot("post-wait-timeout");
         }
         else if (waitForReady)
         {
-            Logger.Info("Manual Magical Elixir test readiness conditions are satisfied.");
+            Logger.Info("[Plugin] op=magical-elixir-ready-wait result=ready");
             LogMagicalElixirDebugSnapshot("post-wait-ready");
         }
 
@@ -334,10 +334,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private void RunMagicalElixirDebugAttempt(GameActionController.MagicalElixirUseMethod method, string description)
     {
-        Logger.Info($"Manual Magical Elixir test attempt starting. method={method.ToString().ToLowerInvariant()} description={description}.");
+        Logger.Info($"[Plugin] op=magical-elixir-attempt-start method={method.ToString().ToLowerInvariant()} description=\"{description}\"");
         LogMagicalElixirDebugSnapshot($"before-{method.ToString().ToLowerInvariant()}");
         var success = GameActionController.TryUseMagicalElixir(method, description);
-        Logger.Info($"Manual Magical Elixir test attempt finished. method={method.ToString().ToLowerInvariant()} success={success}.");
+        Logger.Info($"[Plugin] op=magical-elixir-attempt-finish method={method.ToString().ToLowerInvariant()} success={success}");
         LogMagicalElixirDebugSnapshot($"after-{method.ToString().ToLowerInvariant()}");
     }
 
@@ -370,11 +370,11 @@ public sealed class Plugin : IDalamudPlugin
             ? "unavailable"
             : $"<{position.Value.X:0.0}, {position.Value.Y:0.0}, {position.Value.Z:0.0}>";
 
-        Logger.Info($"Magical Elixir debug [{label}] time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} hp={player?.CurrentHp ?? 0}.");
-        Logger.Info($"Magical Elixir debug [{label}] conditions: inCombat={Condition[ConditionFlag.InCombat]} casting={Condition[ConditionFlag.Casting]} betweenAreas={Condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={Condition[ConditionFlag.OccupiedInQuestEvent]} mounted={Condition[ConditionFlag.Mounted]} occupied={Condition[ConditionFlag.Occupied]}.");
-        Logger.Info($"Magical Elixir debug [{label}] controllers: movement={MovementController.State} fate={FateAutomationController.State} pot={PotFarmController.State} farm={FarmSessionController.State} treasureSearch={TreasureSearchController.State} cofferRunning={CofferInteractionController.IsRunning}.");
-        Logger.Info($"Magical Elixir debug [{label}] treasure: buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s activePot={(snapshot.ActivePotFate == null ? "none" : $"{snapshot.ActivePotFate.Name} ({snapshot.ActivePotFate.Id})")} sessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}.");
-        Logger.Info($"Magical Elixir debug [{label}] inventory: {GameActionController.DescribeMagicalElixirState()}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug label={label} time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} hp={player?.CurrentHp ?? 0}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-conditions label={label} inCombat={Condition[ConditionFlag.InCombat]} casting={Condition[ConditionFlag.Casting]} betweenAreas={Condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={Condition[ConditionFlag.OccupiedInQuestEvent]} mounted={Condition[ConditionFlag.Mounted]} occupied={Condition[ConditionFlag.Occupied]}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-controllers label={label} movement={MovementController.State} fate={FateAutomationController.State} pot={PotFarmController.State} farm={FarmSessionController.State} treasureSearch={TreasureSearchController.State} cofferRunning={CofferInteractionController.IsRunning}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-treasure label={label} buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s activePot={(snapshot.ActivePotFate == null ? "none" : $"{snapshot.ActivePotFate.Name} ({snapshot.ActivePotFate.Id})")} sessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} hint={treasureSnapshot.GetHintSummary()}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug-inventory label={label} state={GameActionController.DescribeMagicalElixirState()}");
     }
     
     public void ToggleConfigUi()
@@ -384,7 +384,7 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        Logger.Info("UI action: toggle config window.");
+        Logger.Info("[Plugin] op=ui-action action=toggle-config-window");
         ConfigWindow.Toggle();
     }
 
@@ -395,7 +395,7 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        Logger.Info("UI action: toggle log window.");
+        Logger.Info("[Plugin] op=ui-action action=toggle-log-window");
         LogWindow.Toggle();
     }
 
@@ -406,7 +406,7 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        Logger.Info("UI action: toggle main window.");
+        Logger.Info("[Plugin] op=ui-action action=toggle-main-window");
         MainWindow.Toggle();
     }
 
@@ -425,7 +425,7 @@ public sealed class Plugin : IDalamudPlugin
             if (!MainWindow.IsOpen)
             {
                 MainWindow.IsOpen = true;
-                Logger.Info("Main window auto-opened on South Horn entry.");
+                Logger.Info("[Plugin] op=main-window-auto-open state=open reason=south-horn-entry");
             }
 
             return;
@@ -434,7 +434,7 @@ public sealed class Plugin : IDalamudPlugin
         if (MainWindow.IsOpen)
         {
             MainWindow.IsOpen = false;
-            Logger.Info($"Main window auto-closed on territory change to {territoryType}.");
+            Logger.Info($"[Plugin] op=main-window-auto-open state=closed territory={territoryType}");
         }
 
         if (leavingSouthHorn)
@@ -519,82 +519,82 @@ public sealed class Plugin : IDalamudPlugin
         AutorotationController.ResetInstanceState(reason);
         MovementController.ResetInstanceState(reason);
 
-        Logger.Info(reason);
+        Logger.Info($"[Plugin] op=reset-automation reason={reason}");
     }
 
     public void PanicStopAll()
     {
         const string reason = "Global panic stop requested.";
-        Logger.Warning(reason);
+        Logger.Warning($"[Plugin] op=panic-stop-request reason={reason}");
 
         if (FarmSessionController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping farm session.");
+            Logger.Info("[Plugin] op=panic-stop component=FarmSession action=stop");
             FarmSessionController.PanicStop();
         }
         else
         {
-            Logger.Info("Panic stop: farm session not running.");
+            Logger.Info("[Plugin] op=panic-stop component=FarmSession action=skip reason=not-running");
         }
 
         if (CriticalEngagementAutomationController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping CE automation.");
+            Logger.Info("[Plugin] op=panic-stop component=CE action=stop");
             CriticalEngagementAutomationController.Stop(reason);
         }
         else
         {
-            Logger.Info("Panic stop: CE automation not running.");
+            Logger.Info("[Plugin] op=panic-stop component=CE action=skip reason=not-running");
         }
 
         if (FateAutomationController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping FATE automation.");
+            Logger.Info("[Plugin] op=panic-stop component=FATE action=stop");
             FateAutomationController.Stop(reason);
         }
         else
         {
-            Logger.Info("Panic stop: FATE automation not running.");
+            Logger.Info("[Plugin] op=panic-stop component=FATE action=skip reason=not-running");
         }
 
         if (PotFarmController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping pot control.");
+            Logger.Info("[Plugin] op=panic-stop component=Pot action=stop");
             PotFarmController.Stop(reason);
         }
         else
         {
-            Logger.Info("Panic stop: pot control not running.");
+            Logger.Info("[Plugin] op=panic-stop component=Pot action=skip reason=not-running");
         }
 
         if (TreasureCofferFarmController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping visible coffer farm.");
+            Logger.Info("[Plugin] op=panic-stop component=CofferFarm action=stop");
             TreasureCofferFarmController.Stop(reason);
         }
 
         if (BuffRotationController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping buff rotation.");
+            Logger.Info("[Plugin] op=panic-stop component=BuffRotation action=stop");
             BuffRotationController.Stop(reason);
         }
         else
         {
-            Logger.Info("Panic stop: buff rotation not running.");
+            Logger.Info("[Plugin] op=panic-stop component=BuffRotation action=skip reason=not-running");
         }
 
         TreasureHintTracker.CompleteCurrentTreasureSession(reason, TreasureSessionState.Abandoned);
         if (CofferInteractionController.IsRunning)
         {
-            Logger.Info("Panic stop: stopping coffer interaction.");
+            Logger.Info("[Plugin] op=panic-stop component=CofferInteraction action=stop");
             CofferInteractionController.Stop(reason);
         }
 
-        Logger.Info("Panic stop: stopping movement.");
+        Logger.Info("[Plugin] op=panic-stop component=Movement action=stop");
         MovementController.Stop(reason);
-        Logger.Info("Panic stop: releasing autorotation ownership.");
+        Logger.Info("[Plugin] op=panic-stop component=Autorotation action=release");
         AutorotationController.ReleaseOwnership(reason);
         ResetAutomationState(reason);
-        Logger.Info("Global panic stop completed.");
+        Logger.Info("[Plugin] op=panic-stop-complete");
     }
 }

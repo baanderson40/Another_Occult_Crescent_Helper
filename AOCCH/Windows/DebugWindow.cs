@@ -405,7 +405,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(!canStart);
         if (ImGui.Button("Start CE Automation"))
         {
-            plugin.Logger.Info("Manual UI action: Start CE Automation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=start-ce-automation");
             criticalEngagementAutomationController.Start();
         }
         ImGui.EndDisabled();
@@ -413,7 +413,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop CE Automation"))
         {
-            plugin.Logger.Info("Manual UI action: Stop CE Automation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-ce-automation");
             criticalEngagementAutomationController.Stop("Manual CE automation stop requested.");
         }
 
@@ -481,7 +481,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(!canStart);
         if (ImGui.Button("Start FATE Automation"))
         {
-            plugin.Logger.Info("Manual UI action: Start FATE Automation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=start-fate-automation");
             fateAutomationController.Start();
         }
         ImGui.EndDisabled();
@@ -489,7 +489,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop FATE Automation"))
         {
-            plugin.Logger.Info("Manual UI action: Stop FATE Automation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-fate-automation");
             fateAutomationController.Stop("Manual FATE automation stop requested.");
         }
 
@@ -532,7 +532,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(!canStart);
         if (ImGui.Button("Run Buff Rotation"))
         {
-            plugin.Logger.Info("Manual UI action: Run Buff Rotation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=run-buff-rotation");
             buffRotationController.Start("manual UI");
         }
         ImGui.EndDisabled();
@@ -540,14 +540,14 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop Buff Rotation"))
         {
-            plugin.Logger.Info("Manual UI action: Stop Buff Rotation.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-buff-rotation");
             buffRotationController.Stop("Manual buff rotation stop requested.");
         }
 
         ImGui.SameLine();
         if (ImGui.Button("Restore Support Job"))
         {
-            plugin.Logger.Info("Manual UI action: Restore Support Job.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=restore-support-job");
             buffRotationController.RestorePendingSupportJob("manual UI restore");
         }
 
@@ -599,7 +599,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(farmStartBlocker != null);
         if (ImGui.Button("Start Farm"))
         {
-            plugin.Logger.Info("Manual UI action: Start Farm.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=start-farm");
             farmSessionController.Start();
         }
         ImGui.EndDisabled();
@@ -607,14 +607,14 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop Farm"))
         {
-            plugin.Logger.Info("Manual UI action: Stop Farm.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-farm");
             farmSessionController.Stop("Manual farm session stop requested.");
         }
 
         ImGui.SameLine();
         if (ImGui.Button("Panic Stop"))
         {
-            plugin.Logger.Warning("Manual UI action: Panic Stop.");
+            plugin.Logger.Warning("[DebugWindow] op=ui-action action=panic-stop");
             plugin.PanicStopAll();
         }
 
@@ -778,7 +778,7 @@ public sealed class DebugWindow : Window, IDisposable
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Button("Plan Route") && hasSelectedTarget)
         {
-            plugin.Logger.Info("Manual UI action: Plan Route.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=plan-route");
             movementController.PlanRouteToSelectedTarget();
         }
 
@@ -786,7 +786,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(scannerOnlyMode);
         if (ImGui.Button("Start Route"))
         {
-            plugin.Logger.Info("Manual UI action: Start Route.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=start-route");
             movementController.StartPlannedRoute();
         }
         ImGui.EndDisabled();
@@ -794,7 +794,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop Movement"))
         {
-            plugin.Logger.Info("Manual UI action: Stop Movement.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-movement");
             movementController.Stop("Manual stop requested.");
         }
 
@@ -802,7 +802,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(scannerOnlyMode);
         if (ImGui.Button("Recover To Base Camp"))
         {
-            plugin.Logger.Info("Manual UI action: Recover To Base Camp.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=recover-to-base-camp");
             movementController.RecoverToBaseCamp();
         }
         ImGui.EndDisabled();
@@ -811,7 +811,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.BeginDisabled(scannerOnlyMode || !movementController.CanUseReturnAction);
         if (ImGui.Button("Test Return Recovery"))
         {
-            plugin.Logger.Info("Manual UI action: Test Return Recovery.");
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=test-return-recovery");
             movementController.RecoverToBaseCamp();
         }
         ImGui.EndDisabled();

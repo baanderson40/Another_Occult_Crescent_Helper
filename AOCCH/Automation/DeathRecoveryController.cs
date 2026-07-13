@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using Dalamud.Plugin.Services;
@@ -8,6 +9,7 @@ namespace AOCCH.Automation;
 
 public sealed class DeathRecoveryController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan RaiseTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RaiseSettleDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReviveConfirmTimeout = TimeSpan.FromSeconds(3);
@@ -27,6 +29,7 @@ public sealed class DeathRecoveryController : IDisposable
     private readonly object gate = new();
 
     private DeathRecoveryState state = DeathRecoveryState.Idle;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private DeathRecoveryMethod lastRecoveryMethod = DeathRecoveryMethod.None;
@@ -137,6 +140,7 @@ public sealed class DeathRecoveryController : IDisposable
         lock (gate)
         {
             state = DeathRecoveryState.Idle;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             lastRecoveryMethod = DeathRecoveryMethod.None;
@@ -148,7 +152,7 @@ public sealed class DeathRecoveryController : IDisposable
             actionStartedAt = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"Death recovery reset: {reason}");
+        logger.Info($"[DeathRecovery] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -168,6 +172,11 @@ public sealed class DeathRecoveryController : IDisposable
         {
             if (State == DeathRecoveryState.Recovered)
             {
+                lock (gate)
+                {
+                    lastRecoveryMethod = DeathRecoveryMethod.None;
+                }
+
                 TransitionTo(DeathRecoveryState.Idle, "Idle");
                 return;
             }
@@ -216,6 +225,7 @@ public sealed class DeathRecoveryController : IDisposable
     {
         lock (gate)
         {
+            currentRunId = $"DeathRecovery#{Interlocked.Increment(ref nextRunSequence)}";
             deathDetectedAt = DateTimeOffset.UtcNow;
             raiseDetectedAt = DateTimeOffset.MinValue;
             actionStartedAt = DateTimeOffset.MinValue;
@@ -225,6 +235,7 @@ public sealed class DeathRecoveryController : IDisposable
             lastError = string.Empty;
         }
 
+        movementController.SetLogOwner(currentRunId);
         TransitionTo(DeathRecoveryState.DetectedDead, "Player is dead. Waiting up to 5 minutes for raise.");
         ApplyCleanupOnce();
         TransitionTo(DeathRecoveryState.WaitingForRaise, "Waiting for raise.");
@@ -260,7 +271,7 @@ public sealed class DeathRecoveryController : IDisposable
 
         movementController.Stop(reason);
         autorotationController.ReleaseOwnership(reason);
-        logger.Info("Death recovery applied cleanup to active controllers.");
+        logger.Info($"{BuildLogTag()} op=cleanup reason=Player died; stopping automation and cleanup.");
     }
 
     private void TickWaitingForRaise()
@@ -282,7 +293,7 @@ public sealed class DeathRecoveryController : IDisposable
         if (deathDetectedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - deathDetectedAt >= RaiseTimeout)
         {
             logger.ResetThrottle("death-waiting-raise");
-            logger.Warning("No raise arrived before timeout; releasing to home point.");
+            logger.Warning($"{BuildLogTag()} op=raise-timeout action=release-home-point");
             TransitionTo(DeathRecoveryState.Releasing, "Raise timed out; waiting to confirm release dialog.");
             lock (gate)
             {
@@ -323,7 +334,7 @@ public sealed class DeathRecoveryController : IDisposable
             if (TryConfirmSelectYesno())
             {
                 logger.ResetThrottle("death-releasing");
-                logger.Info("Death recovery accepted release dialog.");
+                logger.Info($"{BuildLogTag()} op=release-confirmed");
                 lock (gate)
                 {
                     actionStartedAt = DateTimeOffset.UtcNow;
@@ -367,7 +378,7 @@ public sealed class DeathRecoveryController : IDisposable
             raiseDetectedAt = DateTimeOffset.UtcNow;
         }
 
-        logger.Info("Death recovery detected raise status.");
+        logger.Info($"{BuildLogTag()} op=raise-detected");
     }
 
     private void FinishRecovery(string reason, DeathRecoveryMethod recoveryMethod)
@@ -383,7 +394,7 @@ public sealed class DeathRecoveryController : IDisposable
             actionStartedAt = DateTimeOffset.MinValue;
         }
 
-        logger.Info(reason);
+        logger.Info($"{BuildLogTag()} op=complete method={recoveryMethod} reason={reason}");
     }
 
     private void SetFailure(string reason)
@@ -394,7 +405,7 @@ public sealed class DeathRecoveryController : IDisposable
         }
 
         TransitionTo(DeathRecoveryState.Failed, reason, clearError: false);
-        logger.Warning(reason);
+        logger.Warning($"{BuildLogTag()} op=failure state={DeathRecoveryState.Failed} reason={reason}");
     }
 
     private bool IsPlayerDead()
@@ -462,8 +473,10 @@ public sealed class DeathRecoveryController : IDisposable
 
     private void TransitionTo(DeathRecoveryState nextState, string reason, bool clearError = true)
     {
+        DeathRecoveryState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             stateEnteredAt = DateTimeOffset.UtcNow;
             lastTransition = reason;
@@ -473,6 +486,9 @@ public sealed class DeathRecoveryController : IDisposable
             }
         }
 
-        logger.Info($"Death recovery state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[DeathRecovery]" : $"[DeathRecovery run={currentRunId}]";
 }

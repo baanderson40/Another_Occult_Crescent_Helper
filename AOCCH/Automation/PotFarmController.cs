@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 using AOCCH.Data;
 using AOCCH.Logging;
@@ -13,6 +14,7 @@ namespace AOCCH.Automation;
 
 public sealed class PotFarmController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan BootstrapWaitTimeout = TimeSpan.FromMinutes(35);
     private static readonly TimeSpan PotSpawnGrace = TimeSpan.FromMinutes(2);
@@ -46,6 +48,7 @@ public sealed class PotFarmController : IDisposable
 
     private PotFarmState state = PotFarmState.Idle;
     private PotFarmRunResult lastResult;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private string currentPotName = string.Empty;
@@ -322,6 +325,7 @@ public sealed class PotFarmController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"Pot#{Interlocked.Increment(ref nextRunSequence)}";
             runStartedAt = DateTimeOffset.UtcNow;
             pendingStop = false;
             resumeBootstrapAfterRecovery = false;
@@ -351,6 +355,8 @@ public sealed class PotFarmController : IDisposable
             lastInstanceTimeDecision = new();
         }
 
+        logger.Info($"{BuildLogTag()} op=start controlReason={PotControlReason.ActiveRun}");
+        movementController.SetLogOwner(currentRunId);
         TransitionTo(PotFarmState.Bootstrapping, "Starting pot farm control.");
         return true;
     }
@@ -383,7 +389,7 @@ public sealed class PotFarmController : IDisposable
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Stopped, reason, error: reason, result: PotFarmRunResult.Stopped);
-        logger.Info($"Pot farm stopped: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} pot=\"{CurrentPotName}\" ({currentPotId}) treasurePot=\"{treasurePotName}\" ({treasurePotId}) reason={reason}");
     }
 
     public void ResetInstanceState(string reason)
@@ -392,6 +398,7 @@ public sealed class PotFarmController : IDisposable
         {
             state = PotFarmState.Idle;
             lastResult = PotFarmRunResult.None;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             currentPotName = string.Empty;
@@ -421,7 +428,7 @@ public sealed class PotFarmController : IDisposable
             lastInstanceTimeDecision = new();
         }
 
-        logger.Info($"Pot farm reset: {reason}");
+        logger.Info($"[Pot] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -443,8 +450,7 @@ public sealed class PotFarmController : IDisposable
 
         if (currentState == PotFarmState.RunningPotFate
             && !fateAutomationController.IsRunning
-            && (deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed
-                || deathRecoveryController.LastRecoveryMethod != DeathRecoveryMethod.None))
+            && deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed)
         {
             logger.DebugThrottled("pot-death-recovery-hold", WaitLogInterval, "Pot farm is holding the interrupted pot FATE while death recovery completes.");
             return;
@@ -742,9 +748,7 @@ public sealed class PotFarmController : IDisposable
             case MovementState.TimedOut:
                 var failedTreasurePotName = treasurePotName;
                 var failedTreasurePotId = treasurePotId;
-                logger.Warning(movementController.LastError.Length == 0
-                    ? $"Failed to move near the completed FATE center for {failedTreasurePotName}; abandoning the current treasure attempt and recovering to Base Camp."
-                    : $"{movementController.LastError} Abandoning the current treasure attempt and recovering to Base Camp.");
+                logger.Warning($"{BuildLogTag()} op=treasure-center-move-failed pot=\"{failedTreasurePotName}\" ({failedTreasurePotId}) reason={(movementController.LastError.Length == 0 ? $"Failed to move near the completed FATE center for {failedTreasurePotName}; abandoning the current treasure attempt and recovering to Base Camp." : $"{movementController.LastError} Abandoning the current treasure attempt and recovering to Base Camp.")}");
                 ClearTreasurePotContext();
                 BeginRecoveryToBase(
                     $"Treasure-center movement failed for {failedTreasurePotName} ({failedTreasurePotId}); abandoning the current treasure attempt and returning to Base Camp.",
@@ -813,7 +817,7 @@ public sealed class PotFarmController : IDisposable
 
             if (latestEvent.Kind != TreasureHintKind.Hint)
             {
-                logger.Info($"Treasure startup observed event kind {latestEvent.Kind} after Magical Elixir attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}; waiting for follow-up handling through treasure tracking.");
+                logger.Info($"{BuildLogTag()} op=treasure-startup-event event={latestEvent.Kind} attempt={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} action=wait-follow-up");
                 return;
             }
 
@@ -942,7 +946,7 @@ public sealed class PotFarmController : IDisposable
                     switch (cofferInteractionController.LastResult)
                     {
                         case CofferInteractionResult.LostCoffer:
-                            logger.Warning($"Matched coffer for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"} vanished before interaction started; resuming candidate traversal.");
+                            logger.Warning($"{BuildLogTag()} op=coffer-start-lost candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"} action=resume-traversal");
                             if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
                             {
                                 if (treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted)
@@ -1084,6 +1088,7 @@ public sealed class PotFarmController : IDisposable
             ? Math.Max(1, configuration.SpawnArrivalRadius)
             : PotWaitPointStopDistance;
         var description = $"Stage for {potFate.Name} ({context})";
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.PlanRouteToLocation(description, potFate.PreferredAethernet, destination, arrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -1113,7 +1118,7 @@ public sealed class PotFarmController : IDisposable
         TransitionTo(PotFarmState.TravelingToSpawn, $"Traveling to {context} staging for {potFate.Name}.");
         if (destination != stagingCenter)
         {
-            logger.Info($"Selected randomized pot wait point for {potFate.Name} at <{destination.X:0.000}, {destination.Y:0.000}, {destination.Z:0.000}> around <{stagingCenter.X:0.000}, {stagingCenter.Y:0.000}, {stagingCenter.Z:0.000}>.");
+            logger.Info($"{BuildLogTag()} op=pot-wait-point-selected pot=\"{potFate.Name}\" destination=<{destination.X:0.000}, {destination.Y:0.000}, {destination.Z:0.000}> center=<{stagingCenter.X:0.000}, {stagingCenter.Y:0.000}, {stagingCenter.Z:0.000}>");
         }
 
         return true;
@@ -1169,6 +1174,7 @@ public sealed class PotFarmController : IDisposable
             return false;
         }
 
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination.Value, TreasureCenterArrivalTolerance))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -1198,6 +1204,7 @@ public sealed class PotFarmController : IDisposable
     {
         dangerousTreasureTravelController.RestoreFateGearset($"pot recovery: {reason}");
 
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.RecoverToBaseCamp())
         {
             if (configuration.UseReturn && movementController.RecoverToBaseCamp(allowReturn: false))
@@ -1260,7 +1267,7 @@ public sealed class PotFarmController : IDisposable
         ClearTreasurePotContext();
         movementController.Stop(reason);
         TransitionTo(PotFarmState.Failed, reason, error: reason, result: PotFarmRunResult.Failed);
-        logger.Warning(reason);
+        logger.Warning($"{BuildLogTag()} op=failure state={PotFarmState.Failed} pot=\"{CurrentPotName}\" ({currentPotId}) treasurePot=\"{treasurePotName}\" ({treasurePotId}) instanceDecision=\"{LastInstanceTimeDecision.Reason}\" reason={reason}");
     }
 
     private void ClearTreasurePotContext()
@@ -1314,7 +1321,7 @@ public sealed class PotFarmController : IDisposable
 
         logger.ResetThrottle("pot-treasure-pending");
         logger.ResetThrottle("pot-treasure-elixir-retry");
-        logger.Info($"Treasure startup Magical Elixir attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}: inventoryUseAccepted={used} baselineSession={treasureAttemptBaselineSessionId} baselineRevision={treasureAttemptBaselineRevision} hintDeadline={treasureHintDeadlineAt:O}.");
+        logger.Info($"{BuildLogTag()} op=treasure-elixir-attempt attempt={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} inventoryUseAccepted={used} baselineSession={treasureAttemptBaselineSessionId} baselineRevision={treasureAttemptBaselineRevision} hintDeadline={treasureHintDeadlineAt:O}");
         TransitionTo(
             PotFarmState.TreasurePending,
             $"{reason} Attempted Magical Elixir use; waiting for a new treasure event after baseline revision {treasureAttemptBaselineRevision} in session {treasureAttemptBaselineSessionId} (attempt {treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts}).");
@@ -1452,8 +1459,10 @@ public sealed class PotFarmController : IDisposable
 
     private void TransitionTo(PotFarmState nextState, string reason, string? error = null, PotFarmRunResult? result = null)
     {
+        PotFarmState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = reason;
             stateEnteredAt = DateTimeOffset.UtcNow;
@@ -1472,6 +1481,9 @@ public sealed class PotFarmController : IDisposable
             }
         }
 
-        logger.Info($"Pot farm state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} pot=\"{CurrentPotName}\" ({currentPotId}) treasurePot=\"{treasurePotName}\" ({treasurePotId}) leavePending={leavePending} result={LastResult} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[Pot]" : $"[Pot run={currentRunId}]";
 }

@@ -13,6 +13,20 @@ namespace AOCCH.Automation;
 
 public sealed class TreasureSearchController : IDisposable
 {
+    private sealed record RefinementMovePlan(
+        Vector3 RawTarget,
+        Vector3 SnappedTarget,
+        string SnapMethod,
+        float SnapRadius,
+        float SnapDistance,
+        float VerticalSnapDistance,
+        float ForwardDistance,
+        float LateralDistance,
+        float TargetDistance,
+        float Step,
+        float Multiplier,
+        float Score);
+
     private enum CandidateHandoffResult
     {
         None,
@@ -27,6 +41,14 @@ public sealed class TreasureSearchController : IDisposable
     private const float MappedPointRetryArrivalTolerance = 4.5f;
     private const float LocalMoveSkipDistance = 3f;
     private const int MaximumCandidateRefinementSteps = 12;
+    private const float NavmeshMinimumValidY = -400f;
+    private const float NavmeshMaximumValidY = 500f;
+    private const float NavmeshSentinelY = -500f;
+    private const float NavmeshSentinelTolerance = 0.5f;
+    private const float NavmeshMaxVerticalSnap = 180f;
+    private const float NavmeshCoordinateAbsLimit = 100000f;
+    private static readonly float[] RefinementSearchRadii = [2f, 4f, 6f, 10f, 20f];
+    private static readonly float[] RefinementStepMultipliers = [1f, 0.75f, 0.5f, 0.25f];
     private static readonly TimeSpan CandidateProbeSettleDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan CandidateProbeTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan CandidateProbeRetryDelay = TimeSpan.FromSeconds(1);
@@ -81,6 +103,8 @@ public sealed class TreasureSearchController : IDisposable
     private bool activeCandidateUsesOverride;
     private Vector3 activeCandidateResolvedPosition;
     private DateTimeOffset revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+    private string lastNavmeshRejectionSummary = string.Empty;
+    private string pendingCandidateAdvanceReason = string.Empty;
 
     public TreasureSearchController(
         IFramework framework,
@@ -273,9 +297,8 @@ public sealed class TreasureSearchController : IDisposable
             return true;
         }
 
-        logger.Info($"Treasure search start requested for fate {fateName} ({fateId}) from origin <{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>.");
-
         var hintSnapshot = treasureHintTracker.Snapshot;
+        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
         if (!hintSnapshot.HasActiveSession || !hintSnapshot.HasInitialHint)
         {
             SetFailure("Treasure search requires an active treasure session with an initial hint.");
@@ -326,12 +349,13 @@ public sealed class TreasureSearchController : IDisposable
             lastResult = TreasureSearchRunResult.None;
         }
 
+        movementController.SetLogOwner($"TreasureSession#{hintSnapshot.SessionId}");
         return BeginCurrentCandidate($"Starting treasure traversal for {fateName} from first-hint group {group.GroupKey}.");
     }
 
     public void Stop(string reason)
     {
-        logger.Info($"Treasure search stop requested: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} fate=\"{activeFateName}\" ({activeFateId}) candidate={activeCandidateKey?.Label ?? "none"} reason={reason}");
         if (dangerousTreasureTravelController.IsRunning)
         {
             dangerousTreasureTravelController.Stop(reason);
@@ -385,12 +409,12 @@ public sealed class TreasureSearchController : IDisposable
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"Treasure search reset: {reason}");
+        logger.Info($"[Treasure] op=reset reason={reason}");
     }
 
     public bool StartNextCandidateAfterInteractionLoss(string reason)
     {
-        logger.Info($"Treasure search advancing after interaction loss. candidate={ActiveCandidateKey?.Label ?? "none"} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=interaction-loss-advance candidate={ActiveCandidateKey?.Label ?? "none"} reason={reason}");
         if (State != TreasureSearchState.ReadyForInteraction)
         {
             SetFailure("Treasure traversal cannot resume after coffer interaction loss because it is not waiting on a matched coffer.");
@@ -453,7 +477,7 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
-        if (TryHandleVisibleCoffer())
+        if (TryResumeDeferredCandidateAdvance())
         {
             return;
         }
@@ -587,7 +611,7 @@ public sealed class TreasureSearchController : IDisposable
                     return;
                 case TreasureHintKind.ElixirPrompt:
                 case TreasureHintKind.BonusOffer:
-                    logger.Info($"Treasure candidate {activeCandidateKey?.Label} produced event {latestEvent.Kind}; continuing local probing.");
+                    logger.Info($"{BuildLogTag()} op=probe-event candidate={activeCandidateKey?.Label ?? "none"} event={latestEvent.Kind} action=continue-probing");
                     ContinueProbingAfterEvent(latestEvent.Revision);
                     return;
             }
@@ -665,7 +689,7 @@ public sealed class TreasureSearchController : IDisposable
         {
             if (refinementProbeDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= refinementProbeDeadlineAt)
             {
-                logger.Info($"Treasure candidate {activeCandidateKey?.Label} refinement probe attempt {refinementProbeAttemptCount} produced no usable event; retrying from the current position.");
+                logger.Info($"{BuildLogTag()} op=refine-probe-empty candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementProbeAttemptCount} action=retry-current-position");
             }
 
             if (!TryStartRefinementProbe($"Refinement is probing candidate {activeCandidateKey?.Label} after local movement."))
@@ -690,7 +714,7 @@ public sealed class TreasureSearchController : IDisposable
 
         if (refinementEvent.Kind != TreasureHintKind.Hint)
         {
-            logger.Info($"Treasure candidate {activeCandidateKey?.Label} produced non-hint refinement event {refinementEvent.Kind}; probing again at the current position.");
+            logger.Info($"{BuildLogTag()} op=refine-non-hint candidate={activeCandidateKey?.Label ?? "none"} event={refinementEvent.Kind} action=probe-current-position");
             refinementEvent = null;
             return;
         }
@@ -710,7 +734,7 @@ public sealed class TreasureSearchController : IDisposable
         if (!mappedPointRetryUsed && positionDistance > MappedPointRetryArrivalTolerance)
         {
             mappedPointRetryUsed = true;
-            logger.Info($"Treasure candidate {activeCandidateKey?.Label} local hint confirmed; retrying mapped point at <{candidatePosition.X:0.0}, {candidatePosition.Y:0.0}, {candidatePosition.Z:0.0}> ({positionDistance:0.0}y away) before dead-reckoning refinement.");
+            logger.Info($"{BuildLogTag()} op=refine-mapped-retry candidate={activeCandidateKey?.Label ?? "none"} position=<{candidatePosition.X:0.0}, {candidatePosition.Y:0.0}, {candidatePosition.Z:0.0}> distance={positionDistance:0.0}y");
             if (!TryStartRefinementMove(activeCandidate, candidatePosition, MappedPointRetryArrivalTolerance, $"Treasure candidate {activeCandidate.Label} mapped retry"))
             {
                 return;
@@ -728,25 +752,33 @@ public sealed class TreasureSearchController : IDisposable
 
         var moveStep = GetRefinementStepSize(refinementEvent.DistanceBucket);
         var movePlan = ResolveRefinementMove(playerPosition, refinementEvent.Direction, moveStep);
-        if (movePlan.Target == null)
+        if (movePlan == null)
         {
-            logger.Info($"Treasure candidate {activeCandidateKey?.Label} could not resolve a navigable local refinement move for {refinementEvent.DistanceBucket} {refinementEvent.Direction}; probing again from the current position.");
+            if (lastNavmeshRejectionSummary.Length > 0)
+            {
+                logger.Info($"{BuildLogTag()} op=refine-no-nav candidate={activeCandidateKey?.Label ?? "none"} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} rejections={lastNavmeshRejectionSummary} action=probe-current-position");
+            }
+            else
+            {
+                logger.Info($"{BuildLogTag()} op=refine-no-nav candidate={activeCandidateKey?.Label ?? "none"} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} action=probe-current-position");
+            }
+
             refinementEvent = null;
             return;
         }
 
-        var target = movePlan.Target.Value;
+        var target = movePlan.SnappedTarget;
         var targetDistance = CalculateFlatDistance(playerPosition, target);
         if (targetDistance <= LocalMoveSkipDistance)
         {
-            logger.Info($"Treasure candidate {activeCandidateKey?.Label} local refinement target resolved underfoot ({targetDistance:0.0}y); probing again without moving.");
+            logger.Info($"{BuildLogTag()} op=refine-underfoot candidate={activeCandidateKey?.Label ?? "none"} distance={targetDistance:0.0}y action=probe-without-moving");
             refinementEvent = null;
             return;
         }
 
         refinementStepIndex++;
-        logger.Info($"Treasure candidate {activeCandidateKey?.Label} refinement move {refinementStepIndex}/{MaximumCandidateRefinementSteps}: {refinementEvent.DistanceBucket} {refinementEvent.Direction} -> raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> via {movePlan.SnapMethod} step={movePlan.Step:0.0} actualTarget={targetDistance:0.0}y.");
-        if (!TryStartRefinementMove(activeCandidate, target, Math.Max(2.5f, 8f / 2f), $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}"))
+        logger.Info($"{BuildLogTag()} op=refine-move candidate={activeCandidateKey?.Label ?? "none"} stepIndex={refinementStepIndex}/{MaximumCandidateRefinementSteps} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> snapMethod={movePlan.SnapMethod} snapRadius={movePlan.SnapRadius:0} actualTarget={targetDistance:0.0}y");
+        if (!TryStartRefinementMove(activeCandidate, target, Math.Max(2.5f, 8f / 2f), $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}", targetAlreadyResolved: true))
         {
             return;
         }
@@ -948,6 +980,58 @@ public sealed class TreasureSearchController : IDisposable
 
     private void AdvanceCandidate(string reason)
     {
+        if (movementController.IsPathBusy)
+        {
+            QueueCandidateAdvance(reason);
+            return;
+        }
+
+        AdvanceCandidateCore(reason);
+    }
+
+    private void QueueCandidateAdvance(string reason)
+    {
+        logger.ResetThrottle("treasure-search-travel");
+        lock (gate)
+        {
+            pendingCandidateAdvanceReason = reason;
+        }
+    }
+
+    private bool TryResumeDeferredCandidateAdvance()
+    {
+        string reason;
+        lock (gate)
+        {
+            reason = pendingCandidateAdvanceReason;
+        }
+
+        if (reason.Length == 0)
+        {
+            return false;
+        }
+
+        if (movementController.IsPathBusy)
+        {
+            logger.DebugThrottled(
+                "treasure-search-advance-wait",
+                TimeSpan.FromSeconds(1),
+                $"Treasure search is waiting for vnavmesh to settle before advancing candidates. reason={reason} movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+            return true;
+        }
+
+        lock (gate)
+        {
+            pendingCandidateAdvanceReason = string.Empty;
+        }
+
+        logger.Info($"{BuildLogTag()} op=advance-resumed candidate={activeCandidateKey?.Label ?? "none"} reason={reason}");
+        AdvanceCandidateCore(reason);
+        return true;
+    }
+
+    private void AdvanceCandidateCore(string reason)
+    {
         logger.ResetThrottle("treasure-search-travel");
 
         if (orderedCandidates.Count == 0)
@@ -984,6 +1068,8 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            lastNavmeshRejectionSummary = string.Empty;
+            pendingCandidateAdvanceReason = string.Empty;
         }
 
         BeginCurrentCandidate(reason);
@@ -1015,7 +1101,7 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        logger.Info($"Treasure search candidate start: label={candidate.Label} fate={activeFateName} ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
+        logger.Info($"{BuildLogTag()} op=candidate-start candidate={candidate.Label} fate=\"{activeFateName}\" ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -1069,6 +1155,8 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = usedOverride;
             activeCandidateResolvedPosition = targetPosition;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
+            lastNavmeshRejectionSummary = string.Empty;
+            pendingCandidateAdvanceReason = string.Empty;
         }
 
         TransitionTo(
@@ -1269,7 +1357,7 @@ public sealed class TreasureSearchController : IDisposable
         if (refinementMoveDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= refinementMoveDeadlineAt)
         {
             movementController.Stop("Treasure refinement move timed out.");
-            AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} local refinement move timed out.");
+            QueueCandidateAdvance($"Treasure candidate {activeCandidateKey?.Label} local refinement move timed out.");
             return false;
         }
 
@@ -1281,10 +1369,13 @@ public sealed class TreasureSearchController : IDisposable
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 return handoffResult != CandidateHandoffResult.DangerousTransitionStarted;
             case MovementState.Failed:
-            case MovementState.TimedOut:
-                AdvanceCandidate(movementController.LastError.Length == 0
+                QueueCandidateAdvance(movementController.LastError.Length == 0
                     ? $"Treasure candidate {activeCandidateKey?.Label} local refinement move failed."
                     : movementController.LastError);
+                return false;
+            case MovementState.TimedOut:
+                movementController.Stop("Treasure refinement move timed out.");
+                QueueCandidateAdvance($"Treasure candidate {activeCandidateKey?.Label} local refinement move timed out.");
                 return false;
         }
 
@@ -1295,14 +1386,18 @@ public sealed class TreasureSearchController : IDisposable
         return false;
     }
 
-    private bool TryStartRefinementMove(TreasureCofferCandidateData activeCandidate, Vector3 target, float arrivalTolerance, string description)
+    private bool TryStartRefinementMove(TreasureCofferCandidateData activeCandidate, Vector3 target, float arrivalTolerance, string description, bool targetAlreadyResolved = false)
     {
-        var destination = movementController.FindNearestNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f);
+        var destination = targetAlreadyResolved
+            ? new Vector3?(target)
+            : movementController.FindNearestNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             AdvanceCandidate($"Treasure candidate {activeCandidate.Label} local refinement target has no reliable vnavmesh point near <{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}>.");
             return false;
         }
+
+        var resolvedDestination = destination.Value;
 
         var isDangerousCandidate = IsDangerousCandidate(activeCandidate);
         if (isDangerousCandidate)
@@ -1313,7 +1408,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
 
-            if (!dangerousTreasureTravelController.Start(activeCandidate, destination.Value, arrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(activeCandidate, resolvedDestination, arrivalTolerance))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1329,7 +1424,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
         }
-        else if (!movementController.StartDirectMove(description, destination.Value, arrivalTolerance))
+        else if (!movementController.StartDirectMove(description, resolvedDestination, arrivalTolerance, destinationAlreadyResolved: targetAlreadyResolved))
         {
             AdvanceCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start local refinement movement for candidate {activeCandidate.Label}."
@@ -1337,7 +1432,7 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        refinementMoveDeadlineAt = DateTimeOffset.UtcNow + GetRefinementMoveTimeout(CalculateFlatDistance(Plugin.ObjectTable.LocalPlayer?.Position ?? target, destination.Value));
+        refinementMoveDeadlineAt = DateTimeOffset.UtcNow + GetRefinementMoveTimeout(CalculateFlatDistance(Plugin.ObjectTable.LocalPlayer?.Position ?? target, resolvedDestination));
         return true;
     }
 
@@ -1409,7 +1504,7 @@ public sealed class TreasureSearchController : IDisposable
             lastHandoffReason = $"Handoff from {currentCandidate.Label} to {handoffCandidate.Label} using {reason}.";
         }
 
-        logger.Info($"Treasure refinement handed off from candidate {currentCandidate.Label} to {handoffCandidate.Label} using {reason}. distances current={currentDistance:0.0}y handoff={bestDistance:0.0}y advantage={(currentDistance - bestDistance):0.0}y.");
+        logger.Info($"{BuildLogTag()} op=handoff fromCandidate={currentCandidate.Label} toCandidate={handoffCandidate.Label} reason={reason} currentDistance={currentDistance:0.0}y handoffDistance={bestDistance:0.0}y advantage={(currentDistance - bestDistance):0.0}y");
         if (!handoffIsDangerous)
         {
             return CandidateHandoffResult.Updated;
@@ -1438,7 +1533,7 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.DangerousTransitionStarted;
         }
 
-        logger.Info($"Treasure candidate handoff to dangerous candidate {handoffCandidate.Label} started Ninja/Hide travel before continuing refinement.");
+        logger.Info($"{BuildLogTag()} op=handoff-dangerous candidate={handoffCandidate.Label} action=start-dangerous-travel");
         return CandidateHandoffResult.DangerousTransitionStarted;
     }
 
@@ -1471,13 +1566,13 @@ public sealed class TreasureSearchController : IDisposable
         var orderedDangerousCandidates = OrderCandidatesNearestNeighbor(dangerousCandidates, dangerousOrigin);
         foreach (var dangerousCandidate in orderedDangerousCandidates)
         {
-            logger.Info($"Dangerous candidate {dangerousCandidate.Label} retained for end-of-order traversal because Ninja dangerous-area mode is enabled.");
+            logger.Info($"{BuildLogTag()} op=dangerous-order candidate={dangerousCandidate.Label} reason=ninja-dangerous-area-enabled");
         }
 
         var finalOrder = new List<TreasureCofferCandidateData>(orderedSafeCandidates.Count + orderedDangerousCandidates.Count);
         finalOrder.AddRange(orderedSafeCandidates);
         finalOrder.AddRange(orderedDangerousCandidates);
-        logger.Info($"Treasure candidate order for {activeFateName}/{group.GroupKey}: safe=[{string.Join(", ", orderedSafeCandidates.Select(candidate => candidate.Label))}] dangerous=[{string.Join(", ", orderedDangerousCandidates.Select(candidate => candidate.Label))}] final=[{string.Join(", ", finalOrder.Select(candidate => candidate.Label))}]");
+        logger.Info($"{BuildLogTag()} op=candidate-order fate=\"{activeFateName}\" group={group.GroupKey} safe=[{string.Join(", ", orderedSafeCandidates.Select(candidate => candidate.Label))}] dangerous=[{string.Join(", ", orderedDangerousCandidates.Select(candidate => candidate.Label))}] final=[{string.Join(", ", finalOrder.Select(candidate => candidate.Label))}]");
         return finalOrder;
     }
 
@@ -1506,15 +1601,127 @@ public sealed class TreasureSearchController : IDisposable
     private bool IsHandledCandidate(string label)
         => handledCandidateLabels.Contains(label);
 
-    private (Vector3 RawTarget, Vector3? Target, float Step, string SnapMethod) ResolveRefinementMove(Vector3 playerPosition, TreasureDirection direction, float baseStep)
+    private RefinementMovePlan? ResolveRefinementMove(Vector3 playerPosition, TreasureDirection direction, float baseStep)
     {
         var directionVector = GetDirectionVector(direction);
-        var rawTarget = new Vector3(
-            playerPosition.X + (directionVector.X * baseStep),
-            playerPosition.Y,
-            playerPosition.Z + (directionVector.Z * baseStep));
-        var snapped = movementController.FindNearestNavigablePoint(rawTarget, halfExtentXZ: 5f, halfExtentY: 5f);
-        return (rawTarget, snapped ?? rawTarget, baseStep, snapped == null ? "raw" : "navmesh");
+        if (directionVector == Vector3.Zero)
+        {
+            lastNavmeshRejectionSummary = string.Empty;
+            return null;
+        }
+
+        var rejectionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        RefinementMovePlan? bestPlan = null;
+
+        void RecordRejection(string reason)
+            => rejectionCounts[reason] = rejectionCounts.GetValueOrDefault(reason, 0) + 1;
+
+        RefinementMovePlan? ValidateMeshTarget(Vector3 rawTarget, Vector3? meshTarget, string method, float radius, float step, float multiplier)
+        {
+            if (!meshTarget.HasValue)
+            {
+                return null;
+            }
+
+            if (!TryValidateNavmeshResolution(rawTarget, meshTarget.Value, NavmeshMaxVerticalSnap, out var rejectionReason, out var verticalDelta))
+            {
+                RecordRejection(rejectionReason);
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{meshTarget.Value.X:0.0}, {meshTarget.Value.Y:0.0}, {meshTarget.Value.Z:0.0}>, but navmesh validation rejected it: reason={rejectionReason} verticalSnap={(verticalDelta.HasValue ? $"{verticalDelta.Value:0.0}y" : "n/a")}.");
+                return null;
+            }
+
+            var snappedTarget = meshTarget.Value;
+            var snapDistance = CalculateFlatDistance(rawTarget, snappedTarget);
+            var moveX = snappedTarget.X - playerPosition.X;
+            var moveZ = snappedTarget.Z - playerPosition.Z;
+            var targetDistance = MathF.Sqrt((moveX * moveX) + (moveZ * moveZ));
+            var forwardDistance = (moveX * directionVector.X) + (moveZ * directionVector.Z);
+            var lateralDistance = MathF.Abs((moveX * directionVector.Z) - (moveZ * directionVector.X));
+            var maxSnapDistance = MathF.Max(3.5f, step * 0.75f);
+            var minimumForwardDistance = MathF.Max(1f, step * 0.20f);
+            var maxLateralDistance = MathF.Max(3f, step * 0.75f);
+
+            if (snapDistance > maxSnapDistance)
+            {
+                RecordRejection("horizontal_snap");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but snap drift {snapDistance:0.0}y exceeds {maxSnapDistance:0.0}y; rejecting mesh point.");
+                return null;
+            }
+
+            if (forwardDistance < minimumForwardDistance)
+            {
+                RecordRejection("insufficient_forward");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but it only advances {forwardDistance:0.0}y in the intended {direction} direction; rejecting mesh point.");
+                return null;
+            }
+
+            if (lateralDistance > maxLateralDistance)
+            {
+                RecordRejection("lateral_drift");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but lateral drift {lateralDistance:0.0}y exceeds {maxLateralDistance:0.0}y for {direction}; rejecting mesh point.");
+                return null;
+            }
+
+            if (!movementController.HasPathfindRoute(playerPosition, snappedTarget))
+            {
+                RecordRejection("no_route");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}> but pathfind returned no route.");
+                return null;
+            }
+
+            return new RefinementMovePlan(
+                rawTarget,
+                snappedTarget,
+                method,
+                radius,
+                snapDistance,
+                verticalDelta ?? 0f,
+                forwardDistance,
+                lateralDistance,
+                targetDistance,
+                step,
+                multiplier,
+                snapDistance + (lateralDistance * 0.5f) + (MathF.Abs(targetDistance - step) * 0.25f));
+        }
+
+        foreach (var multiplier in RefinementStepMultipliers)
+        {
+            var step = baseStep * multiplier;
+            var rawTarget = BuildTreasureTarget(playerPosition, directionVector, step);
+            foreach (var radius in RefinementSearchRadii)
+            {
+                RefinementMovePlan? radiusBestPlan = null;
+
+                var floorPoint = movementController.FindPointOnFloor(rawTarget, radius);
+                var floorPlan = ValidateMeshTarget(rawTarget, floorPoint, "PointOnFloor", radius, step, multiplier);
+                if (floorPlan != null)
+                {
+                    radiusBestPlan = floorPlan;
+                }
+
+                var nearestPoint = movementController.FindNearestNavigablePoint(rawTarget, radius, MathF.Max(8f, radius * 0.4f));
+                var nearestPlan = ValidateMeshTarget(rawTarget, nearestPoint, "NearestPoint", radius, step, multiplier);
+                if (nearestPlan != null && (radiusBestPlan == null || nearestPlan.Score < radiusBestPlan.Score))
+                {
+                    radiusBestPlan = nearestPlan;
+                }
+
+                if (radiusBestPlan != null && (bestPlan == null || radiusBestPlan.Score < bestPlan.Score))
+                {
+                    bestPlan = radiusBestPlan;
+                }
+
+                if (floorPoint == null && nearestPoint == null)
+                {
+                    logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> had no navmesh point from PointOnFloor or NearestPoint at radius {radius:0}.");
+                }
+            }
+        }
+
+        lastNavmeshRejectionSummary = rejectionCounts.Count == 0
+            ? string.Empty
+            : string.Join(", ", rejectionCounts.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key}={entry.Value}"));
+        return bestPlan;
     }
 
     private float GetRefinementStepSize(string distanceBucket)
@@ -1536,15 +1743,88 @@ public sealed class TreasureSearchController : IDisposable
         => direction switch
         {
             TreasureDirection.North => new Vector3(0f, 0f, -1f),
-            TreasureDirection.Northeast => new Vector3(1f, 0f, -1f),
+            TreasureDirection.Northeast => new Vector3(0.70710678f, 0f, -0.70710678f),
             TreasureDirection.East => new Vector3(1f, 0f, 0f),
-            TreasureDirection.Southeast => new Vector3(1f, 0f, 1f),
+            TreasureDirection.Southeast => new Vector3(0.70710678f, 0f, 0.70710678f),
             TreasureDirection.South => new Vector3(0f, 0f, 1f),
-            TreasureDirection.Southwest => new Vector3(-1f, 0f, 1f),
+            TreasureDirection.Southwest => new Vector3(-0.70710678f, 0f, 0.70710678f),
             TreasureDirection.West => new Vector3(-1f, 0f, 0f),
-            TreasureDirection.Northwest => new Vector3(-1f, 0f, -1f),
+            TreasureDirection.Northwest => new Vector3(-0.70710678f, 0f, -0.70710678f),
             _ => Vector3.Zero,
         };
+
+    private static Vector3 BuildTreasureTarget(Vector3 position, Vector3 directionVector, float step)
+        => new(
+            position.X + (directionVector.X * step),
+            position.Y,
+            position.Z + (directionVector.Z * step));
+
+    private static bool TryValidateNavmeshResolution(Vector3 referencePoint, Vector3 meshPoint, float maxVerticalDelta, out string rejectionReason, out float? verticalDelta)
+    {
+        if (!TryGetPlausibleNavmeshPoint(meshPoint, out rejectionReason, out _, out var meshY, out _))
+        {
+            verticalDelta = null;
+            return false;
+        }
+
+        if (float.IsNaN(referencePoint.Y) || float.IsInfinity(referencePoint.Y))
+        {
+            rejectionReason = "invalid_reference";
+            verticalDelta = null;
+            return false;
+        }
+
+        verticalDelta = MathF.Abs(meshY - referencePoint.Y);
+        if (verticalDelta.Value > maxVerticalDelta)
+        {
+            rejectionReason = "vertical_snap";
+            return false;
+        }
+
+        rejectionReason = string.Empty;
+        return true;
+    }
+
+    private static bool TryGetPlausibleNavmeshPoint(Vector3 point, out string rejectionReason, out float x, out float y, out float z)
+    {
+        x = point.X;
+        y = point.Y;
+        z = point.Z;
+        if (float.IsNaN(x) || float.IsNaN(y) || float.IsNaN(z))
+        {
+            rejectionReason = "nan";
+            return false;
+        }
+
+        if (float.IsInfinity(x) || float.IsInfinity(y) || float.IsInfinity(z))
+        {
+            rejectionReason = "infinite";
+            return false;
+        }
+
+        if (MathF.Abs(x) > NavmeshCoordinateAbsLimit
+            || MathF.Abs(y) > NavmeshCoordinateAbsLimit
+            || MathF.Abs(z) > NavmeshCoordinateAbsLimit)
+        {
+            rejectionReason = "absurd_coordinate";
+            return false;
+        }
+
+        if (MathF.Abs(y - NavmeshSentinelY) < NavmeshSentinelTolerance)
+        {
+            rejectionReason = "sentinel_elevation";
+            return false;
+        }
+
+        if (y < NavmeshMinimumValidY || y > NavmeshMaximumValidY)
+        {
+            rejectionReason = "elevation_out_of_range";
+            return false;
+        }
+
+        rejectionReason = string.Empty;
+        return true;
+    }
 
     private void SetFailure(string reason)
         => TransitionTo(TreasureSearchState.Failed, reason, error: reason, result: TreasureSearchRunResult.Failed);
@@ -1630,7 +1910,7 @@ public sealed class TreasureSearchController : IDisposable
 
         logger.ResetThrottle("treasure-search-probe");
         logger.ResetThrottle("treasure-search-probe-retry");
-        logger.Info($"Treasure candidate probe attempt {candidateProbeAttemptCount}/{MaximumCandidateProbeAttempts} for {activeCandidateKey?.Label}: inventoryUseAccepted={used} baselineSession={candidateProbeBaselineSessionId} baselineRevision={candidateProbeBaselineRevision} probeDeadline={candidateProbeDeadlineAt:O}. {reason}");
+        logger.Info($"{BuildLogTag()} op=probe-attempt candidate={activeCandidateKey?.Label ?? "none"} attempt={candidateProbeAttemptCount}/{MaximumCandidateProbeAttempts} inventoryUseAccepted={used} baselineSession={candidateProbeBaselineSessionId} baselineRevision={candidateProbeBaselineRevision} probeDeadline={candidateProbeDeadlineAt:O} reason={reason}");
         TransitionTo(TreasureSearchState.ProbingCandidate, $"{reason} Waiting for a new treasure event after baseline revision {candidateProbeBaselineRevision} in session {candidateProbeBaselineSessionId} for candidate {activeCandidateKey?.Label}.");
         return true;
     }
@@ -1675,7 +1955,7 @@ public sealed class TreasureSearchController : IDisposable
 
         logger.ResetThrottle("treasure-search-refine-probe");
         logger.ResetThrottle("treasure-search-refine-probe-retry");
-        logger.Info($"Treasure refinement probe attempt {refinementProbeAttemptCount} for {activeCandidateKey?.Label}: inventoryUseAccepted={used} baselineSession={refinementProbeBaselineSessionId} baselineRevision={refinementProbeBaselineRevision} probeDeadline={refinementProbeDeadlineAt:O} step={refinementStepIndex}/{MaximumCandidateRefinementSteps}. {reason}");
+        logger.Info($"{BuildLogTag()} op=refine-probe-attempt candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementProbeAttemptCount} inventoryUseAccepted={used} baselineSession={refinementProbeBaselineSessionId} baselineRevision={refinementProbeBaselineRevision} probeDeadline={refinementProbeDeadlineAt:O} step={refinementStepIndex}/{MaximumCandidateRefinementSteps} reason={reason}");
         return true;
     }
 
@@ -1692,8 +1972,10 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TransitionTo(TreasureSearchState nextState, string reason, string? error = null, TreasureSearchRunResult? result = null)
     {
+        TreasureSearchState previousState;
         lock (gate)
         {
+            previousState = state;
             if (nextState is TreasureSearchState.Idle
                 or TreasureSearchState.Stopped
                 or TreasureSearchState.Failed
@@ -1702,6 +1984,8 @@ public sealed class TreasureSearchController : IDisposable
                 handledCandidateLabels.Clear();
                 orderedCandidates.Clear();
                 traversalOriginCenter = Vector3.Zero;
+                pendingCandidateAdvanceReason = string.Empty;
+                lastNavmeshRejectionSummary = string.Empty;
             }
 
             state = nextState;
@@ -1721,7 +2005,13 @@ public sealed class TreasureSearchController : IDisposable
             }
         }
 
-        logger.Info($"Treasure search state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} fate=\"{activeFateName}\" ({activeFateId}) group={activeGroupKey} candidate={activeCandidateKey?.Label ?? "none"} reason={reason}");
+    }
+
+    private string BuildLogTag(int? sessionId = null)
+    {
+        var resolvedSessionId = sessionId ?? treasureHintTracker.Snapshot.SessionId;
+        return resolvedSessionId > 0 ? $"[Treasure session={resolvedSessionId}]" : "[Treasure]";
     }
 
     private static TreasureCandidateKey ToCandidateKey(TreasureCofferCandidateData candidate)

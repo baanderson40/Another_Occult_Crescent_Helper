@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 using AOCCH.Data;
 using AOCCH.Logging;
@@ -13,6 +14,7 @@ namespace AOCCH.Automation;
 
 public sealed class TreasureCofferFarmController : IDisposable
 {
+    private static int nextRunSequence;
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferAcquisitionDistance = 100f;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
@@ -32,6 +34,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private readonly Dictionary<string, VisibleCofferFarmSpotData> spotsByKey;
 
     private TreasureCofferFarmState state = TreasureCofferFarmState.Idle;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private int currentRouteIndex = -1;
@@ -206,6 +209,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"CofferFarm#{Interlocked.Increment(ref nextRunSequence)}";
             currentRouteIndex = -1;
             activeRouteEntry = null;
             activeSpot = null;
@@ -216,6 +220,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastMatchSource = string.Empty;
         }
 
+        movementController.SetLogOwner(currentRunId);
         TransitionTo(TreasureCofferFarmState.Starting, $"Starting visible coffer farm route with {data.VisibleCofferFarmRoute.Count} entries.");
         return true;
     }
@@ -245,6 +250,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         lock (gate)
         {
             state = TreasureCofferFarmState.Idle;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             currentRouteIndex = -1;
@@ -257,7 +263,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastMatchSource = string.Empty;
         }
 
-        logger.Info($"Visible coffer farm reset: {reason}");
+        logger.Info($"[CofferFarm] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -332,7 +338,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     lastMatchSource = string.Empty;
                 }
 
-                logger.Info($"Skipping visible coffer route spot {spot.Area}:{spot.Label} because it exceeds the configured visible coffer aggro threshold or requires dangerous travel. aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")}.");
+                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-or-over-threshold");
                 continue;
             }
 
@@ -378,11 +384,10 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         var destination = ActiveResolvedPosition;
         var arrivalDistance = GetArrivalDistance(spot);
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Visible coffer route {spot.Label}", destination, arrivalDistance))
         {
-            logger.Warning(movementController.LastError.Length == 0
-                ? $"Failed to start travel to visible coffer route spot {spot.Area}:{spot.Label}."
-                : movementController.LastError);
+            logger.Warning($"{BuildLogTag()} op=travel-start-failed spot={spot.Area}:{spot.Label} destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> arrivalDistance={arrivalDistance:0.0} reason={(movementController.LastError.Length == 0 ? $"Failed to start travel to visible coffer route spot {spot.Area}:{spot.Label}." : movementController.LastError)}");
             TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping visible coffer route spot {spot.Area}:{spot.Label} because direct travel could not start.");
             return false;
         }
@@ -405,9 +410,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
-                logger.Warning(movementController.LastError.Length == 0
-                    ? $"Failed to reach visible coffer route spot {DescribeActiveSpot()}."
-                    : movementController.LastError);
+                logger.Warning($"{BuildLogTag()} op=travel-failed spot={DescribeActiveSpot()} movementState={movementController.State} reason={(movementController.LastError.Length == 0 ? $"Failed to reach visible coffer route spot {DescribeActiveSpot()}." : movementController.LastError)}");
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping visible coffer route spot {DescribeActiveSpot()} because direct travel failed.");
                 return;
         }
@@ -431,7 +434,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        logger.Info($"VISIBLE_COFFER_FINAL_SCAN_MISS spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot)} acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y.");
+        logger.Info($"{BuildLogTag()} op=final-scan-miss spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot):0.0} acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y");
         TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No visible coffer matched {DescribeActiveSpot()} on final arrival scan; continuing to the next route entry.");
     }
 
@@ -452,7 +455,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 if (LastMatchedCoffer != null)
                 {
                     logger.Info(
-                        $"VISIBLE_COFFER_OPENED spot={DescribeActiveSpot()} source={FormatValue(lastMatchSource)} baseId={LastMatchedCoffer.DataId} objectId={LastMatchedCoffer.GameObjectId:X} pos=<{LastMatchedCoffer.Position.X:0.000}, {LastMatchedCoffer.Position.Y:0.000}, {LastMatchedCoffer.Position.Z:0.000}> name='{LastMatchedCoffer.Name}'.");
+                        $"{BuildLogTag()} op=coffer-opened spot={DescribeActiveSpot()} source={FormatValue(lastMatchSource)} baseId={LastMatchedCoffer.DataId} objectId={LastMatchedCoffer.GameObjectId:X} pos=<{LastMatchedCoffer.Position.X:0.000}, {LastMatchedCoffer.Position.Y:0.000}, {LastMatchedCoffer.Position.Z:0.000}> name='{LastMatchedCoffer.Name}'");
                 }
 
                 PersistActiveSpotOverride();
@@ -477,15 +480,11 @@ public sealed class TreasureCofferFarmController : IDisposable
     {
         if (!movementController.RecoverToBaseCamp())
         {
-            logger.Warning(movementController.LastError.Length == 0
-                ? "Completed the visible coffer farm route, but failed to start Base Camp recovery with Return routing; retrying with direct recovery."
-                : movementController.LastError);
+            logger.Warning($"{BuildLogTag()} op=return-start-failed spot={DescribeActiveSpot()} reason={(movementController.LastError.Length == 0 ? "Completed the visible coffer farm route, but failed to start Base Camp recovery with Return routing; retrying with direct recovery." : movementController.LastError)}");
 
             if (!movementController.RecoverToBaseCamp(allowReturn: false))
             {
-                logger.Warning(movementController.LastError.Length == 0
-                    ? "Completed the visible coffer farm route, but failed to start Base Camp recovery."
-                    : movementController.LastError);
+                logger.Warning($"{BuildLogTag()} op=direct-recovery-start-failed spot={DescribeActiveSpot()} reason={(movementController.LastError.Length == 0 ? "Completed the visible coffer farm route, but failed to start Base Camp recovery." : movementController.LastError)}");
                 TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but failed to start Base Camp recovery.");
                 return;
             }
@@ -507,9 +506,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             case MovementState.Failed:
             case MovementState.TimedOut:
-                logger.Warning(movementController.LastError.Length == 0
-                    ? "Base Camp recovery failed after completing the visible coffer farm route."
-                    : movementController.LastError);
+                logger.Warning($"{BuildLogTag()} op=return-failed movementState={movementController.State} reason={(movementController.LastError.Length == 0 ? "Base Camp recovery failed after completing the visible coffer farm route." : movementController.LastError)}");
                 TransitionTo(TreasureCofferFarmState.Completed, "Completed the visible coffer farm route, but Base Camp recovery failed.");
                 return;
         }
@@ -570,13 +567,13 @@ public sealed class TreasureCofferFarmController : IDisposable
         };
 
         logger.Info(
-            $"VISIBLE_COFFER_MATCH spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={confirmedCoffer.DataId} objectId={confirmedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y pos=<{confirmedCoffer.Position.X:0.000}, {confirmedCoffer.Position.Y:0.000}, {confirmedCoffer.Position.Z:0.000}> name='{confirmedCoffer.Name}'.");
+            $"{BuildLogTag()} op=coffer-match spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={confirmedCoffer.DataId} objectId={confirmedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y pos=<{confirmedCoffer.Position.X:0.000}, {confirmedCoffer.Position.Y:0.000}, {confirmedCoffer.Position.Z:0.000}> name='{confirmedCoffer.Name}'");
 
         if (!cofferInteractionController.Start(interactionMatch))
         {
             if (cofferInteractionController.LastResult == CofferInteractionResult.LostCoffer)
             {
-                logger.Warning($"Matched visible coffer for {spot.Area}:{spot.Label} vanished before interaction started.");
+                logger.Warning($"{BuildLogTag()} op=interaction-start-lost spot={spot.Area}:{spot.Label} reason=matched-coffer-vanished");
                 return false;
             }
 
@@ -651,7 +648,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             ? "VISIBLE_COFFER_FINAL_SCAN_MATCH"
             : "VISIBLE_COFFER_EARLY_DETECTED";
         logger.Info(
-            $"{detectedLogPrefix} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'.");
+            $"{BuildLogTag()} op={FormatValue(detectedLogPrefix)} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'");
 
         if (best.Distance > MatchConfidenceRadius)
         {
@@ -659,7 +656,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 ? "VISIBLE_COFFER_FINAL_SCAN_REJECTED"
                 : "VISIBLE_COFFER_EARLY_REJECTED";
             logger.Info(
-                $"{rejectedLogPrefix} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y trustRadius={MatchConfidenceRadius:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'.");
+                $"{BuildLogTag()} op={FormatValue(rejectedLogPrefix)} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y trustRadius={MatchConfidenceRadius:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'");
             matchedCoffer = null;
             matchDistance = best.Distance;
             return false;
@@ -681,7 +678,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (!overrideStore.SaveConfirmedPosition(spot.Area, spot.Label, matched))
         {
-            logger.Warning($"Failed to persist visible coffer override for {spot.Area}:{spot.Label}.");
+            logger.Warning($"{BuildLogTag()} op=override-save-failed spot={spot.Area}:{spot.Label} reason=save-confirmed-position-returned-false");
         }
     }
 
@@ -700,14 +697,16 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void SetFailure(string reason)
     {
-        logger.Warning($"Visible coffer farm failure: {reason}");
+        logger.Warning($"{BuildLogTag()} op=failure state={TreasureCofferFarmState.Failed} spot={DescribeActiveSpot()} reason={reason}");
         TransitionTo(TreasureCofferFarmState.Failed, reason, error: reason);
     }
 
     private void TransitionTo(TreasureCofferFarmState nextState, string reason, string? error = null)
     {
+        TreasureCofferFarmState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = reason;
             if (error != null)
@@ -720,8 +719,11 @@ public sealed class TreasureCofferFarmController : IDisposable
             }
         }
 
-        logger.Info($"Visible coffer farm state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} spot={DescribeActiveSpot()} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[CofferFarm]" : $"[CofferFarm run={currentRunId}]";
 
     private string DescribeActiveSpot()
         => ActiveSpot == null ? "none" : $"{ActiveSpot.Area}:{ActiveSpot.Label}";

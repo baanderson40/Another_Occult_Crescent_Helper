@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
@@ -10,6 +11,7 @@ namespace AOCCH.Automation;
 
 public sealed class FateAutomationController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MonitorLogInterval = TimeSpan.FromSeconds(10);
     private const float FateParticipationPadding = 5f;
@@ -27,6 +29,7 @@ public sealed class FateAutomationController : IDisposable
     private FateAutomationState state = FateAutomationState.Idle;
     private uint targetFateId;
     private string targetFateName = string.Empty;
+    private string currentRunId = string.Empty;
     private bool targetIsPot;
     private FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase;
     private string lastError = string.Empty;
@@ -188,6 +191,7 @@ public sealed class FateAutomationController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"FATE#{Interlocked.Increment(ref nextRunSequence)}";
             targetFateId = target.Id;
             targetFateName = target.Name;
             targetIsPot = target.IsPotTarget;
@@ -208,17 +212,21 @@ public sealed class FateAutomationController : IDisposable
             lastResult = AutomationRunResult.None;
         }
 
-        logger.Info($"FATE automation starting for {target.Name} ({target.Id}).");
+        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior}");
+        movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
         return BeginPlanning(target);
     }
 
     public void Stop(string reason)
     {
+        var targetId = TargetFateId;
+        var targetName = TargetFateName;
+        var isPot = TargetIsPot;
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
         TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Stopped);
-        logger.Info($"FATE automation stopped: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) pot={isPot} reason={reason}");
     }
 
     public void ResetInstanceState(string reason)
@@ -228,6 +236,7 @@ public sealed class FateAutomationController : IDisposable
             state = FateAutomationState.Idle;
             targetFateId = 0;
             targetFateName = string.Empty;
+            currentRunId = string.Empty;
             targetIsPot = false;
             completionBehavior = FateRunCompletionBehavior.RecoverToBase;
             lastError = string.Empty;
@@ -247,7 +256,7 @@ public sealed class FateAutomationController : IDisposable
             lastResult = AutomationRunResult.None;
         }
 
-        logger.Info($"FATE automation reset: {reason}");
+        logger.Info($"[FATE] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -432,7 +441,7 @@ public sealed class FateAutomationController : IDisposable
         var reason = target.IsInFate
             ? "joined FATE"
             : "entered combat";
-        logger.Info($"Applying autorotation for FATE {target.Name} ({target.Id}) because the player {reason}.");
+        logger.Info($"{BuildLogTag()} op=autorotation-apply target=\"{target.Name}\" ({target.Id}) reason={reason}");
         autorotationController.ApplyForCombat($"FATE {target.Name} ({target.Id}) combat");
         lock (gate)
         {
@@ -442,7 +451,6 @@ public sealed class FateAutomationController : IDisposable
 
     private void FinishFate(string reason)
     {
-        logger.Info(reason);
         autorotationController.ReleaseOwnership(reason);
         if (completionBehavior == FateRunCompletionBehavior.CompleteInPlace)
         {
@@ -457,7 +465,7 @@ public sealed class FateAutomationController : IDisposable
                 if (!returnRecoveryFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
                 {
                     returnRecoveryFallbackAttempted = true;
-                    logger.Warning("FATE recovery Return setup failed; falling back to direct Base Camp recovery.");
+                    logger.Warning($"{BuildLogTag()} op=recovery-fallback target=\"{TargetFateName}\" ({TargetFateId}) reason=return-setup-failed fallback=direct-base-camp");
                     TransitionTo(FateAutomationState.Recovering, "Recovering to Base Camp after FATE with Return fallback.", clearAutorotationState: true);
                     return;
                 }
@@ -483,7 +491,6 @@ public sealed class FateAutomationController : IDisposable
         autorotationController.ReleaseOwnership(reason);
         movementController.Stop(reason);
         TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Preempted);
-        logger.Info(reason);
     }
 
     private bool IsCePreempting(ScannerSnapshot snapshot)
@@ -522,13 +529,21 @@ public sealed class FateAutomationController : IDisposable
     {
         autorotationController.ReleaseOwnership(reason);
         TransitionTo(FateAutomationState.Failed, reason, clearTarget: false, error: reason, clearAutorotationState: true, result: AutomationRunResult.Failed);
-        logger.Warning(reason);
+        logger.Warning($"{BuildLogTag()} op=failure state={FateAutomationState.Failed} target=\"{TargetFateName}\" ({TargetFateId}) pot={TargetIsPot} reason={reason}");
     }
 
     private void TransitionTo(FateAutomationState nextState, string reason, bool clearTarget = false, string? error = null, bool clearAutorotationState = false, AutomationRunResult? result = null)
     {
+        FateAutomationState previousState;
+        uint fateId;
+        string fateName;
+        bool isPot;
         lock (gate)
         {
+            previousState = state;
+            fateId = targetFateId;
+            fateName = targetFateName;
+            isPot = targetIsPot;
             state = nextState;
             lastTransition = reason;
             stateEnteredAt = DateTimeOffset.UtcNow;
@@ -563,8 +578,11 @@ public sealed class FateAutomationController : IDisposable
             }
         }
 
-        logger.Info($"FATE automation state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} target=\"{fateName}\" ({fateId}) pot={isPot} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[FATE]" : $"[FATE run={currentRunId}]";
 
     private void LogFateMonitor(FateRunTarget target)
     {
@@ -600,7 +618,7 @@ public sealed class FateAutomationController : IDisposable
         }
 
         returnTravelFallbackAttempted = true;
-        logger.Warning($"Return route failed while traveling to FATE {target.Name} ({target.Id}); retrying without Return.");
+        logger.Warning($"{BuildLogTag()} op=travel-fallback target=\"{target.Name}\" ({target.Id}) routeType=Return reason=route-failed fallback=without-return");
         return BeginPlanningWithoutReturn(target);
     }
 
@@ -609,13 +627,13 @@ public sealed class FateAutomationController : IDisposable
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
         if (!movementController.PlanRoute(target, allowReturn: false))
         {
-            logger.Warning($"FATE fallback route planning failed: {movementController.LastError}");
+            logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
         }
 
         if (!movementController.StartPlannedRoute())
         {
-            logger.Warning($"FATE fallback route start failed: {movementController.LastError}");
+            logger.Warning($"{BuildLogTag()} op=fallback-start-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
         }
 
@@ -636,7 +654,7 @@ public sealed class FateAutomationController : IDisposable
         }
 
         returnRecoveryFallbackAttempted = true;
-        logger.Warning("Return recovery failed after FATE; retrying Base Camp recovery without Return.");
+        logger.Warning($"{BuildLogTag()} op=recovery-fallback target=\"{TargetFateName}\" ({TargetFateId}) reason=return-recovery-failed fallback=without-return");
         TransitionTo(FateAutomationState.Recovering, "Recovering to Base Camp after FATE with direct fallback.", clearAutorotationState: true);
         return true;
     }
@@ -644,7 +662,7 @@ public sealed class FateAutomationController : IDisposable
     private void LogFateCompletionAudit(string completionKind)
     {
         var elapsed = monitorStartedAt == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - monitorStartedAt;
-        logger.Info($"FATE completion audit for {TargetFateName} ({TargetFateId}): completion={completionKind} lastState={lastObservedState}({lastObservedStateCode}) lastProgress={lastObservedProgress}% monitorElapsed={elapsed:mm\\:ss}.");
+        logger.Info($"{BuildLogTag()} op=completion-audit target=\"{TargetFateName}\" ({TargetFateId}) completion={completionKind} lastState={lastObservedState}({lastObservedStateCode}) lastProgress={lastObservedProgress}% monitorElapsed={elapsed:mm\\:ss}");
     }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)

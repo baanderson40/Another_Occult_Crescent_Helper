@@ -135,7 +135,7 @@ public sealed class AutorotationController : IDisposable
         if (activePreset.Length != 0)
         {
             SetStatus($"Skipped destructive autorotation validation because BossMod already has active preset '{activePreset}'.");
-            logger.Info($"Skipping BossMod preset validation because active preset is '{activePreset}'.");
+            logger.Info($"{BuildLogTag()} op=validate-skip activePreset=\"{activePreset}\" reason=already-active");
             return true;
         }
 
@@ -168,7 +168,7 @@ public sealed class AutorotationController : IDisposable
         }
 
         SetStatus($"Validated BossMod preset '{preset}'.");
-        logger.Info($"BossMod preset '{preset}' validated successfully.");
+        logger.Info($"{BuildLogTag()} op=validate preset=\"{preset}\" result=success");
         return true;
     }
 
@@ -196,8 +196,8 @@ public sealed class AutorotationController : IDisposable
         }
 
         logger.Info(activePreset.Length == 0
-            ? $"Captured empty BossMod preset before {context}."
-            : $"Captured BossMod preset '{activePreset}' before {context}.");
+            ? $"{BuildLogTag()} op=capture context=\"{context}\" activePreset=empty"
+            : $"{BuildLogTag()} op=capture context=\"{context}\" activePreset=\"{activePreset}\"");
 
         if (string.Equals(activePreset, preset, StringComparison.Ordinal))
         {
@@ -234,7 +234,7 @@ public sealed class AutorotationController : IDisposable
         }
 
         SetStatus($"Applied BossMod preset '{preset}' for {context}.");
-        logger.Info($"AOCCH now owns BossMod preset '{preset}' for {context}.");
+        logger.Info($"{BuildLogTag()} op=apply context=\"{context}\" preset=\"{preset}\" ownership=true");
         return true;
     }
 
@@ -266,7 +266,7 @@ public sealed class AutorotationController : IDisposable
         SetLastKnownActivePreset(activePreset);
         if (!string.Equals(activePreset, preset, StringComparison.Ordinal))
         {
-            logger.Warning($"BossMod preset ownership changed externally while releasing for {reason}. Expected '{preset}', active '{activePreset}'.");
+            logger.Warning($"{BuildLogTag()} op=release-conflict reason=\"{reason}\" expectedPreset=\"{preset}\" activePreset=\"{activePreset}\"");
             ResetOwnershipState($"BossMod ownership lost before release for {reason}.");
             return;
         }
@@ -285,7 +285,7 @@ public sealed class AutorotationController : IDisposable
             return;
         }
 
-        logger.Info($"Cleared BossMod preset '{preset}' for {reason}.");
+        logger.Info($"{BuildLogTag()} op=release reason=\"{reason}\" preset=\"{preset}\" result=cleared");
         ResetOwnershipState($"Cleared BossMod preset for {reason}.");
     }
 
@@ -302,7 +302,7 @@ public sealed class AutorotationController : IDisposable
             lastStatus = "Idle";
         }
 
-        logger.Info($"Autorotation reset: {reason}");
+        logger.Info($"[Autorotation] op=reset reason={reason}");
     }
 
     private bool ProbeAvailability()
@@ -356,13 +356,16 @@ public sealed class AutorotationController : IDisposable
 
         if (warning)
         {
-            logger.Warning(error);
+            logger.Warning($"{BuildLogTag()} op=error status=warning reason={error}");
         }
         else
         {
-            logger.Info(error);
+            logger.Info($"{BuildLogTag()} op=error status=info reason={error}");
         }
     }
+
+    private string BuildLogTag()
+        => $"[Autorotation preset=\"{ConfiguredPreset}\" owned=\"{OwnedPreset}\" hasOwnership={HasOwnership}]";
 
     private void SetLastKnownActivePreset(string preset)
     {

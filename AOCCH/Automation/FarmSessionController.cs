@@ -4,11 +4,13 @@ using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Plugin.Services;
+using System.Threading;
 
 namespace AOCCH.Automation;
 
 public sealed class FarmSessionController : IDisposable
 {
+    private static int nextRunSequence;
     private enum InterruptedActivityKind
     {
         None,
@@ -140,7 +142,7 @@ public sealed class FarmSessionController : IDisposable
     {
         if (IsRunning)
         {
-            logger.Warning("Farm session start ignored because it is already running.");
+            logger.Warning("[Farm] op=start-ignored reason=already-running");
             return false;
         }
 
@@ -159,7 +161,7 @@ public sealed class FarmSessionController : IDisposable
         lock (gate)
         {
             pendingStop = false;
-            currentRunId = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+            currentRunId = $"Farm#{Interlocked.Increment(ref nextRunSequence)}";
             lastError = string.Empty;
             lastIdleScanAt = DateTimeOffset.MinValue;
             recoverAfterBuffRotation = false;
@@ -169,7 +171,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetName = string.Empty;
         }
 
-        logger.Info($"Farm session configuration: ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
+        logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
         TransitionTo(FarmSessionState.Starting, "Starting unified CE/FATE farm session.", "Startup");
         return true;
     }
@@ -207,7 +209,7 @@ public sealed class FarmSessionController : IDisposable
         movementController.Stop(reason);
         autorotationController.ReleaseOwnership(reason);
         TransitionTo(FarmSessionState.Stopped, reason, "Stopped", clearError: false);
-        logger.Info($"Farm session stopped: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop state={State} reason={reason}");
     }
 
     public void PanicStop()
@@ -232,7 +234,7 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetName = string.Empty;
         }
 
-        logger.Info($"Farm session reset: {reason}");
+        logger.Info($"[Farm] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -425,7 +427,7 @@ public sealed class FarmSessionController : IDisposable
 
             if (buffRotationController.State == BuffRotationState.Failed)
             {
-                logger.Warning($"Farm buff rotation was skipped: {buffRotationController.LastError}");
+                logger.Warning($"{BuildLogTag()} op=buff-rotation-skip reason={buffRotationController.LastError}");
                 HandleBuffRotationSkippedOrCompleted(skipReason);
                 return;
             }
@@ -447,7 +449,7 @@ public sealed class FarmSessionController : IDisposable
                 HandleBuffRotationSkippedOrCompleted("Buff rotation complete.");
                 break;
             case BuffRotationState.Failed:
-                logger.Warning($"Farm buff rotation finished with non-critical failure: {buffRotationController.LastError}");
+                logger.Warning($"{BuildLogTag()} op=buff-rotation-warning reason={buffRotationController.LastError}");
                 HandleBuffRotationSkippedOrCompleted("Buff rotation finished with a warning.");
                 break;
             case BuffRotationState.CriticalFailed:
@@ -488,6 +490,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.RecoverToBaseCamp())
         {
             SetFailure(movementController.LastError.Length == 0
@@ -803,7 +806,7 @@ public sealed class FarmSessionController : IDisposable
 
         if (activity != InterruptedActivityKind.None)
         {
-            logger.Info($"[Farm {currentRunId}] captured interrupted {activity} target {targetName} ({targetId}) for death recovery.");
+            logger.Info($"{BuildLogTag()} op=interrupted-capture activity={activity} target=\"{targetName}\" ({targetId}) reason=death-recovery");
         }
     }
 
@@ -832,14 +835,14 @@ public sealed class FarmSessionController : IDisposable
                 var ceTarget = snapshot.FindCriticalEncounter(targetId);
                 if (ceTarget == null)
                 {
-                    logger.Info($"[Farm {currentRunId}] interrupted CE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=CE target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
                     return false;
                 }
 
-                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted CE {ceTarget.Name} ({ceTarget.Id}) after raise.");
+                logger.Info($"{BuildLogTag()} op=resume-attempt activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason=after-raise");
                 if (!criticalEngagementAutomationController.Start(ceTarget))
                 {
-                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted CE {ceTarget.Name} ({ceTarget.Id}) after raise: {criticalEngagementAutomationController.LastError}");
+                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason={criticalEngagementAutomationController.LastError}");
                     return false;
                 }
 
@@ -850,14 +853,14 @@ public sealed class FarmSessionController : IDisposable
                 var fateTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: false);
                 if (fateTarget == null)
                 {
-                    logger.Info($"[Farm {currentRunId}] interrupted FATE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=FATE target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
                     return false;
                 }
 
-                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted FATE {fateTarget.Name} ({fateTarget.Id}) after raise.");
+                logger.Info($"{BuildLogTag()} op=resume-attempt activity=FATE target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason=after-raise");
                 if (!fateAutomationController.Start(fateTarget, FateRunCompletionBehavior.RecoverToBase))
                 {
-                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted FATE {fateTarget.Name} ({fateTarget.Id}) after raise: {fateAutomationController.LastError}");
+                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=FATE target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason={fateAutomationController.LastError}");
                     return false;
                 }
 
@@ -867,21 +870,21 @@ public sealed class FarmSessionController : IDisposable
             case InterruptedActivityKind.PotFate:
                 if (!potFarmController.IsRunning || potFarmController.State != PotFarmState.RunningPotFate)
                 {
-                    logger.Info($"[Farm {currentRunId}] interrupted pot FATE {targetName} ({targetId}) can no longer resume in pot state {potFarmController.State}; falling back to Base Camp recovery.");
+                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=PotFate target=\"{targetName}\" ({targetId}) reason=pot-state-{potFarmController.State}");
                     return false;
                 }
 
                 var potTarget = snapshot.FindFateRunTarget(targetId, isPotTarget: true);
                 if (potTarget == null)
                 {
-                    logger.Info($"[Farm {currentRunId}] interrupted pot FATE {targetName} ({targetId}) is no longer available after raise; falling back to Base Camp recovery.");
+                    logger.Info($"{BuildLogTag()} op=resume-skipped activity=PotFate target=\"{targetName}\" ({targetId}) reason=target-unavailable-after-raise");
                     return false;
                 }
 
-                logger.Info($"[Farm {currentRunId}] attempting to resume interrupted pot FATE {potTarget.Name} ({potTarget.Id}) after raise.");
+                logger.Info($"{BuildLogTag()} op=resume-attempt activity=PotFate target=\"{potTarget.Name}\" ({potTarget.Id}) reason=after-raise");
                 if (!fateAutomationController.Start(potTarget, FateRunCompletionBehavior.CompleteInPlace))
                 {
-                    logger.Warning($"[Farm {currentRunId}] failed to resume interrupted pot FATE {potTarget.Name} ({potTarget.Id}) after raise: {fateAutomationController.LastError}");
+                    logger.Warning($"{BuildLogTag()} op=resume-failure activity=PotFate target=\"{potTarget.Name}\" ({potTarget.Id}) reason={fateAutomationController.LastError}");
                     return false;
                 }
 
@@ -935,8 +938,10 @@ public sealed class FarmSessionController : IDisposable
 
     private void TransitionTo(FarmSessionState nextState, string reason, string activity, bool clearError = true)
     {
+        FarmSessionState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = reason;
             currentActivity = activity;
@@ -947,7 +952,7 @@ public sealed class FarmSessionController : IDisposable
             }
         }
 
-        logger.Info($"[Farm {currentRunId}] state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} activity={activity} reason={reason}");
     }
 
     private void SetFailure(string reason)
@@ -975,8 +980,11 @@ public sealed class FarmSessionController : IDisposable
             interruptedTargetName = string.Empty;
         }
 
-        logger.Warning($"[Farm {currentRunId}] {reason}");
+        logger.Warning($"{BuildLogTag()} op=failure state={FarmSessionState.Failed} activity=Failed reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[Farm]" : $"[Farm run={currentRunId}]";
 
     private void ClearInterruptedActivity()
     {

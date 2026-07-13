@@ -67,18 +67,18 @@ public sealed class GameActionController
     {
         if (gameObject == null || !gameObject.IsValid())
         {
-            logger.Warning($"Cannot target an invalid object for {description}.");
+            logger.Warning($"[GameAction] op=set-target-failed reason=invalid-object description=\"{description}\"");
             return false;
         }
 
         targetManager.Target = gameObject;
         if (targetManager.Target?.GameObjectId != gameObject.GameObjectId)
         {
-            logger.Warning($"Failed to set target to {gameObject.Name.TextValue} ({gameObject.GameObjectId:X}) for {description}.");
+            logger.Warning($"[GameAction] op=set-target-failed target=\"{gameObject.Name.TextValue}\" ({gameObject.GameObjectId:X}) description=\"{description}\" reason=target-manager-mismatch");
             return false;
         }
 
-        logger.Info($"Set target to {gameObject.Name.TextValue} ({gameObject.GameObjectId:X}) for {description}.");
+        logger.Info($"[GameAction] op=set-target target=\"{gameObject.Name.TextValue}\" ({gameObject.GameObjectId:X}) description=\"{description}\"");
         return true;
     }
 
@@ -86,32 +86,32 @@ public sealed class GameActionController
     {
         if (gameObject == null || !gameObject.IsValid())
         {
-            logger.Warning($"Cannot interact with an invalid object for {description}.");
+            logger.Warning($"[GameAction] op=interact-failed reason=invalid-object description=\"{description}\"");
             return false;
         }
 
         var targetSystem = TargetSystem.Instance();
         if (targetSystem == null)
         {
-            logger.Warning($"Target system is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=interact-failed reason=target-system-unavailable description=\"{description}\"");
             return false;
         }
 
         var gameObjectPointer = (GameObjectStruct*)gameObject.Address;
         if (gameObjectPointer == null)
         {
-            logger.Warning($"Failed to resolve object address for {description}.");
+            logger.Warning($"[GameAction] op=interact-failed reason=object-address-unavailable description=\"{description}\"");
             return false;
         }
 
         var interactionResult = targetSystem->InteractWithObject(gameObjectPointer, checkLineOfSight);
         if (interactionResult == 0)
         {
-            logger.Warning($"InteractWithObject returned 0 for {gameObject.Name.TextValue} ({gameObject.GameObjectId:X}) during {description}.");
+            logger.Warning($"[GameAction] op=interact-failed target=\"{gameObject.Name.TextValue}\" ({gameObject.GameObjectId:X}) description=\"{description}\" reason=return-code-0");
             return false;
         }
 
-        logger.Info($"Interacted with {gameObject.Name.TextValue} ({gameObject.GameObjectId:X}) for {description}.");
+        logger.Info($"[GameAction] op=interact target=\"{gameObject.Name.TextValue}\" ({gameObject.GameObjectId:X}) description=\"{description}\"");
         return true;
     }
 
@@ -125,18 +125,18 @@ public sealed class GameActionController
     {
         if (!CanUseGeneralAction(actionId))
         {
-            logger.Warning($"General action {actionId} is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=general-action-failed actionId={actionId} description=\"{description}\" reason=unavailable");
             return false;
         }
 
         var used = ActionManager.Instance()->UseAction(ActionType.GeneralAction, actionId);
         if (!used)
         {
-            logger.Warning($"Failed to execute general action {actionId} for {description}.");
+            logger.Warning($"[GameAction] op=general-action-failed actionId={actionId} description=\"{description}\" reason=dispatch-failed");
             return false;
         }
 
-        logger.Info($"Executed general action {actionId} for {description}.");
+        logger.Info($"[GameAction] op=general-action actionId={actionId} description=\"{description}\"");
         return true;
     }
 
@@ -144,18 +144,18 @@ public sealed class GameActionController
     {
         if (!CanUseAction(actionId))
         {
-            logger.Warning($"Action {actionId} is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=action-failed actionId={actionId} description=\"{description}\" reason=unavailable");
             return false;
         }
 
         var used = ActionManager.Instance()->UseAction(ActionType.Action, actionId);
         if (!used)
         {
-            logger.Warning($"Failed to execute action {actionId} for {description}.");
+            logger.Warning($"[GameAction] op=action-failed actionId={actionId} description=\"{description}\" reason=dispatch-failed");
             return false;
         }
 
-        logger.Info($"Executed action {actionId} for {description}.");
+        logger.Info($"[GameAction] op=action actionId={actionId} description=\"{description}\"");
         return true;
     }
 
@@ -235,27 +235,27 @@ public sealed class GameActionController
         if (gearsetNumber <= 0)
         {
             var error = $"Cannot equip an unconfigured gearset for {description}.";
-            logger.Warning(error);
+            logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={error}");
             return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
         }
 
         if (!IsPlayerInChangeableState())
         {
             var error = $"Cannot equip gearset {gearsetNumber} for {description} because the player is not in a changeable state. {GetChangeableStateSummary()}";
-            logger.Warning(error);
+            logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={error}");
             return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
         }
 
         if (!TryGetGearsetInfo(gearsetNumber, out var gearsetInfo, out var resolveError))
         {
             var error = $"Failed to resolve gearset {gearsetNumber} for {description}: {resolveError}";
-            logger.Warning(error);
+            logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={error}");
             return new GearsetEquipAttemptResult(false, error, null, CurrentClassJobId, null);
         }
 
         if (CurrentClassJobId == gearsetInfo.ClassJobId)
         {
-            logger.Info($"Gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) is already active for {description}. currentClassJob={CurrentClassJobId}.");
+            logger.Info($"[GameAction] op=gearset-skip gearset={gearsetInfo.RequestedGearsetNumber} gearsetName=\"{gearsetInfo.Name}\" description=\"{description}\" currentClassJob={CurrentClassJobId} reason=already-active");
             return new GearsetEquipAttemptResult(true, string.Empty, gearsetInfo, CurrentClassJobId, null);
         }
 
@@ -263,21 +263,21 @@ public sealed class GameActionController
         if (module == null)
         {
             var error = $"RaptureGearsetModule is unavailable while equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}.";
-            logger.Warning(error);
+            logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={error}");
             return new GearsetEquipAttemptResult(false, error, gearsetInfo, CurrentClassJobId, null);
         }
 
-        logger.Info($"Equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId} slot={gearsetInfo.RequestedGearsetIndex}.");
+        logger.Info($"[GameAction] op=gearset-equip gearset={gearsetInfo.RequestedGearsetNumber} gearsetName=\"{gearsetInfo.Name}\" description=\"{description}\" targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId} slot={gearsetInfo.RequestedGearsetIndex}");
 
         var equipResult = module->EquipGearset(gearsetInfo.RequestedGearsetIndex);
         if (equipResult != 0)
         {
             var error = $"EquipGearset returned {equipResult} while equipping gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId}.";
-            logger.Warning(error);
+            logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={error}");
             return new GearsetEquipAttemptResult(false, error, gearsetInfo, CurrentClassJobId, equipResult);
         }
 
-        logger.Info($"EquipGearset accepted gearset {gearsetInfo.RequestedGearsetNumber} ({gearsetInfo.Name}) for {description}. targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId}." );
+        logger.Info($"[GameAction] op=gearset-equip-accepted gearset={gearsetInfo.RequestedGearsetNumber} gearsetName=\"{gearsetInfo.Name}\" description=\"{description}\" targetClassJob={gearsetInfo.ClassJobId} currentClassJob={CurrentClassJobId}");
         return new GearsetEquipAttemptResult(true, string.Empty, gearsetInfo, CurrentClassJobId, equipResult);
     }
 
@@ -285,7 +285,7 @@ public sealed class GameActionController
     {
         if (postActionLockDelay is { } delay && delay > TimeSpan.Zero)
         {
-            logger.Info($"Waiting {delay.TotalSeconds:0.0}s before equipping gearset {gearsetNumber} for {description} to respect the action-lock window.");
+            logger.Info($"[GameAction] op=gearset-delay gearset={gearsetNumber} description=\"{description}\" delay={delay.TotalSeconds:0.0}s reason=action-lock-window");
             Thread.Sleep(delay);
         }
 
@@ -295,7 +295,7 @@ public sealed class GameActionController
             if (!WaitForChangeableState(ReliableGearsetReadyTimeout, out var readyError))
             {
                 lastResult = new GearsetEquipAttemptResult(false, $"Gearset equip attempt {attempt}/{Math.Max(1, maxAttempts)} for {description} failed while waiting for a changeable state: {readyError}", null, CurrentClassJobId, null);
-                logger.Warning(lastResult.Error);
+                logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={lastResult.Error}");
             }
             else
             {
@@ -324,13 +324,13 @@ public sealed class GameActionController
                         Success = false,
                         Error = $"Gearset equip attempt {attempt}/{Math.Max(1, maxAttempts)} for {description} did not activate ClassJob {targetClassJobId.Value} within {verifyTimeout.TotalSeconds:0.0}s. currentClassJob={CurrentClassJobId}."
                     };
-                    logger.Warning(lastResult.Error);
+                    logger.Warning($"[GameAction] op=gearset-equip-failed description=\"{description}\" reason={lastResult.Error}");
                 }
             }
 
             if (attempt < Math.Max(1, maxAttempts))
             {
-                logger.Info($"Retrying gearset {gearsetNumber} for {description} in {retryDelay.TotalSeconds:0.0}s after attempt {attempt}/{Math.Max(1, maxAttempts)} failed.");
+                logger.Info($"[GameAction] op=gearset-retry gearset={gearsetNumber} description=\"{description}\" retryDelay={retryDelay.TotalSeconds:0.0}s attempt={attempt}/{Math.Max(1, maxAttempts)}");
                 Thread.Sleep(retryDelay);
             }
         }
@@ -369,7 +369,7 @@ public sealed class GameActionController
     {
         if (string.IsNullOrWhiteSpace(keyItemName))
         {
-            logger.Warning($"Cannot use an unnamed key item for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-command-failed description=\"{description}\" reason=unnamed-key-item");
             return false;
         }
 
@@ -377,11 +377,11 @@ public sealed class GameActionController
         var command = $"/keyitem \"{escapedKeyItemName}\"";
         if (!commandManager.ProcessCommand(command))
         {
-            logger.Warning($"Failed to dispatch key item command '{command}' for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-command-failed description=\"{description}\" command=\"{command}\" reason=dispatch-failed");
             return false;
         }
 
-        logger.Info($"Dispatched key item command '{command}' for {description}.");
+        logger.Info($"[GameAction] op=keyitem-command description=\"{description}\" command=\"{command}\"");
         return true;
     }
 
@@ -390,21 +390,21 @@ public sealed class GameActionController
         var inventoryManager = InventoryManager.Instance();
         if (inventoryManager == null)
         {
-            logger.Warning($"InventoryManager is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=inventory-use-failed description=\"{description}\" reason=inventory-manager-unavailable");
             return false;
         }
 
         var count = inventoryManager->GetInventoryItemCount(itemId, isHighQuality);
         if (count <= 0)
         {
-            logger.Warning($"Item {itemId} is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=inventory-use-failed description=\"{description}\" itemId={itemId} reason=item-unavailable");
             return false;
         }
 
         var agent = AgentInventoryContext.Instance();
         if (agent == null)
         {
-            logger.Warning($"AgentInventoryContext is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=inventory-use-failed description=\"{description}\" reason=agent-context-unavailable");
             return false;
         }
 
@@ -412,11 +412,11 @@ public sealed class GameActionController
         var result = agent->UseItem(itemToUse);
         if (!IsAcceptedUseItemResult(result))
         {
-            logger.Warning($"UseItem({itemToUse}) returned {result} for {description}.");
+            logger.Warning($"[GameAction] op=inventory-use-failed description=\"{description}\" itemId={itemToUse} result={result}");
             return false;
         }
 
-        logger.Info($"Used inventory item {itemToUse} for {description}.");
+        logger.Info($"[GameAction] op=inventory-use description=\"{description}\" itemId={itemToUse}");
         return true;
     }
 
@@ -424,27 +424,27 @@ public sealed class GameActionController
     {
         if (itemId == 0)
         {
-            logger.Warning($"Cannot use key item 0 for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" reason=key-item-zero");
             return false;
         }
 
         var inventoryManager = InventoryManager.Instance();
         if (inventoryManager == null)
         {
-            logger.Warning($"InventoryManager is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" reason=inventory-manager-unavailable");
             return false;
         }
 
         var keyItemContainer = inventoryManager->GetInventoryContainer(InventoryType.KeyItems);
         if (keyItemContainer == null)
         {
-            logger.Warning($"Key item container is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" reason=keyitem-container-unavailable");
             return false;
         }
 
         if (!keyItemContainer->IsLoaded || keyItemContainer->Size <= 0 || keyItemContainer->Items == null)
         {
-            logger.Warning($"Key item container is not ready for {description}. loaded={keyItemContainer->IsLoaded} size={keyItemContainer->Size}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" reason=keyitem-container-not-ready loaded={keyItemContainer->IsLoaded} size={keyItemContainer->Size}");
             return false;
         }
 
@@ -468,25 +468,25 @@ public sealed class GameActionController
 
         if (itemSlot == null)
         {
-            logger.Warning($"Key item {itemId} ({itemName}) was not found in {InventoryType.KeyItems} for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" itemId={itemId} itemName=\"{itemName}\" container={InventoryType.KeyItems} reason=not-found");
             return false;
         }
 
         var agent = AgentInventoryContext.Instance();
         if (agent == null)
         {
-            logger.Warning($"AgentInventoryContext is unavailable for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" reason=agent-context-unavailable");
             return false;
         }
 
         var result = agent->UseItem(itemSlot->ItemId, InventoryType.KeyItems, (uint)itemSlot->Slot);
         if (!IsAcceptedUseItemResult(result))
         {
-            logger.Warning($"UseItem({itemSlot->ItemId}, {InventoryType.KeyItems}, slot={itemSlot->Slot}) returned {result} for {description}.");
+            logger.Warning($"[GameAction] op=keyitem-use-failed description=\"{description}\" itemId={itemSlot->ItemId} container={InventoryType.KeyItems} slot={itemSlot->Slot} result={result}");
             return false;
         }
 
-        logger.Info($"Used key item {itemSlot->ItemId} ({itemName}) from {InventoryType.KeyItems} slot {itemSlot->Slot} for {description}.");
+        logger.Info($"[GameAction] op=keyitem-use description=\"{description}\" itemId={itemSlot->ItemId} itemName=\"{itemName}\" container={InventoryType.KeyItems} slot={itemSlot->Slot}");
         return true;
     }
 

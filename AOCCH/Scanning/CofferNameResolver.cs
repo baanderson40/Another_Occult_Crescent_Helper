@@ -17,7 +17,7 @@ public sealed class CofferNameResolver
     {
         this.logger = logger;
         BuildLocalizedNames(dataManager, cofferBaseIds);
-        this.logger.Info($"Coffer name resolver initialized with {localizedNames.Count} localized coffer name(s).");
+        this.logger.Info($"[CofferNameResolver] op=init localizedNames={localizedNames.Count}");
     }
 
     public bool IsKnownLocalizedName(string? name)
@@ -34,7 +34,7 @@ public sealed class CofferNameResolver
         var sheet = dataManager.GetExcelSheet<EObjName>();
         if (sheet == null)
         {
-            logger.Warning("Coffer name resolver could not load the EObjName sheet.");
+            logger.Warning("[CofferNameResolver] op=sheet-load-failed sheet=EObjName");
             return;
         }
 
@@ -43,7 +43,7 @@ public sealed class CofferNameResolver
             var resolvedName = TryResolveSheetName(sheet, baseId);
             if (resolvedName.Length == 0)
             {
-                logger.Warning($"Coffer name resolver could not resolve a localized name for baseId {baseId}.");
+                logger.Warning($"[CofferNameResolver] op=name-resolve-failed baseId={baseId}");
                 continue;
             }
 

@@ -64,7 +64,7 @@ public sealed class OccultCrescentScanner : IDisposable
         framework.Update += OnFrameworkUpdate;
         clientState.TerritoryChanged += OnTerritoryChanged;
 
-        logger.Info("Occult Crescent scanner initialized in read-only mode.");
+        logger.Info("[Scanner] op=init mode=read-only");
     }
 
     public ScannerSnapshot Snapshot
@@ -82,7 +82,7 @@ public sealed class OccultCrescentScanner : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         clientState.TerritoryChanged -= OnTerritoryChanged;
-        logger.Info("Occult Crescent scanner stopped.");
+        logger.Info("[Scanner] op=stop");
     }
 
     private void OnFrameworkUpdate(IFramework _)
@@ -96,8 +96,8 @@ public sealed class OccultCrescentScanner : IDisposable
     {
         var isInSouthHorn = territoryType == data.TerritoryTypeId;
         logger.Info(isInSouthHorn
-            ? $"Scanner detected entry into South Horn (territory {territoryType})."
-            : $"Scanner detected territory change to {territoryType}; South Horn scanner is idle.");
+            ? $"[Scanner] op=territory-change territory={territoryType} state=entered-south-horn"
+            : $"[Scanner] op=territory-change territory={territoryType} state=idle-outside-south-horn");
 
         pendingForceRefresh = true;
     }
@@ -461,8 +461,8 @@ public sealed class OccultCrescentScanner : IDisposable
 
         lastTreasureBuffState = hasTreasureBuff;
         logger.Info(hasTreasureBuff
-            ? "Treasure buff detected: Cache Me If You Can (1531)."
-            : "Treasure buff cleared: Cache Me If You Can (1531).");
+            ? "[Scanner] op=treasure-buff state=detected statusId=1531"
+            : "[Scanner] op=treasure-buff state=cleared statusId=1531");
     }
 
     private ActiveCriticalEncounter? SelectCriticalEncounter(IReadOnlyList<ActiveCriticalEncounter> criticalEncounters)
@@ -570,8 +570,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 if (selectedCe != null)
                 {
                     logger.Info(
-                        $"Selected target CE: {selectedCe.Name} ({selectedCe.Id}) " +
-                        $"priority={selectedCe.Priority} reason={snapshot.EffectiveTarget.Reason} preemptFate={snapshot.EffectiveTarget.WouldPreemptFate}.");
+                        $"[Scanner] op=target-selected kind=CE target=\"{selectedCe.Name}\" ({selectedCe.Id}) priority={selectedCe.Priority} reason={snapshot.EffectiveTarget.Reason} preemptFate={snapshot.EffectiveTarget.WouldPreemptFate}");
                 }
 
                 break;
@@ -580,15 +579,58 @@ public sealed class OccultCrescentScanner : IDisposable
                 if (selectedFate != null)
                 {
                     logger.Info(
-                        $"Selected target FATE: {selectedFate.Name} ({selectedFate.Id}) " +
-                        $"progress={selectedFate.Progress}% distance={selectedFate.DistanceToPlayer:0.0} reason={snapshot.EffectiveTarget.Reason}.");
+                        $"[Scanner] op=target-selected kind=FATE target=\"{selectedFate.Name}\" ({selectedFate.Id}) progress={selectedFate.Progress}% distance={selectedFate.DistanceToPlayer:0.0} reason={snapshot.EffectiveTarget.Reason}");
                 }
 
                 break;
             default:
-                logger.Info("No eligible CE/FATE target selected.");
+                logger.Info($"[Scanner] op=no-target {BuildNoSelectionReason(snapshot)}");
                 break;
         }
+    }
+
+    private string BuildNoSelectionReason(ScannerSnapshot snapshot)
+    {
+        var knownCeCount = snapshot.CriticalEncounters.Count;
+        var unknownCeCount = snapshot.UnknownCriticalEncounters.Count;
+        var ceCandidateCount = snapshot.CriticalEncounters.Count(encounter => encounter.IsCandidate);
+        var ceConfigDisabledCount = snapshot.CriticalEncounters.Count(encounter => encounter.HasKnownMetadata && !encounter.IsCandidate);
+        var fateCount = snapshot.Fates.Count;
+        var fateCandidateCount = snapshot.Fates.Count(fate => fate.IsCandidate);
+        var fateExcludedCount = snapshot.Fates.Count(fate => fate.IsExcluded);
+        var fateUnknownCount = snapshot.Fates.Count(fate => !fate.HasKnownMetadata);
+
+        if (!configuration.EnableCriticalEngagementFarming && !configuration.EnableFateFarming)
+        {
+            return "reason=both-disabled.";
+        }
+
+        if (!configuration.EnableCriticalEngagementFarming)
+        {
+            return $"reason=ce-disabled fateEnabled=true fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount}.";
+        }
+
+        if (!configuration.EnableFateFarming)
+        {
+            return $"reason=fate-disabled ceEnabled=true ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount}.";
+        }
+
+        if (ceCandidateCount == 0 && fateCandidateCount == 0)
+        {
+            return $"reason=no-candidates ceCandidates=0/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates=0/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount}.";
+        }
+
+        if (ceCandidateCount == 0)
+        {
+            return $"reason=no-ce-candidate ceCandidates=0/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount}.";
+        }
+
+        if (fateCandidateCount == 0)
+        {
+            return $"reason=no-fate-candidate ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates=0/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount}.";
+        }
+
+        return $"reason=selection-resolved-none ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority}.";
     }
 
     private static bool IsPreBattleCeState(int stateCode)

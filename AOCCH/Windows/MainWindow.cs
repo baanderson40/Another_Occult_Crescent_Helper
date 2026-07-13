@@ -96,7 +96,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.BeginDisabled(farmStartBlocker != null);
         if (ImGui.Button("Start Farm"))
         {
-            plugin.Logger.Info("Manual UI action: Start Farm.");
+            plugin.Logger.Info("[MainWindow] op=ui-action action=start-farm");
             farmSessionController.Start();
         }
         ImGui.EndDisabled();
@@ -104,14 +104,14 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop Farm"))
         {
-            plugin.Logger.Info("Manual UI action: Stop Farm.");
+            plugin.Logger.Info("[MainWindow] op=ui-action action=stop-farm");
             farmSessionController.Stop("Manual farm session stop requested.");
         }
 
         ImGui.SameLine();
         if (ImGui.Button("Panic Stop"))
         {
-            plugin.Logger.Warning("Manual UI action: Panic Stop.");
+            plugin.Logger.Warning("[MainWindow] op=ui-action action=panic-stop");
             plugin.PanicStopAll();
         }
 
@@ -124,7 +124,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.BeginDisabled(cofferStartBlocker != null);
         if (ImGui.Button("Start Coffer Route"))
         {
-            plugin.Logger.Info("Manual UI action: Start Coffer Route.");
+            plugin.Logger.Info("[MainWindow] op=ui-action action=start-coffer-route");
             treasureCofferFarmController.Start();
         }
         ImGui.EndDisabled();
@@ -132,7 +132,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Stop Coffer Route"))
         {
-            plugin.Logger.Info("Manual UI action: Stop Coffer Route.");
+            plugin.Logger.Info("[MainWindow] op=ui-action action=stop-coffer-route");
             treasureCofferFarmController.Stop("Manual visible coffer route stop requested.");
         }
 

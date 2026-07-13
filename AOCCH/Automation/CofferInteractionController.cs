@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
@@ -13,6 +14,7 @@ namespace AOCCH.Automation;
 
 public sealed class CofferInteractionController : IDisposable
 {
+    private static int nextRunSequence;
     private const float MaxInteractRange = 4.5f;
     private const float PreferredOpenDistance = 3.25f;
     private const int RequiredMissingConfirmations = 2;
@@ -31,6 +33,7 @@ public sealed class CofferInteractionController : IDisposable
 
     private CofferInteractionState state = CofferInteractionState.Idle;
     private CofferInteractionResult lastResult;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private VisibleCofferMatch? activeMatch;
@@ -152,7 +155,7 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
-        logger.Info($"Coffer interaction start requested for candidate {match.CandidateKey} with coffer {match.Coffer.Name} ({match.Coffer.GameObjectId:X}). trustworthy={match.IsTrustworthy} attribution={match.AttributionReason}");
+        logger.Info($"[Coffer] op=start-request candidate={match.CandidateKey.Label} coffer=\"{match.Coffer.Name}\" ({match.Coffer.GameObjectId:X}) trustworthy={match.IsTrustworthy} attribution=\"{match.AttributionReason}\"");
 
         var liveObject = ResolveObject(match.Coffer.GameObjectId);
         if (liveObject == null)
@@ -163,6 +166,7 @@ public sealed class CofferInteractionController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"Coffer#{Interlocked.Increment(ref nextRunSequence)}";
             activeMatch = match;
             confirmationDeadlineAt = DateTimeOffset.MinValue;
             interactionAttemptCount = 0;
@@ -171,6 +175,8 @@ public sealed class CofferInteractionController : IDisposable
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
         }
+
+        movementController.SetLogOwner(currentRunId);
 
         if (TryReadTreasureFlags(liveObject, out var currentFlags))
         {
@@ -185,7 +191,7 @@ public sealed class CofferInteractionController : IDisposable
 
     public void Stop(string reason)
     {
-        logger.Info($"Coffer interaction stop requested: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop-request state={State} candidate={ActiveMatch?.CandidateKey.Label ?? "none"} reason={reason}");
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop(reason);
@@ -200,6 +206,7 @@ public sealed class CofferInteractionController : IDisposable
         {
             state = CofferInteractionState.Idle;
             lastResult = CofferInteractionResult.None;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             activeMatch = null;
@@ -209,7 +216,7 @@ public sealed class CofferInteractionController : IDisposable
             lastObservedTreasureFlags = TreasureFlags.None;
         }
 
-        logger.Info($"Coffer interaction reset: {reason}");
+        logger.Info($"[Coffer] op=reset reason={reason}");
     }
 
     public void Dispose()
@@ -276,6 +283,7 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination.Value, PreferredOpenDistance))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -514,7 +522,7 @@ public sealed class CofferInteractionController : IDisposable
 
     private void SetFailure(string reason)
     {
-        logger.Warning($"Coffer interaction failure: {reason}");
+        logger.Warning($"{BuildLogTag()} op=failure state={CofferInteractionState.Failed} candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} reason={reason}");
         TransitionTo(CofferInteractionState.Failed, reason, error: reason, result: CofferInteractionResult.Failed);
     }
 
@@ -522,7 +530,7 @@ public sealed class CofferInteractionController : IDisposable
     {
         if (!match.IsTrustworthy)
         {
-            logger.Info($"Skipping coffer override persistence for {match.CandidateKey} because the attribution was not trustworthy. {match.AttributionReason}");
+            logger.Info($"{BuildLogTag()} op=override-skip candidate={match.CandidateKey.Label} reason=untrustworthy attribution=\"{match.AttributionReason}\"");
             return;
         }
 
@@ -531,13 +539,15 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        logger.Warning($"Failed to persist confirmed coffer position override for {match.CandidateKey}.");
+        logger.Warning($"{BuildLogTag()} op=override-save-failed candidate={match.CandidateKey.Label} reason=save-confirmed-position-returned-false");
     }
 
     private void TransitionTo(CofferInteractionState nextState, string reason, string? error = null, CofferInteractionResult? result = null)
     {
+        CofferInteractionState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = reason;
             if (error != null)
@@ -555,8 +565,17 @@ public sealed class CofferInteractionController : IDisposable
             }
         }
 
-        logger.Info($"Coffer interaction state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} attempts={interactionAttemptCount} trustworthy={ActiveMatch?.IsTrustworthy ?? false} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[Coffer]" : $"[Coffer run={currentRunId}]";
+
+    private string DescribeActiveCandidate()
+        => ActiveMatch?.CandidateKey.Label ?? "none";
+
+    private string DescribeActiveCoffer()
+        => ActiveMatch == null ? "\"unknown\" (0)" : $"\"{ActiveMatch.Coffer.Name}\" ({ActiveMatch.Coffer.GameObjectId:X})";
 
     private static float CalculateFlatDistance(System.Numerics.Vector3 left, System.Numerics.Vector3 right)
     {

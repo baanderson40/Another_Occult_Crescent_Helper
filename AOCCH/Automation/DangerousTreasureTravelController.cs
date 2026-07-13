@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Threading;
 
 using AOCCH.Data;
 using AOCCH.Logging;
@@ -36,6 +37,7 @@ public enum DangerousTreasureTravelResult
 
 public sealed class DangerousTreasureTravelController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan GearsetEquipTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan GearsetRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan GearsetPostElixirDelay = TimeSpan.FromSeconds(2);
@@ -57,6 +59,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     private DangerousTreasureTravelState state = DangerousTreasureTravelState.Idle;
     private DangerousTreasureTravelResult lastResult;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private string activeCandidateLabel = string.Empty;
@@ -145,6 +148,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         {
             state = DangerousTreasureTravelState.Idle;
             lastResult = DangerousTreasureTravelResult.None;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             activeCandidateLabel = string.Empty;
@@ -164,7 +168,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lastHideActivatedAt = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"Dangerous treasure travel reset: {reason}");
+        logger.Info($"[DangerousTravel] op=reset reason={reason}");
     }
 
     public bool IsRunning
@@ -224,6 +228,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"DangerousTravel#{Interlocked.Increment(ref nextRunSequence)}";
             activeCandidateLabel = candidate.Label;
             finalDestination = destination;
             hideThresholdPoint = resolvedThresholdPoint.Value;
@@ -241,18 +246,22 @@ public sealed class DangerousTreasureTravelController : IDisposable
             lastHideActivatedAt = DateTimeOffset.MinValue;
         }
 
+        logger.Info($"{BuildLogTag()} op=start candidate={candidate.Label} arrivalTolerance={finalArrivalTolerance:0.0} hideThreshold=<{resolvedThresholdPoint.Value.X:0.0}, {resolvedThresholdPoint.Value.Y:0.0}, {resolvedThresholdPoint.Value.Z:0.0}>");
+        movementController.SetLogOwner(currentRunId);
         TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous treasure candidate {candidate.Label}.");
         return true;
     }
 
     public void Stop(string reason)
     {
+        var candidateLabel = activeCandidateLabel;
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop(reason);
         }
 
         TransitionTo(DangerousTreasureTravelState.Stopped, reason, error: reason, result: DangerousTreasureTravelResult.Stopped);
+        logger.Info($"{BuildLogTag()} op=stop state={State} candidate={candidateLabel} reason={reason}");
     }
 
     public bool RestoreFateGearset(string reason)
@@ -269,7 +278,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
                 ninjaGearsetEquippedByController = false;
             }
 
-            logger.Info($"Leaving current gearset unchanged after {reason} because no FATE gearset number is configured.");
+            logger.Info($"{BuildLogTag()} op=restore-gearset-skip reason=\"{reason}\" fateGearsetConfigured=false");
             return true;
         }
 
@@ -281,7 +290,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             GearsetRetryDelay);
         if (!result.Success)
         {
-            logger.Warning($"Failed to restore FATE gearset {configuration.FateGearsetNumber} after {reason}: {result.Error}");
+            logger.Warning($"{BuildLogTag()} op=restore-gearset-failed reason=\"{reason}\" gearset={configuration.FateGearsetNumber} error={result.Error}");
             return false;
         }
 
@@ -290,7 +299,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             ninjaGearsetEquippedByController = false;
         }
 
-        logger.Info($"Restored FATE gearset {configuration.FateGearsetNumber} after {reason}. gearset={(result.Gearset?.Name ?? "unknown")} targetClassJob={(result.TargetClassJobId?.ToString() ?? "unknown")} currentClassJob={gameActionController.CurrentClassJobId}.");
+        logger.Info($"{BuildLogTag()} op=restore-gearset reason=\"{reason}\" gearset={configuration.FateGearsetNumber} gearsetName=\"{result.Gearset?.Name ?? "unknown"}\" targetClassJob={(result.TargetClassJobId?.ToString() ?? "unknown")} currentClassJob={gameActionController.CurrentClassJobId}");
         return true;
     }
 
@@ -370,6 +379,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
 
             TransitionTo(DangerousTreasureTravelState.TravelingToHideThreshold, $"Confirmed Ninja gearset for dangerous treasure candidate {activeCandidateLabel}; continuing to the hide threshold.");
+            movementController.SetLogOwner(currentRunId);
             if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", hideThresholdPoint, arrivalTolerance, shouldMountBeforeStep: true))
             {
                 SkipCandidate(movementController.LastError.Length == 0
@@ -391,7 +401,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
                 }
 
                 gearsetAttemptAvailableAt = now + GearsetRetryDelay;
-                logger.Warning($"Ninja gearset equip attempt {gearsetAttemptCount}/{MaximumGearsetEquipAttempts} timed out for dangerous treasure candidate {activeCandidateLabel}; retrying in {GearsetRetryDelay.TotalSeconds:0.0}s.");
+                logger.Warning($"{BuildLogTag()} op=gearset-timeout candidate={activeCandidateLabel} attempt={gearsetAttemptCount}/{MaximumGearsetEquipAttempts} retryDelay={GearsetRetryDelay.TotalSeconds:0.0}s");
                 stateEnteredAt = now;
             }
 
@@ -466,7 +476,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
 
             gearsetAttemptAvailableAt = now + GearsetRetryDelay;
-            logger.Warning($"Ninja gearset equip attempt {gearsetAttemptCount}/{MaximumGearsetEquipAttempts} failed for dangerous treasure candidate {activeCandidateLabel}; retrying in {GearsetRetryDelay.TotalSeconds:0.0}s. {result.Error}");
+            logger.Warning($"{BuildLogTag()} op=gearset-failed candidate={activeCandidateLabel} attempt={gearsetAttemptCount}/{MaximumGearsetEquipAttempts} retryDelay={GearsetRetryDelay.TotalSeconds:0.0}s error={result.Error}");
             stateEnteredAt = now;
             return;
         }
@@ -476,7 +486,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         if (gameActionController.IsOnClassJob(activeGearsetTargetClassJobId))
         {
-            logger.Info($"Ninja gearset {activeGearsetNumber} ({activeGearsetName}) was already active for dangerous treasure candidate {activeCandidateLabel}. targetClassJob={activeGearsetTargetClassJobId}.");
+            logger.Info($"{BuildLogTag()} op=gearset-skip candidate={activeCandidateLabel} gearset={activeGearsetNumber} gearsetName=\"{activeGearsetName}\" targetClassJob={activeGearsetTargetClassJobId} reason=already-active");
             return;
         }
 
@@ -633,6 +643,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         if (gameActionController.IsStealthed)
         {
+            movementController.SetLogOwner(currentRunId);
             if (!movementController.StartDirectMove($"Hidden final approach for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: false))
             {
                 SkipCandidate(movementController.LastError.Length == 0
@@ -707,6 +718,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         logger.ResetThrottle("dangerous-treasure-travel");
         TransitionTo(DangerousTreasureTravelState.CandidateSkipped, reason, error: reason, result: DangerousTreasureTravelResult.CandidateSkipped);
+        logger.Warning($"{BuildLogTag()} op=skip state={DangerousTreasureTravelState.CandidateSkipped} candidate={activeCandidateLabel} reason={reason}");
     }
 
     private void SetFailure(string reason)
@@ -718,12 +730,15 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         logger.ResetThrottle("dangerous-treasure-travel");
         TransitionTo(DangerousTreasureTravelState.Failed, reason, error: reason, result: DangerousTreasureTravelResult.Failed);
+        logger.Warning($"{BuildLogTag()} op=failure state={DangerousTreasureTravelState.Failed} candidate={activeCandidateLabel} gearset={activeGearsetNumber} reason={reason}");
     }
 
     private void TransitionTo(DangerousTreasureTravelState nextState, string reason, string? error = null, DangerousTreasureTravelResult? result = null)
     {
+        DangerousTreasureTravelState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = reason;
             stateEnteredAt = DateTimeOffset.UtcNow;
@@ -742,8 +757,11 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
         }
 
-        logger.Info($"Dangerous treasure travel state -> {nextState}: {reason}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={activeCandidateLabel} gearset={activeGearsetNumber} hideThresholdRequired={hideThresholdTravelRequired} result={LastResult} reason={reason}");
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[DangerousTravel]" : $"[DangerousTravel run={currentRunId}]";
 
     private static Vector3 CalculateHideThresholdPoint(Vector3 playerPosition, Vector3 destination, float hideThresholdDistance)
     {

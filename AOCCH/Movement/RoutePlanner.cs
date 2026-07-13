@@ -59,7 +59,7 @@ public sealed class RoutePlanner
         if (data.Aethernets.Count == 0)
         {
             route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride);
-            logger.Warning($"No aethernet data is loaded; using direct route for {targetDescription}.");
+            logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-aethernet-data");
             return true;
         }
 
@@ -74,7 +74,7 @@ public sealed class RoutePlanner
         if (sourceAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride);
-            logger.Warning($"No source aethernet data is available; using direct route for {targetDescription}.");
+            logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-source-aethernet");
             return true;
         }
 
@@ -91,7 +91,7 @@ public sealed class RoutePlanner
 
         route = ChooseRoute(targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
 
-        logger.Info($"Selected {route.RouteType} route for {targetDescription}: reason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}.");
+        logger.Info($"[RoutePlanner] op=route-selected target=\"{targetDescription}\" routeType={route.RouteType} selectionReason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}");
         return true;
     }
 
@@ -137,7 +137,7 @@ public sealed class RoutePlanner
         if (data.Aethernets.Count == 0)
         {
             route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
-            logger.Warning($"No aethernet data is loaded; using direct route for {targetDescription}.");
+            logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-aethernet-data");
             return true;
         }
 
@@ -152,7 +152,7 @@ public sealed class RoutePlanner
         if (sourceAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride);
-            logger.Warning($"No source aethernet data is available; using direct route for {targetDescription}.");
+            logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-source-aethernet");
             return true;
         }
 
@@ -166,7 +166,7 @@ public sealed class RoutePlanner
 
         route = ChooseRoute(targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride);
 
-        logger.Info($"Selected {route.RouteType} route for {targetDescription}: reason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}.");
+        logger.Info($"[RoutePlanner] op=route-selected target=\"{targetDescription}\" routeType={route.RouteType} selectionReason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}");
         return true;
     }
 

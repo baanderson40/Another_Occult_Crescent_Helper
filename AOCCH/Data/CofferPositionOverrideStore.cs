@@ -102,7 +102,7 @@ public sealed class CofferPositionOverrideStore
             else
             {
                 overridesByKey[key] = next;
-                logger.Info($"Saving coffer override for {match.CandidateKey} at <{next.ObservedPosition.X:0.000}, {next.ObservedPosition.Y:0.000}, {next.ObservedPosition.Z:0.000}> from {match.Coffer.Name} ({match.Coffer.DataId}).");
+                logger.Info($"[CofferOverrideStore] op=save candidate={match.CandidateKey.Label} position=<{next.ObservedPosition.X:0.000}, {next.ObservedPosition.Y:0.000}, {next.ObservedPosition.Z:0.000}> source=\"{match.Coffer.Name}\" ({match.Coffer.DataId})");
             }
 
             var persisted = PersistLocked();
@@ -127,7 +127,7 @@ public sealed class CofferPositionOverrideStore
 
             if (!File.Exists(filePath))
             {
-                logger.Info($"Coffer override store starting empty: {filePath}");
+                logger.Info($"[CofferOverrideStore] op=load-empty path=\"{filePath}\"");
                 return;
             }
 
@@ -139,7 +139,7 @@ public sealed class CofferPositionOverrideStore
                 overridesByKey[BuildKey(entry)] = entry;
             }
 
-            logger.Info($"Loaded {overridesByKey.Count} coffer position override(s) from {filePath}.");
+            logger.Info($"[CofferOverrideStore] op=load count={overridesByKey.Count} path=\"{filePath}\"");
         }
         catch (Exception ex)
         {

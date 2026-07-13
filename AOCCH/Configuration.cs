@@ -113,7 +113,7 @@ public class Configuration : IPluginConfiguration
             return false;
         }
 
-        logger?.Info($"Configuration migration starting from version {Version}.");
+        logger?.Info($"[Configuration] op=migration-start version={Version}");
 
         if (Version < 1 && LegacyFarmingMode.HasValue)
         {
@@ -153,13 +153,13 @@ public class Configuration : IPluginConfiguration
         if (Version < 2)
         {
             VisibleTreasureCofferMaximumAggroLevel = MaximumAggroLevel;
-            logger?.Info($"Configuration migration copied MaximumAggroLevel {MaximumAggroLevel} to VisibleTreasureCofferMaximumAggroLevel.");
+            logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=VisibleTreasureCofferMaximumAggroLevel");
         }
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
         Version = 2;
-        logger?.Info("Configuration migration completed at version 2.");
+        logger?.Info("[Configuration] op=migration-complete version=2");
         return true;
     }
 

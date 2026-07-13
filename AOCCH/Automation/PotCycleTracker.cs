@@ -35,7 +35,7 @@ public sealed class PotCycleTracker : IDisposable
         potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
 
         framework.Update += OnFrameworkUpdate;
-        logger.Info("Pot cycle tracker initialized.");
+        logger.Info("[PotCycleTracker] op=init");
     }
 
     public PotCycleSnapshot Snapshot
@@ -55,7 +55,7 @@ public sealed class PotCycleTracker : IDisposable
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
-        logger.Info("Pot cycle tracker stopped.");
+        logger.Info("[PotCycleTracker] op=stop");
     }
 
     public void Reset(string reason)
@@ -69,7 +69,7 @@ public sealed class PotCycleTracker : IDisposable
             lastProcessedScannerUpdate = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"Pot cycle tracker reset: {reason}");
+        logger.Info($"[PotCycleTracker] op=reset reason={reason}");
     }
 
     public void ResetInstanceState(string reason)
@@ -133,7 +133,7 @@ public sealed class PotCycleTracker : IDisposable
         }
 
         var nextPot = GetOppositePotFate(activePotFate.Id);
-        logger.Info($"Pot anchor observed: {activePotFate.Name} ({activePotFate.Id}) at {now:O}.");
+        logger.Info($"[PotCycleTracker] op=anchor-observed pot=\"{activePotFate.Name}\" ({activePotFate.Id}) observedAt={now:O} nextPot=\"{nextPot?.Name ?? "unknown"}\" ({nextPot?.FateId ?? 0}) nextSpawnAt={(nextPot == null ? "none" : (now + PotCycleInterval).ToString("O"))}.");
 
         return new PotCycleSnapshot
         {

@@ -42,10 +42,7 @@ public static class OccultCrescentDataLoader
             var json = File.ReadAllText(path);
             var data = JsonSerializer.Deserialize<OccultCrescentData>(json, SerializerOptions) ?? new OccultCrescentData();
             logger.Info(
-                $"Loaded Occult Crescent data: {data.Aethernets.Count} aethernets, " +
-                $"{data.CriticalEncounters.Count} CEs, {data.Fates.Count} FATEs, " +
-                $"{data.PotFates.Count} pot FATEs, {data.TreasureCofferGroups.Count} treasure coffer groups, " +
-                $"{data.VisibleCofferFarmSpots.Count} visible coffer spots, {data.VisibleCofferFarmRoute.Count} visible coffer route entries.");
+                $"[OccultCrescentDataLoader] op=load aethernets={data.Aethernets.Count} criticalEncounters={data.CriticalEncounters.Count} fates={data.Fates.Count} potFates={data.PotFates.Count} treasureCofferGroups={data.TreasureCofferGroups.Count} visibleCofferSpots={data.VisibleCofferFarmSpots.Count} visibleCofferRouteEntries={data.VisibleCofferFarmRoute.Count}");
 
             return data;
         }

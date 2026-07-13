@@ -62,7 +62,7 @@ public sealed class LifestreamIpc
         }
         catch (Exception ex)
         {
-            logger.Warning($"Failed to abort Lifestream operation: {ex.Message}");
+            logger.Warning($"[LifestreamIpc] op=abort-failed reason={ex.Message}");
         }
     }
 
@@ -100,11 +100,11 @@ public sealed class LifestreamIpc
         lastAvailability = available;
         if (available)
         {
-            logger.Info("Lifestream IPC is available.");
+            logger.Info("[LifestreamIpc] op=availability available=true");
         }
         else
         {
-            logger.Warning("Lifestream IPC is unavailable.");
+            logger.Warning("[LifestreamIpc] op=availability available=false");
         }
     }
 }

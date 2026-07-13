@@ -55,15 +55,15 @@ public sealed class InstancedContentController
 
     public unsafe bool TryLeaveCurrentContent(string reason)
     {
-        logger.Info($"Instanced content leave requested: {reason}");
+        logger.Info($"[InstancedContent] op=leave-request reason={reason}");
         if (!CanLeaveCurrentContent())
         {
-            logger.Warning($"Cannot leave instanced content yet for {reason}.");
+            logger.Warning($"[InstancedContent] op=leave-blocked reason={reason} canLeave=false");
             return false;
         }
 
         EventFramework.LeaveCurrentContent(true);
-        logger.Info($"Requested leave from instanced content for {reason}.");
+        logger.Info($"[InstancedContent] op=leave-dispatched reason={reason}");
         return true;
     }
 }

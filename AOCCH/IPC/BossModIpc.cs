@@ -80,11 +80,11 @@ public sealed class BossModIpc
         lastAvailability = available;
         if (available)
         {
-            logger.Info("BossMod IPC is available.");
+            logger.Info("[BossModIpc] op=availability available=true");
         }
         else
         {
-            logger.Warning("BossMod IPC is unavailable.");
+            logger.Warning("[BossModIpc] op=availability available=false");
         }
     }
 }

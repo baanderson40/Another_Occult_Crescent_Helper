@@ -94,7 +94,7 @@ public class ConfigWindow : Window, IDisposable
         var enableCeFarming = configuration.EnableCriticalEngagementFarming;
         if (ImGui.Checkbox("Enable CE Farming", ref enableCeFarming))
         {
-            logger.Info($"Setting changed: EnableCriticalEngagementFarming: {configuration.EnableCriticalEngagementFarming} -> {enableCeFarming}.");
+            logger.Info($"[Config] op=setting-change key=EnableCriticalEngagementFarming old={configuration.EnableCriticalEngagementFarming} new={enableCeFarming}");
             configuration.EnableCriticalEngagementFarming = enableCeFarming;
             configuration.Save();
         }
@@ -102,7 +102,7 @@ public class ConfigWindow : Window, IDisposable
         var prioritizeCe = configuration.PrioritizeCe;
         if (ImGui.Checkbox("Prioritize CE", ref prioritizeCe))
         {
-            logger.Info($"Setting changed: PrioritizeCe: {configuration.PrioritizeCe} -> {prioritizeCe}.");
+            logger.Info($"[Config] op=setting-change key=PrioritizeCe old={configuration.PrioritizeCe} new={prioritizeCe}");
             configuration.PrioritizeCe = prioritizeCe;
             configuration.Save();
         }
@@ -117,7 +117,7 @@ public class ConfigWindow : Window, IDisposable
         var enableFateFarming = configuration.EnableFateFarming;
         if (ImGui.Checkbox("Enable FATE Farming", ref enableFateFarming))
         {
-            logger.Info($"Setting changed: EnableFateFarming: {configuration.EnableFateFarming} -> {enableFateFarming}.");
+            logger.Info($"[Config] op=setting-change key=EnableFateFarming old={configuration.EnableFateFarming} new={enableFateFarming}");
             configuration.EnableFateFarming = enableFateFarming;
             configuration.Save();
         }
@@ -126,7 +126,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(160);
         if (ImGui.Combo("FATE Priority", ref fatePriority, FatePriorityLabels, FatePriorityLabels.Length))
         {
-            logger.Info($"Setting changed: FatePriority: {configuration.FatePriority} -> {(FatePriority)fatePriority}.");
+            logger.Info($"[Config] op=setting-change key=FatePriority old={configuration.FatePriority} new={(FatePriority)fatePriority}");
             configuration.FatePriority = (FatePriority)fatePriority;
             configuration.Save();
         }
@@ -141,7 +141,7 @@ public class ConfigWindow : Window, IDisposable
         var enablePotFarming = configuration.EnablePotFarming;
         if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
         {
-            logger.Info($"Setting changed: EnablePotFarming: {configuration.EnablePotFarming} -> {enablePotFarming}.");
+            logger.Info($"[Config] op=setting-change key=EnablePotFarming old={configuration.EnablePotFarming} new={enablePotFarming}");
             configuration.EnablePotFarming = enablePotFarming;
             configuration.Save();
         }
@@ -153,7 +153,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(220);
         if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, StartingPotFateLabels, StartingPotFateLabels.Length))
         {
-            logger.Info($"Setting changed: StartingPotFate: {configuration.StartingPotFate} -> {(StartingPotFateMode)startingPotFate}.");
+            logger.Info($"[Config] op=setting-change key=StartingPotFate old={configuration.StartingPotFate} new={(StartingPotFateMode)startingPotFate}");
             configuration.StartingPotFate = (StartingPotFateMode)startingPotFate;
             configuration.Save();
         }
@@ -189,7 +189,7 @@ public class ConfigWindow : Window, IDisposable
         var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
         if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
         {
-            logger.Info($"Setting changed: UseNinjaForDangerousArea: {configuration.UseNinjaForDangerousArea} -> {useNinjaForDangerousArea}.");
+            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousArea old={configuration.UseNinjaForDangerousArea} new={useNinjaForDangerousArea}");
             configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
             configuration.Save();
         }
@@ -226,7 +226,7 @@ public class ConfigWindow : Window, IDisposable
 
         if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
         {
-            logger.Info($"Setting changed: ManageInstanceTime: {configuration.ManageInstanceTime} -> {manageInstanceTime}.");
+            logger.Info($"[Config] op=setting-change key=ManageInstanceTime old={configuration.ManageInstanceTime} new={manageInstanceTime}");
             configuration.ManageInstanceTime = manageInstanceTime;
             configuration.Save();
         }
@@ -294,7 +294,7 @@ public class ConfigWindow : Window, IDisposable
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
         {
-            logger.Info($"Setting changed: SkipHighLevelCavernsDuringAshkin: {configuration.SkipHighLevelCavernsDuringAshkin} -> {skipHighLevelCavernsDuringAshkin}.");
+            logger.Info($"[Config] op=setting-change key=SkipHighLevelCavernsDuringAshkin old={configuration.SkipHighLevelCavernsDuringAshkin} new={skipHighLevelCavernsDuringAshkin}");
             configuration.SkipHighLevelCavernsDuringAshkin = skipHighLevelCavernsDuringAshkin;
             configuration.Save();
         }
@@ -321,7 +321,7 @@ public class ConfigWindow : Window, IDisposable
         var useReturn = configuration.UseReturn;
         if (ImGui.Checkbox("Use Return", ref useReturn))
         {
-            logger.Info($"Setting changed: UseReturn: {configuration.UseReturn} -> {useReturn}.");
+            logger.Info($"[Config] op=setting-change key=UseReturn old={configuration.UseReturn} new={useReturn}");
             configuration.UseReturn = useReturn;
             configuration.Save();
         }
@@ -329,7 +329,7 @@ public class ConfigWindow : Window, IDisposable
         var enableBuffRotation = configuration.EnableBuffRotation;
         if (ImGui.Checkbox("Enable Buff Rotation", ref enableBuffRotation))
         {
-            logger.Info($"Setting changed: EnableBuffRotation: {configuration.EnableBuffRotation} -> {enableBuffRotation}.");
+            logger.Info($"[Config] op=setting-change key=EnableBuffRotation old={configuration.EnableBuffRotation} new={enableBuffRotation}");
             configuration.EnableBuffRotation = enableBuffRotation;
             configuration.Save();
         }
@@ -347,7 +347,7 @@ public class ConfigWindow : Window, IDisposable
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
         {
-            logger.Info($"Setting changed: ScannerOnlyMode: {configuration.ScannerOnlyMode} -> {scannerOnlyMode}.");
+            logger.Info($"[Config] op=setting-change key=ScannerOnlyMode old={configuration.ScannerOnlyMode} new={scannerOnlyMode}");
             configuration.ScannerOnlyMode = scannerOnlyMode;
             configuration.Save();
         }
@@ -392,7 +392,7 @@ public class ConfigWindow : Window, IDisposable
                 continue;
             }
 
-            logger.Info($"Setting changed: {logLabel} {entry.Id} enabled={enabled}.");
+            logger.Info($"[Config] op=setting-change key={logLabel} targetId={entry.Id} enabled={enabled}");
             configuration.Save();
         }
 
@@ -429,7 +429,7 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
-        logger.InfoThrottled($"setting-{logName}", SettingTextLogInterval, $"Setting changed: {logName}: {currentValue} -> {nextValue}.");
+        logger.InfoThrottled($"setting-{logName}", SettingTextLogInterval, $"[Config] op=setting-change key={logName} old={currentValue} new={nextValue}");
         applyValue(nextValue);
         configuration.Save();
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
@@ -14,6 +15,7 @@ namespace AOCCH.Automation;
 
 public sealed class BuffRotationController : IDisposable
 {
+    private static int nextRunSequence;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private const float BuffFreshDuration = 600f;
     private const float BuffSettleSeconds = 1.5f;
@@ -46,6 +48,7 @@ public sealed class BuffRotationController : IDisposable
     private readonly object gate = new();
 
     private BuffRotationState state = BuffRotationState.Idle;
+    private string currentRunId = string.Empty;
     private string lastTransition = "Idle";
     private string lastError = string.Empty;
     private string currentAction = string.Empty;
@@ -197,6 +200,7 @@ public sealed class BuffRotationController : IDisposable
         lock (gate)
         {
             state = BuffRotationState.Idle;
+            currentRunId = string.Empty;
             lastTransition = "Idle";
             lastError = string.Empty;
             currentAction = string.Empty;
@@ -216,7 +220,7 @@ public sealed class BuffRotationController : IDisposable
             moveTargets = [];
         }
 
-        logger.Info($"Buff rotation reset: {reason}");
+        logger.Info($"[BuffRotation] op=reset reason={reason}");
     }
 
     public bool Start(string context = "manual")
@@ -235,6 +239,7 @@ public sealed class BuffRotationController : IDisposable
 
         lock (gate)
         {
+            currentRunId = $"BuffRotation#{Interlocked.Increment(ref nextRunSequence)}";
             lastContext = context;
             lastError = string.Empty;
             currentAction = string.Empty;
@@ -292,7 +297,8 @@ public sealed class BuffRotationController : IDisposable
             pendingSupportJobRestore = currentJob;
         }
 
-        logger.Info($"Starting buff rotation during {context} from support job {currentJob}.");
+        logger.Info($"{BuildLogTag()} op=start context=\"{context}\" supportJob={currentJob}");
+        movementController.SetLogOwner(currentRunId);
         TransitionTo(BuffRotationState.Checking, $"Starting buff rotation during {context}.");
         ContinueRotation();
         return true;
@@ -300,11 +306,12 @@ public sealed class BuffRotationController : IDisposable
 
     public void Stop(string reason)
     {
+        movementController.SetLogOwner(currentRunId);
         movementController.Stop(reason);
         if (PendingSupportJobRestore == null)
         {
             TransitionTo(BuffRotationState.Stopped, reason, clearError: false);
-            logger.Info($"Buff rotation stopped: {reason}");
+            logger.Info($"{BuildLogTag()} op=stop state={State} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={reason}");
             return;
         }
 
@@ -315,14 +322,15 @@ public sealed class BuffRotationController : IDisposable
         }
 
         TransitionTo(BuffRotationState.RestoringJob, $"{reason} Restoring original support job.", clearError: false);
-        logger.Info($"Buff rotation stop requested: {reason}");
+        logger.Info($"{BuildLogTag()} op=stop-request state={State} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={reason}");
     }
 
     public void HandleDeath(string reason)
     {
+        movementController.SetLogOwner(currentRunId);
         movementController.Stop(reason);
         SetFailure(reason, critical: false);
-        logger.Warning($"Buff rotation stopped for death recovery: {reason}");
+        logger.Warning($"{BuildLogTag()} op=death-stop state={State} context=\"{LastContext}\" reason={reason}");
     }
 
     public bool RestorePendingSupportJob(string context)
@@ -350,12 +358,12 @@ public sealed class BuffRotationController : IDisposable
         if (RequestPendingSupportJobRestore("plugin disposal", out var restoreError))
         {
             logger.Info(pendingRestore == null
-                ? "Buff rotation cleanup: no support job restore was needed on plugin disposal."
-                : $"Buff rotation cleanup: requested support job restore to {pendingRestore.Value} on plugin disposal.");
+                ? $"{BuildLogTag()} op=cleanup restoreNeeded=false reason=plugin-disposal"
+                : $"{BuildLogTag()} op=cleanup restoreNeeded=true targetSupportJob={pendingRestore.Value} reason=plugin-disposal");
             return;
         }
 
-        logger.Warning($"Buff rotation cleanup failed during plugin disposal: {restoreError}");
+        logger.Warning($"{BuildLogTag()} op=cleanup-failed reason=plugin-disposal error={restoreError}");
     }
 
     private void OnFrameworkUpdate(IFramework _)
@@ -423,7 +431,7 @@ public sealed class BuffRotationController : IDisposable
             var jobLevel = entry.JobId < supportJobLevels.Length ? supportJobLevels[entry.JobId] : (byte)0;
             if (jobLevel < entry.MinLevel)
             {
-                logger.Info($"Buff rotation: skipping {entry.Name} because level {jobLevel} is below {entry.MinLevel}.");
+                logger.Info($"{BuildLogTag()} op=skip-action action=\"{entry.Name}\" reason=level-too-low currentLevel={jobLevel} requiredLevel={entry.MinLevel}");
                 currentEntryIndex++;
                 continue;
             }
@@ -439,7 +447,7 @@ public sealed class BuffRotationController : IDisposable
             }
             else if (GetStatusRemaining(entry.StatusId) >= BuffFreshDuration)
             {
-                logger.Info($"Buff rotation: skipping {entry.BuffName} because it is still fresh.");
+                logger.Info($"{BuildLogTag()} op=skip-action action=\"{entry.BuffName}\" reason=buff-still-fresh");
                 currentEntryIndex++;
                 continue;
             }
@@ -501,6 +509,7 @@ public sealed class BuffRotationController : IDisposable
     {
         var destination = moveTargets[moveAttemptIndex++];
         currentAction = "Moving to buff zone";
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.PlanRouteToLocation(currentAction, "BaseCamp", destination, 1f))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -530,6 +539,7 @@ public sealed class BuffRotationController : IDisposable
 
         var destination = moveTargets[moveAttemptIndex++];
         currentAction = $"Moving to buff zone point {moveAttemptIndex}/{moveTargets.Count}";
+        movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove(currentAction, destination, 1f))
         {
             SetFailure(movementController.LastError.Length == 0
@@ -695,12 +705,12 @@ public sealed class BuffRotationController : IDisposable
             if (entry.AppliesAll)
             {
                 SetMissingStatuses([]);
-                logger.Info("Buff rotation: Freelancer buff covered all required buffs.");
+                logger.Info($"{BuildLogTag()} op=verify action=\"Freelancer\" result=covered-all-required-buffs");
                 FinishRotation();
                 return;
             }
 
-            logger.Info($"Buff rotation: verified {entry.BuffName}.");
+            logger.Info($"{BuildLogTag()} op=verify action=\"{entry.BuffName}\" result=verified");
             currentEntryIndex++;
             currentVerifyAttempt = 0;
             TransitionTo(BuffRotationState.Checking, $"Verified {entry.BuffName}.");
@@ -752,7 +762,7 @@ public sealed class BuffRotationController : IDisposable
                 return;
             }
 
-            logger.Warning($"Buff rotation: timed out waiting for {entry.BuffName} to resolve before the action became reusable.");
+            logger.Warning($"{BuildLogTag()} op=verify-timeout action=\"{entry.BuffName}\" stage=resolve-before-reusable");
         }
         else if (elapsed.TotalSeconds < BuffOutcomeTimeoutSeconds)
         {
@@ -779,7 +789,7 @@ public sealed class BuffRotationController : IDisposable
         actionAttemptStartedAt = DateTimeOffset.MinValue;
         if (entry.AppliesAll)
         {
-            logger.Warning("Buff rotation: Freelancer buff failed verification; continuing with individual buffs.");
+            logger.Warning($"{BuildLogTag()} op=verify-fallback action=\"Freelancer\" reason=verification-failed fallback=individual-buffs");
             currentEntryIndex++;
             currentVerifyAttempt = 0;
             TransitionTo(BuffRotationState.Checking, "Freelancer buff failed verification; falling back to individual buffs.");
@@ -814,7 +824,7 @@ public sealed class BuffRotationController : IDisposable
         if (targetJob == null)
         {
             TransitionTo(BuffRotationState.Completed, "Buff rotation completed and restored the original support job.");
-            logger.Info("Buff rotation complete; original support job restored.");
+            logger.Info($"{BuildLogTag()} op=complete restoreRequested=true reason=original-support-job-restored");
             return;
         }
 
@@ -828,7 +838,7 @@ public sealed class BuffRotationController : IDisposable
             }
 
             TransitionTo(BuffRotationState.Completed, "Buff rotation completed and restored the original support job.");
-            logger.Info("Buff rotation complete; original support job restored.");
+            logger.Info($"{BuildLogTag()} op=complete restoreRequested=true reason=original-support-job-restored");
             return;
         }
 
@@ -871,7 +881,7 @@ public sealed class BuffRotationController : IDisposable
                 currentSupportJob = currentJob;
             }
 
-            logger.Info($"{context}: original support job {targetJob.Value} was already active.");
+            logger.Info($"{BuildLogTag()} op=restore-skip context=\"{context}\" targetSupportJob={targetJob.Value} reason=already-active");
             return true;
         }
 
@@ -889,7 +899,7 @@ public sealed class BuffRotationController : IDisposable
             restoreRequested = true;
         }
 
-        logger.Info($"{context}: requested restore of original support job {targetJob.Value}.");
+        logger.Info($"{BuildLogTag()} op=restore-request context=\"{context}\" targetSupportJob={targetJob.Value}");
         return true;
     }
 
@@ -988,8 +998,10 @@ public sealed class BuffRotationController : IDisposable
 
     private void TransitionTo(BuffRotationState nextState, string transition, bool clearError = true)
     {
+        BuffRotationState previousState;
         lock (gate)
         {
+            previousState = state;
             state = nextState;
             lastTransition = transition;
             stateEnteredAt = DateTimeOffset.UtcNow;
@@ -999,7 +1011,7 @@ public sealed class BuffRotationController : IDisposable
             }
         }
 
-        logger.Info($"Buff rotation state -> {nextState}: {transition}");
+        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={transition}");
     }
 
     private void SetFailure(string error, bool critical)
@@ -1014,13 +1026,16 @@ public sealed class BuffRotationController : IDisposable
 
         if (critical)
         {
-            logger.Error(error);
+            logger.Error($"{BuildLogTag()} op=failure state={BuffRotationState.CriticalFailed} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={error}");
         }
         else
         {
-            logger.Warning(error);
+            logger.Warning($"{BuildLogTag()} op=failure state={BuffRotationState.Failed} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={error}");
         }
     }
+
+    private string BuildLogTag()
+        => currentRunId.Length == 0 ? "[BuffRotation]" : $"[BuffRotation run={currentRunId}]";
 
     private void SetMissingStatuses(IReadOnlyCollection<uint> missingStatuses)
     {
