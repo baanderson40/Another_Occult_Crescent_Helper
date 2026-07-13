@@ -8,6 +8,7 @@ public sealed class VisibleCofferMatch
     public VisibleCoffer Coffer { get; init; } = new();
     public float MatchDistance { get; init; }
     public bool IsTrustworthy { get; init; }
+    public bool RequiresJumpAssist { get; init; }
     public float DistanceToNearestOtherCandidate { get; init; } = float.MaxValue;
     public string AttributionReason { get; init; } = string.Empty;
 }

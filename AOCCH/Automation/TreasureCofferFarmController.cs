@@ -563,6 +563,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             Coffer = confirmedCoffer,
             MatchDistance = matchDistance,
             IsTrustworthy = matchDistance <= MatchConfidenceRadius,
+            RequiresJumpAssist = string.Equals(spot.Note, "requires_jump", StringComparison.OrdinalIgnoreCase),
             AttributionReason = $"Matched visible coffer during {acquisitionSource} scan for {spot.Area}:{spot.Label}. routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y.",
         };
 

@@ -17,6 +17,8 @@ public sealed class CofferInteractionController : IDisposable
     private static int nextRunSequence;
     private const float MaxInteractRange = 4.5f;
     private const float PreferredOpenDistance = 3.25f;
+    private const uint JumpActionId = 2;
+    private const float JumpAssistTriggerDistance = 10f;
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
@@ -41,6 +43,7 @@ public sealed class CofferInteractionController : IDisposable
     private int interactionAttemptCount;
     private int missingConfirmationCount;
     private TreasureFlags lastObservedTreasureFlags;
+    private bool jumpAssistFiredThisApproach;
 
     public CofferInteractionController(
         IFramework framework,
@@ -172,6 +175,7 @@ public sealed class CofferInteractionController : IDisposable
             interactionAttemptCount = 0;
             missingConfirmationCount = 0;
             lastObservedTreasureFlags = TreasureFlags.None;
+            jumpAssistFiredThisApproach = false;
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
         }
@@ -214,6 +218,7 @@ public sealed class CofferInteractionController : IDisposable
             interactionAttemptCount = 0;
             missingConfirmationCount = 0;
             lastObservedTreasureFlags = TreasureFlags.None;
+            jumpAssistFiredThisApproach = false;
         }
 
         logger.Info($"[Coffer] op=reset reason={reason}");
@@ -292,12 +297,19 @@ public sealed class CofferInteractionController : IDisposable
             return false;
         }
 
+        lock (gate)
+        {
+            jumpAssistFiredThisApproach = false;
+        }
+
         TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Moving within {PreferredOpenDistance:0.00}y of {liveObject.Name.TextValue} before attempting to open it.");
         return true;
     }
 
     private void TickApproach()
     {
+        TryApplyJumpAssistDuringApproach();
+
         switch (movementController.State)
         {
             case MovementState.Arrived:
@@ -540,6 +552,49 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         logger.Warning($"{BuildLogTag()} op=override-save-failed candidate={match.CandidateKey.Label} reason=save-confirmed-position-returned-false");
+    }
+
+    private void TryApplyJumpAssistDuringApproach()
+    {
+        var match = ActiveMatch;
+        if (match?.RequiresJumpAssist != true)
+        {
+            return;
+        }
+
+        if (movementController.State is not MovementState.Pathfinding and not MovementState.WaitingForArrival)
+        {
+            return;
+        }
+
+        var liveObject = ResolveActiveObject();
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (liveObject == null || playerPosition == null)
+        {
+            return;
+        }
+
+        var remaining = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        if (remaining > JumpAssistTriggerDistance)
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            if (jumpAssistFiredThisApproach)
+            {
+                return;
+            }
+
+            jumpAssistFiredThisApproach = true;
+        }
+
+        logger.Info($"{BuildLogTag()} op=jump-assist candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y trigger={JumpAssistTriggerDistance:0.0}y");
+        if (!gameActionController.TryExecuteGeneralAction(JumpActionId, $"Jump assist for {DescribeActiveCandidate()}"))
+        {
+            logger.Warning($"{BuildLogTag()} op=jump-assist-failed candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y actionId={JumpActionId}");
+        }
     }
 
     private void TransitionTo(CofferInteractionState nextState, string reason, string? error = null, CofferInteractionResult? result = null)
