@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using AOCCH.Logging;
@@ -7,6 +8,7 @@ using AOCCH.Scanning;
 using AOCCH.Data;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
@@ -14,6 +16,8 @@ namespace AOCCH.Automation;
 
 public sealed class CofferInteractionController : IDisposable
 {
+    private sealed record InventorySnapshot(Dictionary<uint, uint> ItemCounts, int NonEmptySlots);
+
     private static int nextRunSequence;
     private const float MaxInteractRange = 4.5f;
     private const float PreferredOpenDistance = 3.25f;
@@ -24,6 +28,7 @@ public sealed class CofferInteractionController : IDisposable
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
+    private static readonly InventoryType[] NormalInventoryContainers = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
 
     private readonly IFramework framework;
     private readonly IObjectTable objectTable;
@@ -45,6 +50,9 @@ public sealed class CofferInteractionController : IDisposable
     private int missingConfirmationCount;
     private TreasureFlags lastObservedTreasureFlags;
     private bool jumpAssistFiredThisApproach;
+    private InventorySnapshot? preInteractionInventorySnapshot;
+    private bool preInteractionInventorySnapshotValid;
+    private bool inventoryFallbackLoggedThisAttempt;
 
     public CofferInteractionController(
         IFramework framework,
@@ -177,6 +185,9 @@ public sealed class CofferInteractionController : IDisposable
             missingConfirmationCount = 0;
             lastObservedTreasureFlags = TreasureFlags.None;
             jumpAssistFiredThisApproach = false;
+            preInteractionInventorySnapshot = null;
+            preInteractionInventorySnapshotValid = false;
+            inventoryFallbackLoggedThisAttempt = false;
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
         }
@@ -220,6 +231,9 @@ public sealed class CofferInteractionController : IDisposable
             missingConfirmationCount = 0;
             lastObservedTreasureFlags = TreasureFlags.None;
             jumpAssistFiredThisApproach = false;
+            preInteractionInventorySnapshot = null;
+            preInteractionInventorySnapshotValid = false;
+            inventoryFallbackLoggedThisAttempt = false;
         }
 
         logger.Info($"[Coffer] op=reset reason={reason}");
@@ -405,6 +419,32 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
+        if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal)
+        {
+            if (TryCaptureNormalInventorySnapshot(out var snapshot, out var error))
+            {
+                lock (gate)
+                {
+                    preInteractionInventorySnapshot = snapshot;
+                    preInteractionInventorySnapshotValid = true;
+                    inventoryFallbackLoggedThisAttempt = false;
+                }
+
+                logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-baseline attempt={interactionAttemptCount + 1} nonEmptySlots={snapshot.NonEmptySlots}");
+            }
+            else
+            {
+                lock (gate)
+                {
+                    preInteractionInventorySnapshot = null;
+                    preInteractionInventorySnapshotValid = false;
+                    inventoryFallbackLoggedThisAttempt = true;
+                }
+
+                logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-baseline-missing attempt={interactionAttemptCount + 1} reason={error}");
+            }
+        }
+
         if (!gameActionController.TryInteractWithObject(liveObject, "coffer interaction"))
         {
             if (interactionAttemptCount + 1 >= MaxInteractionAttempts)
@@ -442,7 +482,9 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var liveObject = ResolveActiveObject();
-        if (liveObject != null && TryReadTreasureFlags(liveObject, out var currentFlags))
+        if (active.Flow != CofferInteractionFlow.PotReveal
+            && liveObject != null
+            && TryReadTreasureFlags(liveObject, out var currentFlags))
         {
             var previousFlags = lastObservedTreasureFlags;
             lock (gate)
@@ -457,6 +499,11 @@ public sealed class CofferInteractionController : IDisposable
                 TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via the treasure opened flag after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
                 return;
             }
+        }
+
+        if (active.Flow == CofferInteractionFlow.PotReveal && TryConfirmPotRevealOpenViaInventoryDelta(active))
+        {
+            return;
         }
 
         var stillVisible = IsStillVisibleForConfirmation(active);
@@ -546,6 +593,117 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         return false;
+    }
+
+    private bool TryConfirmPotRevealOpenViaInventoryDelta(VisibleCofferMatch match)
+    {
+        if (!preInteractionInventorySnapshotValid || preInteractionInventorySnapshot == null)
+        {
+            if (!inventoryFallbackLoggedThisAttempt)
+            {
+                inventoryFallbackLoggedThisAttempt = true;
+                logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-fallback attempt={interactionAttemptCount} reason=no-valid-baseline");
+            }
+
+            return false;
+        }
+
+        if (!TryCaptureNormalInventorySnapshot(out var currentSnapshot, out var error))
+        {
+            if (!inventoryFallbackLoggedThisAttempt)
+            {
+                inventoryFallbackLoggedThisAttempt = true;
+                logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-fallback attempt={interactionAttemptCount} reason={error}");
+            }
+
+            return false;
+        }
+
+        var deltas = FindPositiveInventoryDeltas(preInteractionInventorySnapshot, currentSnapshot);
+        if (deltas.Count == 0)
+        {
+            return false;
+        }
+
+        PersistConfirmedOverride(match);
+        logger.ResetThrottle("coffer-confirmation");
+        logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-confirm attempt={interactionAttemptCount} deltas={string.Join(", ", deltas)}");
+        TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via inventory delta after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
+        return true;
+    }
+
+    private static List<string> FindPositiveInventoryDeltas(InventorySnapshot before, InventorySnapshot after)
+    {
+        var deltas = new List<string>();
+        foreach (var pair in after.ItemCounts)
+        {
+            before.ItemCounts.TryGetValue(pair.Key, out var beforeCount);
+            if (pair.Value <= beforeCount)
+            {
+                continue;
+            }
+
+            deltas.Add($"itemId={pair.Key} before={beforeCount} after={pair.Value} added={pair.Value - beforeCount}");
+        }
+
+        deltas.Sort(StringComparer.Ordinal);
+        return deltas;
+    }
+
+    private static unsafe bool TryCaptureNormalInventorySnapshot(out InventorySnapshot snapshot, out string error)
+    {
+        snapshot = new InventorySnapshot(new Dictionary<uint, uint>(), 0);
+        error = string.Empty;
+
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            error = "inventory-manager-unavailable";
+            return false;
+        }
+
+        var itemCounts = new Dictionary<uint, uint>();
+        var nonEmptySlots = 0;
+        foreach (var containerType in NormalInventoryContainers)
+        {
+            var container = inventoryManager->GetInventoryContainer(containerType);
+            if (container == null)
+            {
+                error = $"container-unavailable:{containerType}";
+                return false;
+            }
+
+            if (!container->IsLoaded || container->Size <= 0 || container->Items == null)
+            {
+                error = $"container-not-ready:{containerType}:loaded={container->IsLoaded}:size={container->Size}";
+                return false;
+            }
+
+            for (var i = 0; i < container->Size; i++)
+            {
+                var item = container->GetInventorySlot(i);
+                if (item == null || item->IsEmpty())
+                {
+                    continue;
+                }
+
+                nonEmptySlots++;
+                var itemId = item->ItemId;
+                if (itemId == 0)
+                {
+                    continue;
+                }
+
+                var quantity = checked((uint)item->Quantity);
+
+                itemCounts[itemId] = itemCounts.TryGetValue(itemId, out var count)
+                    ? count + quantity
+                    : quantity;
+            }
+        }
+
+        snapshot = new InventorySnapshot(itemCounts, nonEmptySlots);
+        return true;
     }
 
     private IGameObject? ResolveActiveObject()
