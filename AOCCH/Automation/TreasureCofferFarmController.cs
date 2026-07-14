@@ -47,6 +47,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private VisibleCoffer? lastMatchedCoffer;
     private DateTimeOffset lastVisibleCofferScanAt = DateTimeOffset.MinValue;
     private string lastMatchSource = string.Empty;
+    private VisibleCofferMatch? pendingInteractionMatch;
 
     public TreasureCofferFarmController(
         IFramework framework,
@@ -234,6 +235,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastMatchedCoffer = null;
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
+            pendingInteractionMatch = null;
         }
 
         movementController.SetLogOwner(currentRunId);
@@ -260,6 +262,11 @@ public sealed class TreasureCofferFarmController : IDisposable
             cofferInteractionController.Stop(reason);
         }
 
+        lock (gate)
+        {
+            pendingInteractionMatch = null;
+        }
+
         TransitionTo(TreasureCofferFarmState.Stopped, reason, error: reason, result: TreasureCofferFarmResult.Stopped);
     }
 
@@ -280,6 +287,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastMatchedCoffer = null;
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
+            pendingInteractionMatch = null;
         }
 
         logger.Info($"[CofferFarm] op=reset reason={reason}");
@@ -322,6 +330,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToSpot:
                 TickTravelingToSpot();
                 break;
+            case TreasureCofferFarmState.WaitingForInteractionHandoff:
+                TickWaitingForInteractionHandoff();
+                break;
             case TreasureCofferFarmState.InteractingWithCoffer:
                 TickInteractingWithCoffer();
                 break;
@@ -361,6 +372,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     lastMatchedCoffer = null;
                     lastVisibleCofferScanAt = DateTimeOffset.MinValue;
                     lastMatchSource = string.Empty;
+                    pendingInteractionMatch = null;
                 }
 
                 logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-or-over-threshold");
@@ -384,6 +396,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 lastMatchedCoffer = null;
                 lastVisibleCofferScanAt = DateTimeOffset.MinValue;
                 lastMatchSource = string.Empty;
+                pendingInteractionMatch = null;
             }
 
             if (BeginTravelToActiveSpot())
@@ -596,22 +609,66 @@ public sealed class TreasureCofferFarmController : IDisposable
         logger.Info(
             $"{BuildLogTag()} op=coffer-match spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={confirmedCoffer.DataId} objectId={confirmedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y pos=<{confirmedCoffer.Position.X:0.000}, {confirmedCoffer.Position.Y:0.000}, {confirmedCoffer.Position.Z:0.000}> name='{confirmedCoffer.Name}'");
 
-        if (!cofferInteractionController.Start(interactionMatch))
+        lock (gate)
         {
+            pendingInteractionMatch = interactionMatch;
+        }
+
+        logger.Info($"{BuildLogTag()} op=coffer-handoff-pending spot={spot.Area}:{spot.Label} source={acquisitionSource} reason=waiting-for-vnavmesh-settle");
+        TransitionTo(TreasureCofferFarmState.WaitingForInteractionHandoff, $"Matched visible coffer for {spot.Area}:{spot.Label} via {acquisitionSource} scan; waiting for movement handoff before interaction.");
+        return true;
+    }
+
+    private void TickWaitingForInteractionHandoff()
+    {
+        VisibleCofferMatch? pendingMatch;
+        lock (gate)
+        {
+            pendingMatch = pendingInteractionMatch;
+        }
+
+        if (pendingMatch == null)
+        {
+            SetFailure("Visible coffer interaction handoff was missing its pending match.");
+            return;
+        }
+
+        if (movementController.IsPathBusy)
+        {
+            logger.DebugThrottled(
+                "visible-coffer-farm-handoff",
+                TimeSpan.FromMilliseconds(250),
+                $"Visible coffer farm is waiting for vnavmesh to settle before interacting at {DescribeActiveSpot()}. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=coffer-handoff-start spot={DescribeActiveSpot()} candidate={pendingMatch.CandidateKey.Label} flow={pendingMatch.Flow}");
+        if (!cofferInteractionController.Start(pendingMatch))
+        {
+            lock (gate)
+            {
+                pendingInteractionMatch = null;
+            }
+
             if (cofferInteractionController.LastResult == CofferInteractionResult.LostCoffer)
             {
-                logger.Warning($"{BuildLogTag()} op=interaction-start-lost spot={spot.Area}:{spot.Label} reason=matched-coffer-vanished");
-                return false;
+                logger.Warning($"{BuildLogTag()} op=interaction-start-lost spot={DescribeActiveSpot()} reason=matched-coffer-vanished");
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Matched visible coffer vanished before interaction could start at {DescribeActiveSpot()}; continuing to the next route entry.");
+                return;
             }
 
             SetFailure(cofferInteractionController.LastError.Length == 0
                 ? "Failed to start visible coffer interaction."
                 : cofferInteractionController.LastError);
-            return false;
+            return;
         }
 
-        TransitionTo(TreasureCofferFarmState.InteractingWithCoffer, $"Matched visible coffer for {spot.Area}:{spot.Label} via {acquisitionSource} scan; starting interaction.");
-        return true;
+        lock (gate)
+        {
+            pendingInteractionMatch = null;
+        }
+
+        TransitionTo(TreasureCofferFarmState.InteractingWithCoffer, $"Matched visible coffer for {DescribeActiveSpot()} via handoff; starting interaction.");
     }
 
     private bool ShouldRunVisibleCofferScan(bool requireApproachThreshold, out float remainingDistanceToSpot)

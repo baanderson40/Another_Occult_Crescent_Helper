@@ -6,6 +6,7 @@ public enum TreasureCofferFarmState
     Starting,
     TravelingToSpot,
     WaitingForVisibleCoffer,
+    WaitingForInteractionHandoff,
     InteractingWithCoffer,
     AdvancingRoute,
     ReturningToBase,

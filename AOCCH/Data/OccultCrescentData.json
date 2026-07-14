@@ -446,6 +446,18 @@
       "note": "silver_variant"
     },
     {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_6_To_3_Helper",
+      "position": {
+        "x": -815.296,
+        "y": 5.000,
+        "z": -813.877
+      },
+      "aggroLevel": 23,
+      "arrivalDistance": 10.0,
+      "routeOnly": true
+    },
+    {
       "area": "Lost Citadel",
       "label": "Lost Citadel_1",
       "position": {
@@ -720,6 +732,18 @@
       },
       "aggroLevel": 24,
       "hideThresholdDistance": 400
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_4_To_Heathcliff_10_Helper",
+      "position": {
+        "x": -574.154,
+        "y": 111.460,
+        "z": 79.532
+      },
+      "aggroLevel": 13,
+      "arrivalDistance": 10.0,
+      "routeOnly": true
     },
     {
       "area": "Shadowed City",
@@ -1240,6 +1264,10 @@
       "label": "Crystallized Caverns_4"
     },
     {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_4_To_Heathcliff_10_Helper"
+    },
+    {
       "area": "Heathcliff",
       "label": "Heathcliff_10"
     },
@@ -1298,6 +1326,10 @@
     {
       "area": "The Wanderer's Haven",
       "label": "The Wanderer's Haven_6"
+    },
+    {
+      "area": "The Wanderer's Haven",
+      "label": "The Wanderer's Haven_6_To_3_Helper"
     },
     {
       "area": "The Wanderer's Haven",
