@@ -667,11 +667,6 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickProbingCandidate()
     {
-        if (TryAcquireVisibleCofferFromActiveCandidate("probe-scan"))
-        {
-            return;
-        }
-
         var scannerSnapshot = scanner.Snapshot;
         var hintSnapshot = treasureHintTracker.Snapshot;
 
@@ -782,11 +777,6 @@ public sealed class TreasureSearchController : IDisposable
 
     private void TickRefiningCandidate()
     {
-        if (TryAcquireVisibleCofferFromActiveCandidate("refine-scan"))
-        {
-            return;
-        }
-
         var scannerSnapshot = scanner.Snapshot;
         var hintSnapshot = treasureHintTracker.Snapshot;
 

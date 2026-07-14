@@ -6,6 +6,7 @@ using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
 using AOCCH.Data;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -27,10 +28,12 @@ public sealed class CofferInteractionController : IDisposable
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly InventoryType[] NormalInventoryContainers = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
 
     private readonly IFramework framework;
+    private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
@@ -56,6 +59,7 @@ public sealed class CofferInteractionController : IDisposable
 
     public CofferInteractionController(
         IFramework framework,
+        ICondition condition,
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
@@ -64,6 +68,7 @@ public sealed class CofferInteractionController : IDisposable
         AocchLogger logger)
     {
         this.framework = framework;
+        this.condition = condition;
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
@@ -295,6 +300,11 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
+        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, reason))
+        {
+            return false;
+        }
+
         var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f);
         if (!destination.HasValue)
         {
@@ -304,7 +314,7 @@ public sealed class CofferInteractionController : IDisposable
 
         logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination.Value, PreferredOpenDistance))
+        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination.Value, PreferredOpenDistance, shouldMountBeforeStep: ActiveMatch?.MustStayHidden != true))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Failed to begin movement into coffer interact range."
@@ -323,6 +333,21 @@ public sealed class CofferInteractionController : IDisposable
 
     private void TickApproach()
     {
+        if (ActiveMatch?.MustStayHidden == true)
+        {
+            var liveObject = ResolveActiveObject();
+            if (liveObject == null)
+            {
+                TransitionTo(CofferInteractionState.LostCoffer, "Matched coffer disappeared before the approach completed.", result: CofferInteractionResult.LostCoffer);
+                return;
+            }
+
+            if (!EnsureHiddenApproachReady(liveObject, "Hidden coffer approach"))
+            {
+                return;
+            }
+        }
+
         TryApplyJumpAssistDuringApproach();
 
         switch (movementController.State)
@@ -386,6 +411,11 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
+        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, "Hidden coffer targeting"))
+        {
+            return;
+        }
+
         logger.ResetThrottle("coffer-approach");
         if (!gameActionController.TrySetTarget(liveObject, "coffer interaction"))
         {
@@ -416,6 +446,11 @@ public sealed class CofferInteractionController : IDisposable
         if (distance > MaxInteractRange)
         {
             BeginApproachOrTarget(liveObject, $"Interaction was deferred because the player is {distance:0.0}y from the matched coffer.");
+            return;
+        }
+
+        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, "Hidden coffer interaction"))
+        {
             return;
         }
 
@@ -516,6 +551,17 @@ public sealed class CofferInteractionController : IDisposable
 
             if (missingConfirmationCount >= RequiredMissingConfirmations)
             {
+                if (active.Flow == CofferInteractionFlow.PotReveal)
+                {
+                    logger.ResetThrottle("coffer-confirmation");
+                    TransitionTo(
+                        CofferInteractionState.LostCoffer,
+                        $"Pot-reveal coffer disappeared after {interactionAttemptCount} interaction attempt(s) without inventory confirmation ({(preInteractionInventorySnapshotValid ? "baseline-present" : "baseline-missing")}).",
+                        error: "Pot-reveal coffer disappeared without inventory confirmation.",
+                        result: CofferInteractionResult.LostCoffer);
+                    return;
+                }
+
                 PersistConfirmedOverride(active);
                 logger.ResetThrottle("coffer-confirmation");
                 TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
@@ -805,6 +851,66 @@ public sealed class CofferInteractionController : IDisposable
             logger.Warning($"{BuildLogTag()} op=jump-assist-failed candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y actionId={JumpActionId}");
         }
     }
+
+    private bool EnsureHiddenApproachReady(IGameObject liveObject, string context)
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            SetFailure($"Combat started while a hidden coffer approach was required for {liveObject.Name.TextValue}. {FormatHiddenContextReason()}");
+            return false;
+        }
+
+        if (condition[ConditionFlag.Mounted])
+        {
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"hidden coffer approach for {liveObject.Name.TextValue}"))
+            {
+                logger.DebugThrottled("coffer-hidden-dismount", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting to dismount before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
+                return false;
+            }
+
+            logger.DebugThrottled("coffer-hidden-dismount", TimeSpan.FromMilliseconds(250), $"Coffer interaction sent a dismount request before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
+            return false;
+        }
+
+        if (gameActionController.IsStealthed)
+        {
+            logger.ResetThrottle("coffer-hidden-dismount");
+            logger.ResetThrottle("coffer-hidden-hide-ready");
+            logger.ResetThrottle("coffer-hidden-hide-verify");
+            return true;
+        }
+
+        if (!gameActionController.CanUseHide())
+        {
+            logger.DebugThrottled("coffer-hidden-hide-ready", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting for Hide before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()} currentClassJob={gameActionController.CurrentClassJobId}");
+            return false;
+        }
+
+        if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"hidden coffer approach for {liveObject.Name.TextValue}"))
+        {
+            SetFailure($"Failed to use Hide before approaching {liveObject.Name.TextValue} while hidden travel was required. {FormatHiddenContextReason()}");
+            return false;
+        }
+
+        var verifyDeadline = DateTimeOffset.UtcNow + HideVerifyTimeout;
+        while (DateTimeOffset.UtcNow < verifyDeadline)
+        {
+            if (gameActionController.IsStealthed)
+            {
+                logger.ResetThrottle("coffer-hidden-hide-ready");
+                logger.ResetThrottle("coffer-hidden-hide-verify");
+                return true;
+            }
+
+            Thread.Sleep(50);
+        }
+
+        logger.DebugThrottled("coffer-hidden-hide-verify", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting for Hide confirmation before approaching {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
+        return false;
+    }
+
+    private string FormatHiddenContextReason()
+        => ActiveMatch?.HiddenContextReason is { Length: > 0 } reason ? $"reason={reason}" : "reason=hidden-context";
 
     private void TransitionTo(CofferInteractionState nextState, string reason, string? error = null, CofferInteractionResult? result = null)
     {
