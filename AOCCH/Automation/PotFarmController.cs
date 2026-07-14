@@ -1163,6 +1163,11 @@ public sealed class PotFarmController : IDisposable
 
     private void StartActivePotFate(ActivePotFate activePotFate)
     {
+        var startedFromSpawnWait = State == PotFarmState.WaitingAtSpawn;
+        var initialDestinationOverride = startedFromSpawnWait
+            ? activePotFate.StagingPosition
+            : null;
+
         ClearTreasurePotContext();
 
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
@@ -1177,7 +1182,12 @@ public sealed class PotFarmController : IDisposable
             logger.Warning($"{BuildLogTag()} op=fate-gearset-restore-pending pot=\"{activePotFate.Name}\" ({activePotFate.Id}) reason=continuing-without-confirmed-restore restoreReason=\"{dangerousTreasureTravelController.LastFateGearsetRestoreReason}\" restoreError={FormatOptionalValue(dangerousTreasureTravelController.LastFateGearsetRestoreError)} targetGearset={dangerousTreasureTravelController.PendingFateGearsetNumber} currentClassJob={gameActionController.CurrentClassJobId}");
         }
 
-        if (!fateAutomationController.Start(activePotFate, FateRunCompletionBehavior.CompleteInPlace))
+        if (startedFromSpawnWait && initialDestinationOverride.HasValue)
+        {
+            logger.Info($"{BuildLogTag()} op=pot-fate-start-location pot=\"{activePotFate.Name}\" ({activePotFate.Id}) source=staging-position destination=<{initialDestinationOverride.Value.X:0.000}, {initialDestinationOverride.Value.Y:0.000}, {initialDestinationOverride.Value.Z:0.000}>");
+        }
+
+        if (!fateAutomationController.Start(activePotFate, initialDestinationOverride, FateRunCompletionBehavior.CompleteInPlace))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to start pot FATE execution for {activePotFate.Name}."

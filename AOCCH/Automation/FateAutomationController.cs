@@ -47,6 +47,7 @@ public sealed class FateAutomationController : IDisposable
     private int lastLoggedStateCode = -1;
     private bool returnTravelFallbackAttempted;
     private bool returnRecoveryFallbackAttempted;
+    private Vector3? initialDestinationOverride;
     private int lastObservedProgress = -1;
     private int lastObservedStateCode = -1;
     private string lastObservedState = string.Empty;
@@ -212,7 +213,10 @@ public sealed class FateAutomationController : IDisposable
     public bool Start(ActivePotFate? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.CompleteInPlace)
         => Start(target?.ToFateRunTarget(), completionBehavior);
 
-    public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase)
+    public bool Start(ActivePotFate? target, Vector3? initialDestinationOverride, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.CompleteInPlace)
+        => Start(target?.ToFateRunTarget(), completionBehavior, initialDestinationOverride);
+
+    public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase, Vector3? initialDestinationOverride = null)
     {
         if (IsRunning)
         {
@@ -258,6 +262,7 @@ public sealed class FateAutomationController : IDisposable
             lastLoggedStateCode = -1;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
+            this.initialDestinationOverride = initialDestinationOverride;
             lastObservedProgress = -1;
             lastObservedStateCode = -1;
             lastObservedState = string.Empty;
@@ -266,10 +271,10 @@ public sealed class FateAutomationController : IDisposable
             lastResult = AutomationRunResult.None;
         }
 
-        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior}");
+        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior} initialDestinationOverride={(initialDestinationOverride.HasValue ? FormatVector(initialDestinationOverride.Value) : "none")}");
         movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
-        return BeginPlanning(target);
+        return BeginPlanning(target, initialDestinationOverride);
     }
 
     public void Stop(string reason)
@@ -306,6 +311,7 @@ public sealed class FateAutomationController : IDisposable
             lastLoggedStateCode = -1;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
+            initialDestinationOverride = null;
             lastObservedProgress = -1;
             lastObservedStateCode = -1;
             lastObservedState = string.Empty;
@@ -371,10 +377,10 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
-    private bool BeginPlanning(FateRunTarget target)
+    private bool BeginPlanning(FateRunTarget target, Vector3? initialDestinationOverride = null)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Planning route to FATE {target.Name} ({target.Id}).");
-        if (!movementController.PlanRoute(target, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        if (!movementController.PlanRoute(target, finalDestinationOverride: initialDestinationOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -683,7 +689,7 @@ public sealed class FateAutomationController : IDisposable
     private bool BeginPlanningWithoutReturn(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
-        if (!movementController.PlanRoute(target, allowReturn: false, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        if (!movementController.PlanRoute(target, allowReturn: false, finalDestinationOverride: initialDestinationOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
@@ -734,4 +740,7 @@ public sealed class FateAutomationController : IDisposable
         var deltaZ = left.Z - right.Z;
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
+
+    private static string FormatVector(Vector3 value)
+        => $"<{value.X:0.000}, {value.Y:0.000}, {value.Z:0.000}>";
 }
