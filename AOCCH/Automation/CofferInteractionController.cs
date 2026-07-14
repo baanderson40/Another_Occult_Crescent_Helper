@@ -302,7 +302,8 @@ public sealed class CofferInteractionController : IDisposable
 
         if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, reason))
         {
-            return false;
+            TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Preparing hidden approach to {liveObject.Name.TextValue}. {FormatHiddenContextReason()}");
+            return true;
         }
 
         var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f);
@@ -344,6 +345,12 @@ public sealed class CofferInteractionController : IDisposable
 
             if (!EnsureHiddenApproachReady(liveObject, "Hidden coffer approach"))
             {
+                return;
+            }
+
+            if (movementController.State is MovementState.Idle or MovementState.Stopped)
+            {
+                BeginApproachOrTarget(liveObject, "Hidden coffer approach is ready.");
                 return;
             }
         }

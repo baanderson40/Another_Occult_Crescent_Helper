@@ -8,6 +8,7 @@ using AOCCH.Data;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 
 namespace AOCCH.Automation;
@@ -16,14 +17,17 @@ public sealed class TreasureCofferFarmController : IDisposable
 {
     private static int nextRunSequence;
     private const float MatchConfidenceRadius = 25f;
-    private const float VisibleCofferAcquisitionDistance = 100f;
+    private const float VisibleCofferAcquisitionDistance = 60f;
+    private const float VisibleCofferApproachScanTriggerDistance = 40f;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
+    private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly CofferInteractionController cofferInteractionController;
@@ -48,12 +52,16 @@ public sealed class TreasureCofferFarmController : IDisposable
     private DateTimeOffset lastVisibleCofferScanAt = DateTimeOffset.MinValue;
     private string lastMatchSource = string.Empty;
     private VisibleCofferMatch? pendingInteractionMatch;
+    private VisibleCofferFarmSpotData? activePreviousThresholdSpot;
+    private bool activeSpotRequiresHiddenTravel;
 
     public TreasureCofferFarmController(
         IFramework framework,
+        ICondition condition,
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        GameActionController gameActionController,
         DeathRecoveryController deathRecoveryController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         CofferInteractionController cofferInteractionController,
@@ -63,9 +71,11 @@ public sealed class TreasureCofferFarmController : IDisposable
         AocchLogger logger)
     {
         this.framework = framework;
+        this.condition = condition;
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.deathRecoveryController = deathRecoveryController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.cofferInteractionController = cofferInteractionController;
@@ -236,6 +246,8 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
             pendingInteractionMatch = null;
+            activePreviousThresholdSpot = null;
+            activeSpotRequiresHiddenTravel = false;
         }
 
         movementController.SetLogOwner(currentRunId);
@@ -288,6 +300,8 @@ public sealed class TreasureCofferFarmController : IDisposable
             lastVisibleCofferScanAt = DateTimeOffset.MinValue;
             lastMatchSource = string.Empty;
             pendingInteractionMatch = null;
+            activePreviousThresholdSpot = null;
+            activeSpotRequiresHiddenTravel = false;
         }
 
         logger.Info($"[CofferFarm] op=reset reason={reason}");
@@ -330,6 +344,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToSpot:
                 TickTravelingToSpot();
                 break;
+            case TreasureCofferFarmState.ClearingPreviousHideThreshold:
+                TickClearingPreviousHideThreshold();
+                break;
             case TreasureCofferFarmState.TravelingToDangerousSpot:
                 TickTravelingToDangerousSpot();
                 break;
@@ -363,6 +380,27 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             }
 
+            if (ShouldSkipForRouteRules(spot, out var routeRuleSkipReason))
+            {
+                lock (gate)
+                {
+                    currentRouteIndex = nextIndex;
+                    activeRouteEntry = routeEntry;
+                    activeSpot = spot;
+                    activeResolvedPosition = spot.Position.ToVector3();
+                    activeSpotUsesOverride = false;
+                    lastMatchedCoffer = null;
+                    lastVisibleCofferScanAt = DateTimeOffset.MinValue;
+                    lastMatchSource = string.Empty;
+                    pendingInteractionMatch = null;
+                    activePreviousThresholdSpot = null;
+                    activeSpotRequiresHiddenTravel = false;
+                }
+
+                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} reason={routeRuleSkipReason}");
+                continue;
+            }
+
             if (ShouldSkipSpot(spot))
             {
                 lock (gate)
@@ -376,6 +414,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                     lastVisibleCofferScanAt = DateTimeOffset.MinValue;
                     lastMatchSource = string.Empty;
                     pendingInteractionMatch = null;
+                    activePreviousThresholdSpot = GetPreviousThresholdSpot(nextIndex);
+                    activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
                 }
 
                 logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-visible-travel-disabled");
@@ -400,6 +440,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                 lastVisibleCofferScanAt = DateTimeOffset.MinValue;
                 lastMatchSource = string.Empty;
                 pendingInteractionMatch = null;
+                activePreviousThresholdSpot = GetPreviousThresholdSpot(nextIndex);
+                activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
             }
 
             if (BeginTravelToActiveSpot())
@@ -423,12 +465,25 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
+        var playerPosition = objectTable.LocalPlayer?.Position;
         var destination = ActiveResolvedPosition;
         var arrivalDistance = GetArrivalDistance(spot);
+        var previousThresholdActive = playerPosition.HasValue && IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition.Value);
+        var aggroExceededMax = IsDangerousByAggro(spot);
+        var helperOverride = GetHelperOverrideLabel(spot);
         if (RequiresDangerousTravel(spot))
         {
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
         }
+
+        if (previousThresholdActive)
+        {
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            return BeginPreviousThresholdCarryoverTravel(spot, destination, arrivalDistance);
+        }
+
+        logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
 
         movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Visible coffer route {spot.Label}", destination, arrivalDistance))
@@ -442,15 +497,43 @@ public sealed class TreasureCofferFarmController : IDisposable
         return true;
     }
 
+    private bool BeginPreviousThresholdCarryoverTravel(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
+    {
+        if (!EnsureVisibleRouteHiddenReady($"threshold carryover for {spot.Area}:{spot.Label}"))
+        {
+            TransitionTo(TreasureCofferFarmState.ClearingPreviousHideThreshold, $"Preparing Hide while leaving previous threshold before traveling to {spot.Area}:{spot.Label}.");
+            return true;
+        }
+
+        movementController.SetLogOwner(currentRunId);
+        if (!movementController.StartDirectMove($"Hidden threshold carryover for {spot.Label}", destination, arrivalDistance, shouldMountBeforeStep: false))
+        {
+            SetFailure(movementController.LastError.Length == 0
+                ? $"Failed to start hidden threshold carryover travel for {spot.Area}:{spot.Label}."
+                : movementController.LastError);
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=previous-threshold-start spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} threshold={GetHideThresholdDistance(activePreviousThresholdSpot):0.0} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+        TransitionTo(TreasureCofferFarmState.ClearingPreviousHideThreshold, $"Traveling hidden while leaving previous threshold toward {spot.Area}:{spot.Label}.");
+        return true;
+    }
+
     private bool BeginDangerousTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
     {
-        var dangerousSpot = ToDangerousTravelCandidate(spot);
-        var previousSpot = GetPreviousSpotForDangerousTravel();
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue)
+        {
+            SetFailure($"Visible coffer route could not start dangerous travel for {spot.Area}:{spot.Label} because the player position is unavailable.");
+            return false;
+        }
+
+        var dangerousSpot = ToDangerousTravelCandidate(spot, playerPosition.Value, destination);
         var dangerousOptions = new DangerousTreasureTravelOptions(
             configuration.VisibleCofferNinjaGearsetNumber,
             configuration.VisibleCofferHideThresholdDistance,
             configuration.VisibleTreasureCofferMaximumAggroLevel);
-        if (!dangerousTreasureTravelController.Start(previousSpot, dangerousSpot, destination, arrivalDistance, dangerousOptions))
+        if (!dangerousTreasureTravelController.Start(null, dangerousSpot, destination, arrivalDistance, dangerousOptions))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
@@ -494,6 +577,68 @@ public sealed class TreasureCofferFarmController : IDisposable
             $"Visible coffer farm is traveling to {DescribeActiveSpot()}. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
     }
 
+    private void TickClearingPreviousHideThreshold()
+    {
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue)
+        {
+            SetFailure($"Visible coffer route lost player position while clearing the previous hide threshold for {DescribeActiveSpot()}.");
+            return;
+        }
+
+        if (!EnsureVisibleRouteHiddenReady($"threshold carryover for {DescribeActiveSpot()}"))
+        {
+            return;
+        }
+
+        if (!IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition.Value))
+        {
+            logger.Info($"{BuildLogTag()} op=previous-threshold-cleared spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} playerPos={FormatVector(playerPosition)} destination={FormatVector(ActiveResolvedPosition)}");
+            logger.ResetThrottle("visible-coffer-farm-threshold-carryover");
+            movementController.Stop($"Cleared previous hide threshold while routing to {DescribeActiveSpot()}.");
+            activePreviousThresholdSpot = null;
+            if (RequiresDangerousTravel(ActiveSpot!))
+            {
+                BeginDangerousTravelToActiveSpot(ActiveSpot!, ActiveResolvedPosition, GetArrivalDistance(ActiveSpot));
+                return;
+            }
+
+            movementController.SetLogOwner(currentRunId);
+            if (!movementController.StartDirectMove($"Visible coffer route {ActiveSpot!.Label}", ActiveResolvedPosition, GetArrivalDistance(ActiveSpot)))
+            {
+                SetFailure(movementController.LastError.Length == 0
+                    ? $"Failed to resume normal travel after clearing the previous hide threshold for {DescribeActiveSpot()}."
+                    : movementController.LastError);
+                return;
+            }
+
+            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Cleared previous hide threshold; resuming normal travel to {DescribeActiveSpot()}.");
+            return;
+        }
+
+        if (TryStartInteractionForActiveSpot(requireApproachThreshold: true, acquisitionSource: "approach"))
+        {
+            return;
+        }
+
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                OnArrivedAtSpot();
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                logger.Warning($"{BuildLogTag()} op=previous-threshold-travel-failed spot={DescribeActiveSpot()} movementState={movementController.State} reason={(movementController.LastError.Length == 0 ? $"Failed hidden threshold carryover travel for {DescribeActiveSpot()}." : movementController.LastError)}");
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping visible coffer route spot {DescribeActiveSpot()} because hidden threshold carryover travel failed.");
+                return;
+        }
+
+        logger.DebugThrottled(
+            "visible-coffer-farm-threshold-carryover",
+            WaitLogInterval,
+            $"Visible coffer farm is clearing the previous hide threshold while traveling to {DescribeActiveSpot()}. previousSpot={DescribeSpot(activePreviousThresholdSpot)} distanceToPrevious={(activePreviousThresholdSpot == null ? float.NaN : CalculateFlatDistance(playerPosition.Value, activePreviousThresholdSpot.Position.ToVector3())):0.0} threshold={GetHideThresholdDistance(activePreviousThresholdSpot):0.0} remainingToSpot={CalculateFlatDistance(playerPosition.Value, ActiveResolvedPosition):0.0} movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+    }
+
     private void TickTravelingToDangerousSpot()
     {
         if (TryStartInteractionForActiveSpot(requireApproachThreshold: true, acquisitionSource: "approach"))
@@ -514,6 +659,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void OnArrivedAtSpot()
     {
+        if (!TryHandleArrivalActions())
+        {
+            return;
+        }
+
         if (ActiveSpot?.RouteOnly == true)
         {
             TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Reached helper route spot {DescribeActiveSpot()}; continuing to the next route entry.");
@@ -627,6 +777,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var confirmedCoffer = matchedCoffer!;
+        var playerPosition = objectTable.LocalPlayer?.Position ?? confirmedCoffer.Position;
 
         lock (gate)
         {
@@ -656,8 +807,12 @@ public sealed class TreasureCofferFarmController : IDisposable
             MatchDistance = matchDistance,
             IsTrustworthy = matchDistance <= MatchConfidenceRadius,
             RequiresJumpAssist = string.Equals(spot.Note, "requires_jump", StringComparison.OrdinalIgnoreCase),
+            MustStayHidden = MustStayHiddenDuringInteraction(playerPosition),
+            HiddenContextReason = BuildHiddenInteractionReason(playerPosition),
             AttributionReason = $"Matched visible coffer during {acquisitionSource} scan for {spot.Area}:{spot.Label}. routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y.",
         };
+
+        logger.Info($"{BuildLogTag()} op=hidden-context-eval spot={spot.Area}:{spot.Label} source={acquisitionSource} mustStayHidden={interactionMatch.MustStayHidden} hiddenReason={FormatValue(interactionMatch.HiddenContextReason)} previousThresholdActive={IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition)} currentThresholdActive={IsWithinHideThreshold(ActiveSpot, playerPosition)} playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y");
 
         logger.Info(
             $"{BuildLogTag()} op=coffer-match spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={confirmedCoffer.DataId} objectId={confirmedCoffer.GameObjectId:X} routeDistance={matchDistance:0.0}y playerDistance={confirmedCoffer.DistanceToPlayer:0.0}y pos=<{confirmedCoffer.Position.X:0.000}, {confirmedCoffer.Position.Y:0.000}, {confirmedCoffer.Position.Z:0.000}> name='{confirmedCoffer.Name}'");
@@ -668,6 +823,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=coffer-handoff-pending spot={spot.Area}:{spot.Label} source={acquisitionSource} reason=waiting-for-vnavmesh-settle");
+        logger.Info($"{BuildLogTag()} op=coffer-handoff-mode spot={spot.Area}:{spot.Label} source={acquisitionSource} mode={(interactionMatch.MustStayHidden ? "hidden" : "normal")} reason={FormatValue(interactionMatch.HiddenContextReason)}");
         TransitionTo(TreasureCofferFarmState.WaitingForInteractionHandoff, $"Matched visible coffer for {spot.Area}:{spot.Label} via {acquisitionSource} scan; waiting for movement handoff before interaction.");
         return true;
     }
@@ -734,7 +890,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         remainingDistanceToSpot = CalculateFlatDistance(playerPosition.Value, ActiveResolvedPosition);
-        if (requireApproachThreshold && remainingDistanceToSpot > VisibleCofferAcquisitionDistance)
+        if (requireApproachThreshold && remainingDistanceToSpot > VisibleCofferApproachScanTriggerDistance)
         {
             return false;
         }
@@ -820,8 +976,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     }
 
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
-        => spot.AggroLevel > configuration.VisibleTreasureCofferMaximumAggroLevel
-            || (spot.HideThresholdDistance ?? 0) > 0;
+        => RequiresHiddenTravel(spot);
 
     private bool ShouldSkipSpot(VisibleCofferFarmSpotData spot)
         => RequiresDangerousTravel(spot)
@@ -912,6 +1067,250 @@ public sealed class TreasureCofferFarmController : IDisposable
     private static string BuildKey(string area, string label)
         => $"{area}:{label}";
 
+    private bool RequiresHiddenTravel(VisibleCofferFarmSpotData spot)
+    {
+        if (IsDangerousByAggro(spot))
+        {
+            return true;
+        }
+
+        if (spot.ForceHidden)
+        {
+            return true;
+        }
+
+        if (spot.ForceUnhidden)
+        {
+            return false;
+        }
+
+        return (spot.HideThresholdDistance ?? 0) > 0;
+    }
+
+    private bool IsDangerousByAggro(VisibleCofferFarmSpotData spot)
+        => spot.AggroLevel > configuration.VisibleTreasureCofferMaximumAggroLevel;
+
+    private static string GetHelperOverrideLabel(VisibleCofferFarmSpotData spot)
+    {
+        if (spot.ForceHidden)
+        {
+            return "forceHidden";
+        }
+
+        if (spot.ForceUnhidden)
+        {
+            return "forceUnhidden";
+        }
+
+        if (spot.HideOnArrival)
+        {
+            return "hideOnArrival";
+        }
+
+        return "none";
+    }
+
+    private bool ShouldSkipForRouteRules(VisibleCofferFarmSpotData spot, out string reason)
+    {
+        if (configuration.SkipHighLevelCavernsDuringAshkin
+            && string.Equals(spot.Area, "Crystallized Caverns", StringComparison.OrdinalIgnoreCase)
+            && spot.AggroLevel >= 20
+            && IsAshkinTime())
+        {
+            reason = "ashkin-high-caverns-skip";
+            return true;
+        }
+
+        if (spot.SpecialBranch is { Length: > 0 } branch && !IsSpecialBranchActive(branch))
+        {
+            reason = $"special-branch-inactive:{branch}";
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
+    }
+
+    private bool IsSpecialBranchActive(string branch)
+        => branch switch
+        {
+            "ascent5_only" => true,
+            "ascent7" => configuration.UseNinjaForDangerousVisibleCoffers && !IsAshkinTime(),
+            _ => true,
+        };
+
+    private static bool IsAshkinTime()
+    {
+        var eorzeaSecondsToday = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() * 3600L / 175L) % 86400L;
+        return eorzeaSecondsToday >= (22 * 3600 + 30 * 60)
+            || eorzeaSecondsToday < (4 * 3600);
+    }
+
+    private VisibleCofferFarmSpotData? GetPreviousThresholdSpot(int routeIndex)
+    {
+        if (routeIndex <= 0)
+        {
+            return null;
+        }
+
+        var previousRouteEntry = data.VisibleCofferFarmRoute[routeIndex - 1];
+        if (!spotsByKey.TryGetValue(BuildKey(previousRouteEntry.Area, previousRouteEntry.Label), out var previousSpot))
+        {
+            return null;
+        }
+
+        if (previousSpot.DisableExitHideThreshold || !RequiresHiddenTravel(previousSpot))
+        {
+            return null;
+        }
+
+        return previousSpot;
+    }
+
+    private bool MustStayHiddenDuringInteraction(Vector3 playerPosition)
+        => activeSpotRequiresHiddenTravel
+            || IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition)
+            || IsWithinHideThreshold(ActiveSpot, playerPosition);
+
+    private string BuildHiddenInteractionReason(Vector3 playerPosition)
+    {
+        if (activeSpotRequiresHiddenTravel)
+        {
+            return $"destination-hidden:{DescribeActiveSpot()}";
+        }
+
+        if (IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition))
+        {
+            return $"previous-threshold:{DescribeSpot(activePreviousThresholdSpot)}";
+        }
+
+        if (IsWithinHideThreshold(ActiveSpot, playerPosition))
+        {
+            return $"current-threshold:{DescribeActiveSpot()}";
+        }
+
+        return string.Empty;
+    }
+
+    private int GetHideThresholdDistance(VisibleCofferFarmSpotData? spot)
+        => Math.Max(10, spot?.HideThresholdDistance ?? configuration.VisibleCofferHideThresholdDistance);
+
+    private bool IsWithinHideThreshold(VisibleCofferFarmSpotData? spot, Vector3 playerPosition)
+    {
+        if (spot == null || spot.DisableExitHideThreshold || !RequiresHiddenTravel(spot))
+        {
+            return false;
+        }
+
+        return CalculateFlatDistance(playerPosition, spot.Position.ToVector3()) <= GetHideThresholdDistance(spot);
+    }
+
+    private bool TryHandleArrivalActions()
+    {
+        var spot = ActiveSpot;
+        if (spot == null)
+        {
+            return true;
+        }
+
+        if (spot.RecheckAscentSafetyOnArrival)
+        {
+            logger.Info($"{BuildLogTag()} op=route-helper-action action=recheck-ascent-safety-on-arrival result=deferred spot={DescribeActiveSpot()} reason=ashkin-only-branch-port");
+        }
+
+        if (spot.HideOnArrival)
+        {
+            if (!EnsureVisibleRouteHiddenReady($"hide-on-arrival for {DescribeActiveSpot()}"))
+            {
+                logger.DebugThrottled(
+                    "visible-coffer-farm-arrival-action",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Visible coffer farm is waiting to apply hide-on-arrival at {DescribeActiveSpot()}.");
+                return false;
+            }
+
+            logger.Info($"{BuildLogTag()} op=route-helper-action action=hide-on-arrival result=applied spot={DescribeActiveSpot()}");
+        }
+
+        if (spot.MountOnArrival && !condition[ConditionFlag.Mounted])
+        {
+            if (condition[ConditionFlag.InCombat])
+            {
+                SetFailure($"Could not mount on arrival at {DescribeActiveSpot()} because combat started.");
+                return false;
+            }
+
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, $"mount-on-arrival for {DescribeActiveSpot()}"))
+            {
+                logger.DebugThrottled(
+                    "visible-coffer-farm-arrival-action",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Visible coffer farm is waiting to mount on arrival at {DescribeActiveSpot()}.");
+                return false;
+            }
+
+            logger.Info($"{BuildLogTag()} op=route-helper-action action=mount-on-arrival result=requested spot={DescribeActiveSpot()}");
+            return false;
+        }
+
+        logger.ResetThrottle("visible-coffer-farm-arrival-action");
+        return true;
+    }
+
+    private bool EnsureVisibleRouteHiddenReady(string context)
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            SetFailure($"Combat started while hidden visible-route travel was required. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
+            return false;
+        }
+
+        if (condition[ConditionFlag.Mounted])
+        {
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"visible coffer hidden travel for {DescribeActiveSpot()}"))
+            {
+                logger.DebugThrottled(
+                    "visible-coffer-farm-hidden-ready",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Visible coffer farm is waiting to dismount before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
+                return false;
+            }
+
+            logger.DebugThrottled(
+                "visible-coffer-farm-hidden-ready",
+                TimeSpan.FromMilliseconds(250),
+                $"Visible coffer farm sent a dismount request before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
+            return false;
+        }
+
+        if (gameActionController.IsStealthed)
+        {
+            logger.ResetThrottle("visible-coffer-farm-hidden-ready");
+            return true;
+        }
+
+        if (!gameActionController.CanUseHide())
+        {
+            logger.DebugThrottled(
+                "visible-coffer-farm-hidden-ready",
+                TimeSpan.FromMilliseconds(250),
+                $"Visible coffer farm is waiting for Hide before hidden travel. context={context} spot={DescribeActiveSpot()} currentClassJob={gameActionController.CurrentClassJobId}");
+            return false;
+        }
+
+        if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"visible coffer hidden travel for {DescribeActiveSpot()}"))
+        {
+            SetFailure($"Failed to use Hide before hidden visible-route travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
+            return false;
+        }
+
+        logger.DebugThrottled(
+            "visible-coffer-farm-hidden-ready",
+            TimeSpan.FromMilliseconds(250),
+            $"Visible coffer farm requested Hide before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
+        return false;
+    }
+
     private bool HandleDangerousTravelTerminalResult()
     {
         switch (dangerousTreasureTravelController.State)
@@ -948,29 +1347,29 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
     }
 
-    private TreasureCofferCandidateData ToDangerousTravelCandidate(VisibleCofferFarmSpotData spot)
-        => new()
+    private TreasureCofferCandidateData ToDangerousTravelCandidate(VisibleCofferFarmSpotData spot, Vector3 playerPosition, Vector3 destination)
+    {
+        var distanceToDestination = CalculateFlatDistance(playerPosition, destination);
+        var hideThresholdDistance = Math.Max(GetHideThresholdDistance(spot), (int)MathF.Ceiling(distanceToDestination + 5f));
+        return new TreasureCofferCandidateData
         {
             CandidateKey = BuildKey(spot.Area, spot.Label),
             Label = $"{spot.Area}:{spot.Label}",
             Position = spot.Position,
-            AggroLevel = spot.AggroLevel,
-            HideThresholdDistance = spot.HideThresholdDistance,
+            AggroLevel = Math.Max(spot.AggroLevel, configuration.VisibleTreasureCofferMaximumAggroLevel + 1),
+            HideThresholdDistance = hideThresholdDistance,
             Notes = spot.Note,
         };
-
-    private TreasureCofferCandidateData? GetPreviousSpotForDangerousTravel()
-    {
-        if (CurrentRouteIndex <= 0)
-        {
-            return null;
-        }
-
-        var previousRouteEntry = data.VisibleCofferFarmRoute[CurrentRouteIndex - 1];
-        return spotsByKey.TryGetValue(BuildKey(previousRouteEntry.Area, previousRouteEntry.Label), out var previousSpot)
-            ? ToDangerousTravelCandidate(previousSpot)
-            : null;
     }
+
+    private static string DescribeSpot(VisibleCofferFarmSpotData? spot)
+        => spot == null ? "none" : $"{spot.Area}:{spot.Label}";
+
+    private static string FormatVector(Vector3 value)
+        => $"<{value.X:0.000}, {value.Y:0.000}, {value.Z:0.000}>";
+
+    private static string FormatVector(Vector3? value)
+        => value.HasValue ? FormatVector(value.Value) : "none";
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
