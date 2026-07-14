@@ -152,7 +152,7 @@ public sealed class VisibleCofferPositionOverrideStore
         catch (Exception ex)
         {
             overridesByKey = new Dictionary<string, VisibleCofferPositionOverride>(StringComparer.OrdinalIgnoreCase);
-            logger.Error($"Failed to load visible coffer position overrides from {filePath}: {ex}");
+            logger.Error($"Failed to load overworld coffer position overrides from {filePath}: {ex}");
         }
     }
 
@@ -178,7 +178,7 @@ public sealed class VisibleCofferPositionOverrideStore
         }
         catch (Exception ex)
         {
-            logger.Error($"Failed to persist visible coffer position overrides to {filePath}: {ex}");
+            logger.Error($"Failed to persist overworld coffer position overrides to {filePath}: {ex}");
             return false;
         }
     }

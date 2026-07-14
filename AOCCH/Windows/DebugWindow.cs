@@ -118,7 +118,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
         DrawSectionButton(DebugSection.FarmSession, "Farm Session");
         DrawSectionButton(DebugSection.PotControl, "Pot Control");
-        DrawSectionButton(DebugSection.VisibleCofferFarm, "Visible Coffer Farm");
+        DrawSectionButton(DebugSection.VisibleCofferFarm, "Overworld Coffer Route");
         DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
         DrawSectionButton(DebugSection.CriticalEngagementAutomation, "Critical Engagement Automation");
         DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
@@ -756,7 +756,7 @@ public sealed class DebugWindow : Window, IDisposable
 
     private void DrawVisibleCofferFarm()
     {
-        ImGui.TextUnformatted("Visible Coffer Farm");
+        ImGui.TextUnformatted("Overworld Coffer Route");
         ImGui.TextUnformatted($"State: {treasureCofferFarmController.State}");
         ImGui.TextWrapped($"Last Transition: {treasureCofferFarmController.LastTransition}");
         ImGui.TextWrapped($"Current Route Index: {treasureCofferFarmController.CurrentRouteIndex}");
@@ -771,7 +771,7 @@ public sealed class DebugWindow : Window, IDisposable
             ? null
             : plugin.VisibleCofferPositionOverrideStore.TryGetOverride(activeSpot.Area, activeSpot.Label);
         ImGui.TextWrapped($"Active Override: {FormatVisibleCofferOverride(overrideEntry)}");
-        ImGui.TextWrapped($"Visible Override Count: {plugin.VisibleCofferPositionOverrideStore.Count}");
+        ImGui.TextWrapped($"Overworld Override Count: {plugin.VisibleCofferPositionOverrideStore.Count}");
         ImGui.TextWrapped($"Last Saved Override: {FormatVisibleCofferOverride(plugin.VisibleCofferPositionOverrideStore.LastSavedOverride)}");
 
         var lastMatched = treasureCofferFarmController.LastMatchedCoffer;
@@ -911,7 +911,7 @@ public sealed class DebugWindow : Window, IDisposable
 
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)

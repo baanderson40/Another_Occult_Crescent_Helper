@@ -85,7 +85,7 @@ public sealed class MainWindow : Window, IDisposable
         var instanceTimeDecision = plugin.PotFarmController.LastInstanceTimeDecision;
 
         ImGui.TextWrapped($"Farm: {farmSessionController.State} | {farmSessionController.CurrentActivity}");
-        ImGui.TextWrapped($"Visible Coffer Route: {treasureCofferFarmController.State} | {GetVisibleCofferSummary()}");
+        ImGui.TextWrapped($"Overworld Coffer Route: {treasureCofferFarmController.State} | {GetVisibleCofferSummary()}");
         ImGui.TextWrapped($"Activity: {GetActivityLabel(snapshot)}");
         ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot)}");
         ImGui.TextWrapped($"Treasure: {GetTreasureSummary(treasureSnapshot)}");
@@ -136,7 +136,7 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.Button("Stop Coffer Route"))
         {
             plugin.Logger.Info("[MainWindow] op=ui-action action=stop-coffer-route");
-            treasureCofferFarmController.Stop("Manual visible coffer route stop requested.");
+            treasureCofferFarmController.Stop("Manual overworld coffer route stop requested.");
         }
 
         if (cofferStartBlocker != null)
@@ -159,7 +159,7 @@ public sealed class MainWindow : Window, IDisposable
 
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            return "Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.";
+            return "Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.";
         }
 
         if (!movementController.IsVNavmeshReady)
@@ -270,32 +270,32 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (configuration.ScannerOnlyMode)
         {
-            return "Scanner-only mode blocks visible coffer route starts.";
+            return "Scanner-only mode blocks overworld coffer route starts.";
         }
 
         if (treasureCofferFarmController.IsRunning)
         {
-            return "Visible coffer route is already running.";
+            return "Overworld coffer route is already running.";
         }
 
         if (farmSessionController.IsRunning)
         {
-            return "Visible coffer route start is blocked while the farm session is running.";
+            return "Overworld coffer route start is blocked while the farm session is running.";
         }
 
         if (!scanner.Snapshot.IsInSouthHorn)
         {
-            return "Visible coffer route start requires South Horn.";
+            return "Overworld coffer route start requires South Horn.";
         }
 
         if (!movementController.IsVNavmeshReady)
         {
-            return "Visible coffer route start requires vnavmesh IPC.";
+            return "Overworld coffer route start requires vnavmesh IPC.";
         }
 
         if (!movementController.IsLifestreamAvailable)
         {
-            return "Visible coffer route start requires Lifestream IPC.";
+            return "Overworld coffer route start requires Lifestream IPC.";
         }
 
         return null;

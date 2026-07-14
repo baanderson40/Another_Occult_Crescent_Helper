@@ -220,7 +220,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.NinjaGearsetNumber = value,
                 nameof(configuration.NinjaGearsetNumber));
-            DrawSettingTooltip("This gearset value is linked with the visible coffer Ninja gearset setting. Changing either one updates both.");
+            DrawSettingTooltip("This gearset value is linked with the overworld coffer Ninja gearset setting. Changing either one updates both.");
         }
 
         DrawPotsIntSetting(
@@ -283,7 +283,7 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawTreasureCoffersTab()
     {
-        ImGui.TextUnformatted("Visible Coffer Route");
+        ImGui.TextUnformatted("Overworld Coffer Route");
 
         DrawPotsIntSetting(
             "Arrival Distance",
@@ -294,7 +294,7 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.ArrivalDistance));
 
         DrawPotsIntSetting(
-            "Maximum Aggro Level (Visible Coffers)",
+            "Maximum Aggro Level (Overworld Coffers)",
             configuration.VisibleTreasureCofferMaximumAggroLevel,
             0,
             28,
@@ -302,25 +302,25 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
 
         var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
-        if (ImGui.Checkbox("Use Ninja For Dangerous Visible Coffers", ref useNinjaForDangerousVisibleCoffers))
+        if (ImGui.Checkbox("Use Ninja For Dangerous Overworld Coffers", ref useNinjaForDangerousVisibleCoffers))
         {
             logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousVisibleCoffers old={configuration.UseNinjaForDangerousVisibleCoffers} new={useNinjaForDangerousVisibleCoffers}");
             configuration.UseNinjaForDangerousVisibleCoffers = useNinjaForDangerousVisibleCoffers;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, dangerous visible coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+        DrawSettingTooltip("When enabled, dangerous overworld coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
 
         using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
         {
             DrawPotsIntSetting(
-                "Visible Coffer Hide Threshold Distance",
+                "Overworld Coffer Hide Threshold Distance",
                 configuration.VisibleCofferHideThresholdDistance,
                 0,
                 500,
                 value => configuration.VisibleCofferHideThresholdDistance = value,
                 nameof(configuration.VisibleCofferHideThresholdDistance));
             DrawPotsIntSetting(
-                "Visible Coffer Ninja Gearset Number",
+                "Overworld Coffer Ninja Gearset Number",
                 configuration.VisibleCofferNinjaGearsetNumber,
                 0,
                 100,
@@ -336,7 +336,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableAutomaticTreasureCofferRoute = enableAutomaticTreasureCofferRoute;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the visible coffer route once both threshold rules are satisfied.");
+        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
 
         DrawPotsIntSetting(
             "Automatic Silver Threshold",
@@ -362,10 +362,10 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawSettingTooltip("Reserved for Lua-parity route rules in the visible coffer route controller.");
+        DrawSettingTooltip("Reserved for Lua-parity route rules in the overworld coffer route controller.");
 
-        ImGui.TextWrapped($"Loaded visible coffer spots: {data.VisibleCofferFarmSpots.Count}");
-        ImGui.TextWrapped($"Loaded visible coffer route entries: {data.VisibleCofferFarmRoute.Count}");
+        ImGui.TextWrapped($"Loaded overworld coffer spots: {data.VisibleCofferFarmSpots.Count}");
+        ImGui.TextWrapped($"Loaded overworld coffer route entries: {data.VisibleCofferFarmRoute.Count}");
     }
 
     private void DrawSettingsTab()

@@ -250,7 +250,7 @@ public sealed class Plugin : IDalamudPlugin
                 if (FarmSessionController.IsRunning)
                 {
                     Logger.Warning("[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=farm-session-running");
-                    ChatGui.Print("Visible coffer route start is blocked while the farm session is running.");
+                    ChatGui.Print("Overworld coffer route start is blocked while the farm session is running.");
                     break;
                 }
 
@@ -259,7 +259,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "coffer-stop":
                 Logger.Info("[Plugin] op=slash-command-action action=stop-visible-coffer-farm");
-                TreasureCofferFarmController.Stop("Slash command visible coffer stop requested.");
+                TreasureCofferFarmController.Stop("Slash command overworld coffer stop requested.");
                 break;
             case "panic":
                 Logger.Warning("[Plugin] op=slash-command-action action=panic-stop");
@@ -302,8 +302,8 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch log - Toggle log window");
         ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
         ChatGui.Print("/aocch stop - Stop unified CE/FATE farm session");
-        ChatGui.Print("/aocch coffer-start - Start visible coffer farm route");
-        ChatGui.Print("/aocch coffer-stop - Stop visible coffer farm route");
+        ChatGui.Print("/aocch coffer-start - Start overworld coffer route");
+        ChatGui.Print("/aocch coffer-stop - Stop overworld coffer route");
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
         ChatGui.Print("/aocch testkeyitem [wait] - Use Magical Elixir via the production inventory path with detailed treasure logs");
         ChatGui.Print("/aocch debug-potcoffer - Log nearby raw objects for pot treasure reveal debugging");
@@ -424,7 +424,7 @@ public sealed class Plugin : IDalamudPlugin
         if (FarmSessionController.IsRunning || TreasureCofferFarmController.IsRunning || BuffRotationController.IsRunning || CriticalEngagementAutomationController.IsRunning || FateAutomationController.IsRunning || PotFarmController.IsRunning)
         {
             Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=conflicting-automation");
-            ChatGui.Print("Automatic coffer debug survey requires the farm session, visible coffer routing, CE/FATE automation, pot control, and buff rotation to be stopped.");
+            ChatGui.Print("Automatic coffer debug survey requires the farm session, overworld coffer routing, CE/FATE automation, pot control, and buff rotation to be stopped.");
             return;
         }
 

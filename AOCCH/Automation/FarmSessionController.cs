@@ -196,7 +196,7 @@ public sealed class FarmSessionController : IDisposable
 
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
-            SetFailure("Stop CE/FATE automation, pot control, buff rotation, and visible coffer routing before starting the farm session.");
+            SetFailure("Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.");
             return false;
         }
 
@@ -1169,7 +1169,7 @@ public sealed class FarmSessionController : IDisposable
     {
         if (!configuration.EnableAutomaticTreasureCofferRoute)
         {
-            SetAutomaticTreasureCofferStatus("Automatic visible coffer mode is disabled.");
+            SetAutomaticTreasureCofferStatus("Automatic overworld coffer mode is disabled.");
             return false;
         }
 
@@ -1180,7 +1180,7 @@ public sealed class FarmSessionController : IDisposable
 
         if (AutomaticTreasureCofferStatus.DisabledForCurrentRun)
         {
-            SetAutomaticTreasureCofferStatus("Automatic visible coffer mode is disabled for this farm-session run because Freelancer is below level 10.");
+            SetAutomaticTreasureCofferStatus("Automatic overworld coffer mode is disabled for this farm-session run because Freelancer is below level 10.");
             return false;
         }
 
@@ -1259,7 +1259,7 @@ public sealed class FarmSessionController : IDisposable
             }
 
             logger.Warning($"{BuildLogTag()} op=auto-coffer-disabled reason=freelancer-level-too-low freelancerLevel={freelancerLevel} requiredLevel=10");
-            SetAutomaticTreasureCofferStatus($"Automatic visible coffer mode disabled for this farm-session run because Freelancer is only level {freelancerLevel}.");
+            SetAutomaticTreasureCofferStatus($"Automatic overworld coffer mode disabled for this farm-session run because Freelancer is only level {freelancerLevel}.");
             return false;
         }
 
@@ -1419,7 +1419,7 @@ public sealed class FarmSessionController : IDisposable
     {
         if (treasureCofferFarmController.IsRunning)
         {
-            TransitionTo(FarmSessionState.RunningVisibleCofferRoute, "Waiting for the automatic visible coffer route to finish.", "Visible coffer route");
+            TransitionTo(FarmSessionState.RunningVisibleCofferRoute, "Waiting for the automatic overworld coffer route to finish.", "Overworld coffer route");
             return true;
         }
 
@@ -1430,7 +1430,7 @@ public sealed class FarmSessionController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=auto-coffer-route-start context=\"{context}\" surveySilver={surveySnapshot.SilverCount} surveyBronze={surveySnapshot.BronzeCount}");
-        TransitionTo(FarmSessionState.RunningVisibleCofferRoute, $"Starting automatic visible coffer route after {context}.", "Visible coffer route");
+        TransitionTo(FarmSessionState.RunningVisibleCofferRoute, $"Starting automatic overworld coffer route after {context}.", "Overworld coffer route");
         return true;
     }
 
@@ -1447,17 +1447,17 @@ public sealed class FarmSessionController : IDisposable
                 ResetAutomaticTreasureCofferSurveyTrustAfterRoute();
                 if (treasureCofferFarmController.LastResult == TreasureCofferFarmResult.ReturnedToBase)
                 {
-                    if (TryBeginAutomaticTreasureCofferFlow("automatic visible coffer route recovery completed"))
+                    if (TryBeginAutomaticTreasureCofferFlow("automatic overworld coffer route recovery completed"))
                     {
                         return;
                     }
 
-                    TransitionTo(FarmSessionState.SelectingTarget, "Automatic visible coffer route completed.", "Selecting target");
+                    TransitionTo(FarmSessionState.SelectingTarget, "Automatic overworld coffer route completed.", "Selecting target");
                     return;
                 }
 
                 logger.Info($"{BuildLogTag()} op=auto-coffer-route-follow-up-deferred result={treasureCofferFarmController.LastResult} reason=base-recovery-not-confirmed");
-                StartRecoveryToBase("Automatic visible coffer route ended without a confirmed Base Camp return; recovering before the next automatic coffer decision.");
+                StartRecoveryToBase("Automatic overworld coffer route ended without a confirmed Base Camp return; recovering before the next automatic coffer decision.");
                 return;
             case TreasureCofferFarmState.Stopped:
                 TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastTransition, "Selecting target");
@@ -1552,7 +1552,7 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
         }
 
-        SetAutomaticTreasureCofferStatus("Automatic visible coffer route completed; a fresh Occult Treasuresight survey is required on the next base-camp recovery.");
+        SetAutomaticTreasureCofferStatus("Automatic overworld coffer route completed; a fresh Occult Treasuresight survey is required on the next base-camp recovery.");
     }
 
     private void UpdateAutomaticTreasureCofferRescanCounters(TreasureCofferSurveySnapshot surveySnapshot)
