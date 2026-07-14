@@ -30,6 +30,7 @@ public sealed class PotFarmController : IDisposable
     private const float PotWaitPointStopDistance = 4f;
     private const float PotWaitPointDuplicateTolerance = 1f;
     private const float TreasureCenterArrivalTolerance = 5f;
+    private const float TreasureSearchStartDistanceLimit = 60f;
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -499,10 +500,12 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.MovingNearTreasureCenter
             and not PotFarmState.TreasurePending
             and not PotFarmState.RunningTreasureSearch
+            and not PotFarmState.RecoveringToBase
             and not PotFarmState.RunningCofferInteraction
             && scannerSnapshot.HasTreasureBuff
             && hasTreasurePotContext)
         {
+            logger.Warning($"{BuildLogTag()} op=treasure-reentry state={currentState} treasurePot=\"{treasurePotName}\" ({treasurePotId}) action=resume-treasure-pending reason=buff-active-with-saved-context");
             TransitionTo(PotFarmState.TreasurePending, $"Treasure phase is pending with {scannerSnapshot.TreasureBuffRemainingSeconds:0}s remaining on Cache Me If You Can.");
             return;
         }
@@ -828,6 +831,24 @@ public sealed class PotFarmController : IDisposable
             {
                 logger.Info($"{BuildLogTag()} op=treasure-startup-event event={latestEvent.Kind} attempt={treasureElixirAttemptCount}/{MaximumTreasureElixirAttempts} action=wait-follow-up");
                 return;
+            }
+
+            var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
+            if (playerPosition.HasValue)
+            {
+                var distanceFromTreasureOrigin = CalculateFlatDistance(playerPosition.Value, treasurePotCenter);
+                if (distanceFromTreasureOrigin > TreasureSearchStartDistanceLimit)
+                {
+                    var abandonedTreasurePotName = treasurePotName;
+                    var abandonedTreasurePotId = treasurePotId;
+                    logger.Warning($"{BuildLogTag()} op=treasure-start-too-far pot=\"{treasurePotName}\" ({treasurePotId}) player=<{playerPosition.Value.X:0.0}, {playerPosition.Value.Y:0.0}, {playerPosition.Value.Z:0.0}> origin=<{treasurePotCenter.X:0.0}, {treasurePotCenter.Y:0.0}, {treasurePotCenter.Z:0.0}> distance={distanceFromTreasureOrigin:0.0}y limit={TreasureSearchStartDistanceLimit:0.0}y action=abandon-treasure");
+                    ClearTreasurePotContext();
+                    BeginRecoveryToBase(
+                        $"Treasure startup for {abandonedTreasurePotName} ({abandonedTreasurePotId}) drifted {distanceFromTreasureOrigin:0.0}y from the completed FATE center before traversal started; returning to Base Camp.",
+                        resumeBootstrapAfterRecovery: false,
+                        completionResult: PotFarmRunResult.TreasurePending);
+                    return;
+                }
             }
 
             if (!treasureSearchController.Start(treasurePotId, treasurePotName, treasurePotCenter))
@@ -1319,6 +1340,13 @@ public sealed class PotFarmController : IDisposable
         }
     }
 
+    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+    }
+
     private bool TryUseMagicalElixir(string reason)
     {
         var now = DateTimeOffset.UtcNow;
@@ -1496,13 +1524,6 @@ public sealed class PotFarmController : IDisposable
     {
         var radiusSquared = (float)Random.Shared.NextDouble();
         return MathF.Sqrt((radiusSquared * ((maxRadius * maxRadius) - (minRadius * minRadius))) + (minRadius * minRadius));
-    }
-
-    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
-    {
-        var deltaX = left.X - right.X;
-        var deltaZ = left.Z - right.Z;
-        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
 
     private void TransitionTo(PotFarmState nextState, string reason, string? error = null, PotFarmRunResult? result = null)
