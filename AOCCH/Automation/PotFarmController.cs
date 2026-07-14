@@ -58,7 +58,10 @@ public sealed class PotFarmController : IDisposable
     private string currentPotName = string.Empty;
     private uint currentPotId;
     private Vector3 currentPotCenter;
+    private Vector3 currentPotWaitDestination;
+    private float currentPotWaitArrivalTolerance;
     private bool hasCurrentPotCenter;
+    private bool hasCurrentPotWaitDestination;
     private string treasurePotName = string.Empty;
     private uint treasurePotId;
     private Vector3 treasurePotCenter;
@@ -337,7 +340,10 @@ public sealed class PotFarmController : IDisposable
             currentPotId = 0;
             currentPotName = string.Empty;
             currentPotCenter = Vector3.Zero;
+            currentPotWaitDestination = Vector3.Zero;
+            currentPotWaitArrivalTolerance = 0f;
             hasCurrentPotCenter = false;
+            hasCurrentPotWaitDestination = false;
             treasurePotId = 0;
             treasurePotName = string.Empty;
             treasurePotCenter = Vector3.Zero;
@@ -408,7 +414,10 @@ public sealed class PotFarmController : IDisposable
             currentPotName = string.Empty;
             currentPotId = 0;
             currentPotCenter = Vector3.Zero;
+            currentPotWaitDestination = Vector3.Zero;
+            currentPotWaitArrivalTolerance = 0f;
             hasCurrentPotCenter = false;
+            hasCurrentPotWaitDestination = false;
             treasurePotName = string.Empty;
             treasurePotId = 0;
             treasurePotCenter = Vector3.Zero;
@@ -1147,7 +1156,10 @@ public sealed class PotFarmController : IDisposable
             currentPotId = potFate.FateId;
             currentPotName = potFate.Name;
             currentPotCenter = potFate.CenterPosition.ToVector3();
+            currentPotWaitDestination = destination;
+            currentPotWaitArrivalTolerance = arrivalTolerance;
             hasCurrentPotCenter = true;
+            hasCurrentPotWaitDestination = true;
             waitDeadlineAt = waitUntil;
             isWaitingForConfiguredBootstrapPot = isConfiguredBootstrap;
         }
@@ -1164,9 +1176,17 @@ public sealed class PotFarmController : IDisposable
     private void StartActivePotFate(ActivePotFate activePotFate)
     {
         var startedFromSpawnWait = State == PotFarmState.WaitingAtSpawn;
-        var initialDestinationOverride = startedFromSpawnWait
-            ? activePotFate.StagingPosition
-            : null;
+        Vector3? initialDestinationOverride = null;
+        float? initialArrivalToleranceOverride = null;
+
+        lock (gate)
+        {
+            if (startedFromSpawnWait && hasCurrentPotWaitDestination)
+            {
+                initialDestinationOverride = currentPotWaitDestination;
+                initialArrivalToleranceOverride = currentPotWaitArrivalTolerance;
+            }
+        }
 
         ClearTreasurePotContext();
 
@@ -1184,10 +1204,10 @@ public sealed class PotFarmController : IDisposable
 
         if (startedFromSpawnWait && initialDestinationOverride.HasValue)
         {
-            logger.Info($"{BuildLogTag()} op=pot-fate-start-location pot=\"{activePotFate.Name}\" ({activePotFate.Id}) source=staging-position destination=<{initialDestinationOverride.Value.X:0.000}, {initialDestinationOverride.Value.Y:0.000}, {initialDestinationOverride.Value.Z:0.000}>");
+            logger.Info($"{BuildLogTag()} op=pot-fate-start-location pot=\"{activePotFate.Name}\" ({activePotFate.Id}) source=wait-point destination=<{initialDestinationOverride.Value.X:0.000}, {initialDestinationOverride.Value.Y:0.000}, {initialDestinationOverride.Value.Z:0.000}> tolerance={initialArrivalToleranceOverride:0.0}");
         }
 
-        if (!fateAutomationController.Start(activePotFate, initialDestinationOverride, FateRunCompletionBehavior.CompleteInPlace))
+        if (!fateAutomationController.Start(activePotFate, initialDestinationOverride, initialArrivalToleranceOverride, FateRunCompletionBehavior.CompleteInPlace))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to start pot FATE execution for {activePotFate.Name}."
