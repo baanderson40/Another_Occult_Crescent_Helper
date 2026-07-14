@@ -78,7 +78,6 @@ public sealed class TreasureCofferCandidateData
     public Vector3Data Position { get; init; } = new();
     public int AggroLevel { get; init; }
     public int? HideThresholdDistance { get; init; }
-    public int? TravelTimeoutSeconds { get; init; }
     public string? Notes { get; init; }
 }
 

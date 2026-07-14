@@ -195,7 +195,7 @@
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N3", "label": "N3", "position": { "x": -554.615, "y": 99.018, "z": -309.123 }, "aggroLevel": 11 },
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N4", "label": "N4", "position": { "x": -676.62, "y": 128.574, "z": 1.532 }, "aggroLevel": 13 },
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N5", "label": "N5", "position": { "x": -645.303, "y": 135.692, "z": -73.548 }, "aggroLevel": 13, "notes": "Capture 32 attribution was corrected after review; this exact coffer belongs to N5, not the earlier traversal candidate N4." },
-        { "fateId": 1977, "groupKey": "north", "candidateKey": "N6", "label": "N6", "position": { "x": -730.544, "y": 107.694, "z": -371.478 }, "aggroLevel": 25, "hideThresholdDistance": 450, "travelTimeoutSeconds": 300, "notes": "hostile mob aggro" }
+        { "fateId": 1977, "groupKey": "north", "candidateKey": "N6", "label": "N6", "position": { "x": -730.544, "y": 107.694, "z": -371.478 }, "aggroLevel": 25, "hideThresholdDistance": 450, "notes": "hostile mob aggro" }
       ]
     },
     {

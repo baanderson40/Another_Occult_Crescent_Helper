@@ -41,6 +41,7 @@ public sealed class TreasureSearchController : IDisposable
     private const float MappedPointRetryArrivalTolerance = 4.5f;
     private const float LocalMoveSkipDistance = 3f;
     private const float PotRevealCofferScanRadius = 28f;
+    private const float CandidateTravelProgressThreshold = 2f;
     private const int MaximumCandidateRefinementSteps = 12;
     private const float NavmeshMinimumValidY = -400f;
     private const float NavmeshMaximumValidY = 500f;
@@ -54,6 +55,8 @@ public sealed class TreasureSearchController : IDisposable
     private static readonly TimeSpan CandidateProbeSettleDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan CandidateProbeTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan CandidateProbeRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan CandidateTravelStallTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DangerousCandidateTravelStallTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan RevealedCofferAcquireTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan RefinementRouteCacheDuration = TimeSpan.FromMilliseconds(750);
@@ -88,7 +91,8 @@ public sealed class TreasureSearchController : IDisposable
     private int consumedHintRevision;
     private string lastHandoffReason = string.Empty;
     private Vector3 traversalOriginCenter;
-    private DateTimeOffset candidateTravelDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset candidateTravelLastProgressAt = DateTimeOffset.MinValue;
+    private float candidateTravelProgressDistance = float.MaxValue;
     private DateTimeOffset candidateArrivedAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateProbeDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -348,7 +352,7 @@ public sealed class TreasureSearchController : IDisposable
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Selected initial treasure group {group.GroupKey} from first hint revision {hintSnapshot.InitialHintEvent?.Revision ?? 0}.";
             traversalOriginCenter = originCenter;
-            candidateTravelDeadlineAt = DateTimeOffset.MinValue;
+            ClearCandidateTravelProgressTracking();
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
@@ -377,6 +381,11 @@ public sealed class TreasureSearchController : IDisposable
             movementController.Stop(reason);
         }
 
+        lock (gate)
+        {
+            ClearCandidateTravelProgressTracking();
+        }
+
         TransitionTo(TreasureSearchState.Stopped, reason, error: reason, result: TreasureSearchRunResult.Stopped);
     }
 
@@ -397,7 +406,7 @@ public sealed class TreasureSearchController : IDisposable
             handledCandidateLabels.Clear();
             orderedCandidates.Clear();
             traversalOriginCenter = Vector3.Zero;
-            candidateTravelDeadlineAt = DateTimeOffset.MinValue;
+            ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -605,15 +614,8 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
-        if (candidateTravelDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= candidateTravelDeadlineAt)
+        if (TryHandleCandidateTravelStall())
         {
-            if (dangerousTreasureTravelController.IsRunning)
-            {
-                dangerousTreasureTravelController.Stop("Treasure candidate travel timed out.");
-            }
-
-            movementController.Stop("Treasure candidate travel timed out.");
-            AdvanceCandidate($"Timed out while traveling to treasure candidate {activeCandidateKey?.Label}.");
             return;
         }
 
@@ -632,6 +634,7 @@ public sealed class TreasureSearchController : IDisposable
                 movementController.Stop("Reached treasure candidate.");
                 lock (gate)
                 {
+                    ClearCandidateTravelProgressTracking();
                     candidateArrivedAt = DateTimeOffset.UtcNow;
                     candidateProbeDeadlineAt = DateTimeOffset.MinValue;
                     candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1021,6 +1024,7 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex = 0;
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Handoff to treasure group {group.GroupKey} from hint revision {hintSnapshot.Revision}.";
+            ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1339,6 +1343,7 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             currentCandidateIndex++;
+            ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1400,7 +1405,7 @@ public sealed class TreasureSearchController : IDisposable
                 return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because aggro level {candidate.AggroLevel} exceeds Maximum Aggro Level {configuration.MaximumAggroLevel} and Ninja travel is disabled.");
             }
 
-            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions()))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1421,12 +1426,15 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        var travelTimeout = TimeSpan.FromSeconds(Math.Max(30, candidate.TravelTimeoutSeconds ?? 180));
+        var initialTravelDistance = Plugin.ObjectTable.LocalPlayer?.Position is { } playerPosition
+            ? CalculateFlatDistance(playerPosition, targetPosition)
+            : float.MaxValue;
         lock (gate)
         {
             handledCandidateLabels.Add(candidate.Label);
             activeCandidateKey = candidateKey;
-            candidateTravelDeadlineAt = DateTimeOffset.UtcNow + travelTimeout;
+            candidateTravelLastProgressAt = DateTimeOffset.UtcNow;
+            candidateTravelProgressDistance = initialTravelDistance;
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1475,6 +1483,7 @@ public sealed class TreasureSearchController : IDisposable
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
                 lock (gate)
                 {
+                    ClearCandidateTravelProgressTracking();
                     candidateArrivedAt = DateTimeOffset.UtcNow;
                     candidateProbeDeadlineAt = DateTimeOffset.MinValue;
                     candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1538,6 +1547,7 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             currentCandidateIndex++;
+            ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1702,7 +1712,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
 
-            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), activeCandidate, resolvedDestination, arrivalTolerance))
+            if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), activeCandidate, resolvedDestination, arrivalTolerance, GetDangerousTravelOptions()))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1811,7 +1821,7 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.DangerousTransitionStarted;
         }
 
-        if (!dangerousTreasureTravelController.Start(currentCandidate, handoffCandidate, destination.Value, CandidateArrivalTolerance))
+        if (!dangerousTreasureTravelController.Start(currentCandidate, handoffCandidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions()))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
@@ -1891,6 +1901,80 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
         => candidate.AggroLevel > configuration.MaximumAggroLevel;
+
+    private DangerousTreasureTravelOptions GetDangerousTravelOptions()
+        => new(configuration.NinjaGearsetNumber, configuration.HideThresholdDistance, configuration.MaximumAggroLevel);
+
+    private bool TryHandleCandidateTravelStall()
+    {
+        if (State != TreasureSearchState.TravelingToCandidate || activeCandidateKey == null)
+        {
+            return false;
+        }
+
+        var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue || activeCandidateResolvedPosition == Vector3.Zero)
+        {
+            return false;
+        }
+
+        var distance = CalculateFlatDistance(playerPosition.Value, activeCandidateResolvedPosition);
+        var now = DateTimeOffset.UtcNow;
+        var dangerousTravelRunning = dangerousTreasureTravelController.IsRunning;
+        var madeProgress = false;
+        var bestDistance = distance;
+        var progressAge = TimeSpan.Zero;
+
+        lock (gate)
+        {
+            if (candidateTravelLastProgressAt == DateTimeOffset.MinValue)
+            {
+                candidateTravelLastProgressAt = now;
+                candidateTravelProgressDistance = distance;
+            }
+            else if (candidateTravelProgressDistance - distance >= CandidateTravelProgressThreshold)
+            {
+                candidateTravelLastProgressAt = now;
+                candidateTravelProgressDistance = distance;
+                madeProgress = true;
+            }
+
+            bestDistance = candidateTravelProgressDistance;
+            progressAge = now - candidateTravelLastProgressAt;
+        }
+
+        if (madeProgress)
+        {
+            logger.DebugThrottled(
+                "treasure-search-travel-progress",
+                WaitLogInterval,
+                $"Treasure search made progress toward candidate {activeCandidateKey.Label}. distance={distance:0.0} bestDistance={bestDistance:0.0} dangerous={dangerousTravelRunning} dangerousState={(dangerousTravelRunning ? dangerousTreasureTravelController.State.ToString() : "none")} movementState={movementController.State}.");
+            return false;
+        }
+
+        var stallTimeout = dangerousTravelRunning ? DangerousCandidateTravelStallTimeout : CandidateTravelStallTimeout;
+        if (progressAge < stallTimeout)
+        {
+            return false;
+        }
+
+        if (dangerousTravelRunning)
+        {
+            dangerousTreasureTravelController.Stop("Treasure candidate travel stalled.");
+        }
+
+        movementController.Stop("Treasure candidate travel stalled.");
+        logger.Warning(
+            $"{BuildLogTag()} op=candidate-travel-stalled candidate={activeCandidateKey.Label} dangerous={dangerousTravelRunning} distance={distance:0.0} bestDistance={bestDistance:0.0} lastProgressAgo={progressAge.TotalSeconds:0.0}s dangerousState={(dangerousTravelRunning ? dangerousTreasureTravelController.State.ToString() : "none")} movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}");
+        AdvanceCandidate($"Stalled while traveling to treasure candidate {activeCandidateKey.Label}.");
+        return true;
+    }
+
+    private void ClearCandidateTravelProgressTracking()
+    {
+        candidateTravelLastProgressAt = DateTimeOffset.MinValue;
+        candidateTravelProgressDistance = float.MaxValue;
+    }
 
     private bool IsHandledCandidate(string label)
         => handledCandidateLabels.Contains(label);
@@ -2126,7 +2210,14 @@ public sealed class TreasureSearchController : IDisposable
     }
 
     private void SetFailure(string reason)
-        => TransitionTo(TreasureSearchState.Failed, reason, error: reason, result: TreasureSearchRunResult.Failed);
+    {
+        lock (gate)
+        {
+            ClearCandidateTravelProgressTracking();
+        }
+
+        TransitionTo(TreasureSearchState.Failed, reason, error: reason, result: TreasureSearchRunResult.Failed);
+    }
 
     private void BeginRevealedCofferAcquisition(TreasureHintEvent? revealEvent)
     {
