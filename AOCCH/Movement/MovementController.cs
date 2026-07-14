@@ -22,6 +22,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan ReturnRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReturnPathStopTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan ReturnPathStopStableTime = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan StopVerificationTimeout = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
@@ -75,10 +76,12 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset returnPathStopStableSince = DateTimeOffset.MinValue;
     private DateTimeOffset returnRetryNotBeforeAt = DateTimeOffset.MinValue;
+    private DateTimeOffset stopVerificationStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
     private string logOwner = string.Empty;
     private MovementState state = MovementState.Idle;
+    private bool stopVerificationPending;
 
     public MovementController(
         IFramework framework,
@@ -194,6 +197,7 @@ public sealed class MovementController : IDisposable
     public void ResetInstanceState(string reason)
     {
         vnavmesh.Stop();
+        BeginStopVerification();
         if (lifestreamOwned && lifestream.IsBusy())
         {
             lifestream.Abort();
@@ -304,6 +308,7 @@ public sealed class MovementController : IDisposable
     public bool StartPlannedRoute()
     {
         vnavmesh.Stop();
+        BeginStopVerification();
 
         lock (gate)
         {
@@ -349,6 +354,7 @@ public sealed class MovementController : IDisposable
         }
 
         vnavmesh.Stop();
+        BeginStopVerification();
 
         if (!routePlanner.TryPlanBaseCampRecovery(playerPosition.Value, out var route, out var failureReason, allowReturn))
         {
@@ -396,6 +402,7 @@ public sealed class MovementController : IDisposable
         }
 
         vnavmesh.Stop();
+        BeginStopVerification();
 
         lock (gate)
         {
@@ -452,6 +459,7 @@ public sealed class MovementController : IDisposable
     public void Stop(string reason)
     {
         vnavmesh.Stop();
+        BeginStopVerification();
         if (lifestreamOwned && lifestream.IsBusy())
         {
             lifestream.Abort();
@@ -749,6 +757,11 @@ public sealed class MovementController : IDisposable
 
         if (!stepStarted)
         {
+            if (!WaitForStopVerification(step))
+            {
+                return;
+            }
+
             if (ShouldMountForStep(step, distance) && !EnsureMounted(step))
             {
                 return;
@@ -1139,6 +1152,7 @@ public sealed class MovementController : IDisposable
     private void CompleteRoute()
     {
         vnavmesh.Stop();
+        BeginStopVerification();
         lock (gate)
         {
             state = MovementState.Arrived;
@@ -1162,6 +1176,7 @@ public sealed class MovementController : IDisposable
         if (stopMovement)
         {
             vnavmesh.Stop();
+            BeginStopVerification();
             if (lifestreamOwned && lifestream.IsBusy())
             {
                 lifestream.Abort();
@@ -1854,6 +1869,63 @@ public sealed class MovementController : IDisposable
             returnAttemptCount = 0;
         }
     }
+
+    private void BeginStopVerification()
+    {
+        lock (gate)
+        {
+            stopVerificationPending = true;
+            stopVerificationStartedAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private bool WaitForStopVerification(RouteStep step)
+    {
+        DateTimeOffset startedAt;
+        lock (gate)
+        {
+            if (!stopVerificationPending)
+            {
+                return true;
+            }
+
+            startedAt = stopVerificationStartedAt;
+        }
+
+        if (IsVnavIdle())
+        {
+            lock (gate)
+            {
+                stopVerificationPending = false;
+                stopVerificationStartedAt = DateTimeOffset.MinValue;
+            }
+
+            return true;
+        }
+
+        var elapsed = DateTimeOffset.UtcNow - startedAt;
+        if (elapsed < StopVerificationTimeout)
+        {
+            logger.DebugThrottled(
+                BuildStepLogKey("stop-settle"),
+                TimeSpan.FromMilliseconds(250),
+                $"Waiting for vnavmesh to settle before starting step '{step.Description}'. elapsed={elapsed.TotalMilliseconds:0}ms timeout={StopVerificationTimeout.TotalMilliseconds:0}ms pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}.");
+            return false;
+        }
+
+        logger.Warning(
+            $"{BuildLogTag()} op=stop-settle-timeout step=\"{step.Description}\" elapsed={elapsed.TotalMilliseconds:0}ms timeout={StopVerificationTimeout.TotalMilliseconds:0}ms pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()} reason=continuing-after-timeout");
+        lock (gate)
+        {
+            stopVerificationPending = false;
+            stopVerificationStartedAt = DateTimeOffset.MinValue;
+        }
+
+        return true;
+    }
+
+    private bool IsVnavIdle()
+        => !vnavmesh.IsPathRunning() && !vnavmesh.IsPathfindInProgress();
 
     private string DescribeMovementConditions()
         => $"mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupied={condition[ConditionFlag.Occupied]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} dead={objectTable.LocalPlayer?.CurrentHp == 0}";
