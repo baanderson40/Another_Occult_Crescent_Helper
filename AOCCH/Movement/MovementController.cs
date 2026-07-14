@@ -15,6 +15,7 @@ public sealed class MovementController : IDisposable
 {
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ActivePathStallTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(250);
@@ -813,8 +814,17 @@ public sealed class MovementController : IDisposable
                 state = MovementState.WaitingForArrival;
             }
         }
+        else if (distance < progressDistance)
+        {
+            lock (gate)
+            {
+                lastProgressAt = DateTimeOffset.UtcNow;
+                state = MovementState.WaitingForArrival;
+            }
+        }
 
-        if (DateTimeOffset.UtcNow - lastProgressAt > StallTimeout)
+        var stallTimeout = pathBusy ? ActivePathStallTimeout : StallTimeout;
+        if (DateTimeOffset.UtcNow - lastProgressAt > stallTimeout)
         {
             SetFailure(MovementState.TimedOut, $"Movement stalled during step: {step.Description}.", stopMovement: true);
             return;

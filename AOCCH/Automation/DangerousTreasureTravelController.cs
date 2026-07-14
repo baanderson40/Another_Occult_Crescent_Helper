@@ -1170,16 +1170,43 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
 
         var clearPoint = GetThresholdApproachPoint(previousCandidate, finalDestination, PreviousThresholdExtraDistance);
-        if (!clearPoint.HasValue)
-        {
-            return false;
-        }
-
-        var resolvedClearPoint = movementController.FindNearestNavigablePoint(clearPoint.Value, halfExtentXZ: 5f, halfExtentY: 5f);
+        var resolvedClearPoint = clearPoint.HasValue
+            ? movementController.FindNearestNavigablePoint(clearPoint.Value, halfExtentXZ: 5f, halfExtentY: 5f)
+            : null;
         if (!resolvedClearPoint.HasValue)
         {
-            SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} could not resolve a reliable vnavmesh clear point while leaving previous threshold {previousCandidateLabel}.");
-            return true;
+            var fallbackClearPoint = GetThresholdApproachPoint(previousCandidate, playerPosition, PreviousThresholdExtraDistance);
+            resolvedClearPoint = fallbackClearPoint.HasValue
+                ? movementController.FindNearestNavigablePoint(fallbackClearPoint.Value, halfExtentXZ: 5f, halfExtentY: 5f)
+                : null;
+
+            if (fallbackClearPoint.HasValue && resolvedClearPoint.HasValue)
+            {
+                logger.Info(
+                    $"{BuildLogTag()} op=previous-threshold-clear-fallback previousCandidate={previousCandidateLabel} candidate={activeCandidateLabel} primaryTarget={FormatVector(clearPoint)} fallbackTarget={FormatVector(fallbackClearPoint)} resolved={FormatVector(resolvedClearPoint)} reason={reason}");
+            }
+            else
+            {
+                logger.Warning(
+                    $"{BuildLogTag()} op=previous-threshold-clear-skip previousCandidate={previousCandidateLabel} candidate={activeCandidateLabel} primaryTarget={FormatVector(clearPoint)} fallbackTarget={FormatVector(fallbackClearPoint)} reason=Could not resolve a reliable vnavmesh clear point; continuing without previous-threshold clear.");
+
+                if (gameActionController.IsStealthed)
+                {
+                    return StartWalkingPhase(
+                        DangerousTreasureWalkingPhase.FinalApproach,
+                        finalDestination,
+                        arrivalTolerance,
+                        allowMount: false,
+                        $"Hidden final approach for {activeCandidateLabel}",
+                        $"{reason} Could not resolve previous dangerous threshold clear point for {previousCandidateLabel}; continuing the hidden final approach directly.");
+                }
+
+                pendingHiddenMovePhase = DangerousTreasureWalkingPhase.FinalApproach;
+                pendingHiddenMoveDestination = finalDestination;
+                pendingHiddenMoveArrivalTolerance = arrivalTolerance;
+                TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Could not resolve previous dangerous threshold clear point for {previousCandidateLabel}; preparing Hide before continuing the final approach.");
+                return true;
+            }
         }
 
         if (gameActionController.IsStealthed)
@@ -1303,4 +1330,9 @@ public sealed class DangerousTreasureTravelController : IDisposable
         var deltaZ = left.Z - right.Z;
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
+
+    private static string FormatVector(Vector3? value)
+        => value.HasValue
+            ? $"<{value.Value.X:0.000}, {value.Value.Y:0.000}, {value.Value.Z:0.000}>"
+            : "none";
 }
