@@ -220,6 +220,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.NinjaGearsetNumber = value,
                 nameof(configuration.NinjaGearsetNumber));
+            DrawSettingTooltip("This gearset value is linked with the visible coffer Ninja gearset setting. Changing either one updates both.");
         }
 
         DrawPotsIntSetting(
@@ -299,6 +300,34 @@ public class ConfigWindow : Window, IDisposable
             28,
             value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
             nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
+
+        var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
+        if (ImGui.Checkbox("Use Ninja For Dangerous Visible Coffers", ref useNinjaForDangerousVisibleCoffers))
+        {
+            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousVisibleCoffers old={configuration.UseNinjaForDangerousVisibleCoffers} new={useNinjaForDangerousVisibleCoffers}");
+            configuration.UseNinjaForDangerousVisibleCoffers = useNinjaForDangerousVisibleCoffers;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, dangerous visible coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+        {
+            DrawPotsIntSetting(
+                "Visible Coffer Hide Threshold Distance",
+                configuration.VisibleCofferHideThresholdDistance,
+                0,
+                500,
+                value => configuration.VisibleCofferHideThresholdDistance = value,
+                nameof(configuration.VisibleCofferHideThresholdDistance));
+            DrawPotsIntSetting(
+                "Visible Coffer Ninja Gearset Number",
+                configuration.VisibleCofferNinjaGearsetNumber,
+                0,
+                100,
+                value => configuration.VisibleCofferNinjaGearsetNumber = value,
+                nameof(configuration.VisibleCofferNinjaGearsetNumber));
+            DrawSettingTooltip("This gearset value is linked with the pots/revealed treasure Ninja gearset setting. Changing either one updates both.");
+        }
 
         var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
         if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))

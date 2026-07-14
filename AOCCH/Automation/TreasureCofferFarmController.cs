@@ -330,6 +330,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToSpot:
                 TickTravelingToSpot();
                 break;
+            case TreasureCofferFarmState.TravelingToDangerousSpot:
+                TickTravelingToDangerousSpot();
+                break;
             case TreasureCofferFarmState.WaitingForInteractionHandoff:
                 TickWaitingForInteractionHandoff();
                 break;
@@ -375,7 +378,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     pendingInteractionMatch = null;
                 }
 
-                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-or-over-threshold");
+                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-visible-travel-disabled");
                 continue;
             }
 
@@ -422,6 +425,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         var destination = ActiveResolvedPosition;
         var arrivalDistance = GetArrivalDistance(spot);
+        if (RequiresDangerousTravel(spot))
+        {
+            return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
+        }
+
         movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Visible coffer route {spot.Label}", destination, arrivalDistance))
         {
@@ -431,6 +439,33 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to visible coffer route spot {spot.Area}:{spot.Label} with direct-only movement.");
+        return true;
+    }
+
+    private bool BeginDangerousTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
+    {
+        var dangerousSpot = ToDangerousTravelCandidate(spot);
+        var previousSpot = GetPreviousSpotForDangerousTravel();
+        var dangerousOptions = new DangerousTreasureTravelOptions(
+            configuration.VisibleCofferNinjaGearsetNumber,
+            configuration.VisibleCofferHideThresholdDistance,
+            configuration.VisibleTreasureCofferMaximumAggroLevel);
+        if (!dangerousTreasureTravelController.Start(previousSpot, dangerousSpot, destination, arrivalDistance, dangerousOptions))
+        {
+            if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
+            {
+                logger.Warning($"{BuildLogTag()} op=dangerous-travel-skip spot={spot.Area}:{spot.Label} reason={dangerousTreasureTravelController.LastTransition}");
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, dangerousTreasureTravelController.LastTransition);
+                return false;
+            }
+
+            SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                ? $"Failed to start dangerous visible coffer travel for {spot.Area}:{spot.Label}."
+                : dangerousTreasureTravelController.LastError);
+            return false;
+        }
+
+        TransitionTo(TreasureCofferFarmState.TravelingToDangerousSpot, $"Traveling to dangerous visible coffer route spot {spot.Area}:{spot.Label} with Ninja/Hide movement.");
         return true;
     }
 
@@ -457,6 +492,24 @@ public sealed class TreasureCofferFarmController : IDisposable
             "visible-coffer-farm-travel",
             WaitLogInterval,
             $"Visible coffer farm is traveling to {DescribeActiveSpot()}. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+    }
+
+    private void TickTravelingToDangerousSpot()
+    {
+        if (TryStartInteractionForActiveSpot(requireApproachThreshold: true, acquisitionSource: "approach"))
+        {
+            return;
+        }
+
+        if (HandleDangerousTravelTerminalResult())
+        {
+            return;
+        }
+
+        logger.DebugThrottled(
+            "visible-coffer-farm-dangerous-travel",
+            WaitLogInterval,
+            $"Visible coffer farm is running dangerous travel to {DescribeActiveSpot()}. dangerousState={dangerousTreasureTravelController.State} transition={dangerousTreasureTravelController.LastTransition}.");
     }
 
     private void OnArrivedAtSpot()
@@ -771,7 +824,8 @@ public sealed class TreasureCofferFarmController : IDisposable
             || (spot.HideThresholdDistance ?? 0) > 0;
 
     private bool ShouldSkipSpot(VisibleCofferFarmSpotData spot)
-        => RequiresDangerousTravel(spot);
+        => RequiresDangerousTravel(spot)
+            && !configuration.UseNinjaForDangerousVisibleCoffers;
 
     private float GetArrivalDistance(VisibleCofferFarmSpotData? spot)
     {
@@ -857,6 +911,66 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private static string BuildKey(string area, string label)
         => $"{area}:{label}";
+
+    private bool HandleDangerousTravelTerminalResult()
+    {
+        switch (dangerousTreasureTravelController.State)
+        {
+            case DangerousTreasureTravelState.Arrived:
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
+                OnArrivedAtSpot();
+                return true;
+            case DangerousTreasureTravelState.CandidateSkipped:
+                var skipReason = dangerousTreasureTravelController.LastTransition;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, skipReason);
+                return true;
+            case DangerousTreasureTravelState.Failed:
+                var failureReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
+                SetFailure(failureReason);
+                return true;
+            case DangerousTreasureTravelState.Stopped:
+                var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
+                TransitionTo(TreasureCofferFarmState.Stopped, stoppedReason, error: stoppedReason, result: TreasureCofferFarmResult.Stopped);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private TreasureCofferCandidateData ToDangerousTravelCandidate(VisibleCofferFarmSpotData spot)
+        => new()
+        {
+            CandidateKey = BuildKey(spot.Area, spot.Label),
+            Label = $"{spot.Area}:{spot.Label}",
+            Position = spot.Position,
+            AggroLevel = spot.AggroLevel,
+            HideThresholdDistance = spot.HideThresholdDistance,
+            Notes = spot.Note,
+        };
+
+    private TreasureCofferCandidateData? GetPreviousSpotForDangerousTravel()
+    {
+        if (CurrentRouteIndex <= 0)
+        {
+            return null;
+        }
+
+        var previousRouteEntry = data.VisibleCofferFarmRoute[CurrentRouteIndex - 1];
+        return spotsByKey.TryGetValue(BuildKey(previousRouteEntry.Area, previousRouteEntry.Label), out var previousSpot)
+            ? ToDangerousTravelCandidate(previousSpot)
+            : null;
+    }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

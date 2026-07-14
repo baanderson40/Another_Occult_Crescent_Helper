@@ -27,7 +27,13 @@ public class Configuration : IPluginConfiguration
     [JsonIgnore]
     private AocchLogger? logger;
 
-    public int Version { get; set; } = 1;
+    [JsonIgnore]
+    private bool syncingNinjaGearsetNumbers;
+
+    private int ninjaGearsetNumber;
+    private int visibleCofferNinjaGearsetNumber;
+
+    public int Version { get; set; } = 2;
 
     public string AutorotationPresetName { get; set; } = "Occult";
     public bool EnableCriticalEngagementFarming { get; set; } = true;
@@ -55,7 +61,20 @@ public class Configuration : IPluginConfiguration
     public int AutomaticTreasureCofferBronzeThreshold { get; set; }
     public bool UseNinjaForDangerousArea { get; set; }
     public int HideThresholdDistance { get; set; } = 120;
-    public int NinjaGearsetNumber { get; set; }
+    public int NinjaGearsetNumber
+    {
+        get => ninjaGearsetNumber;
+        set => SetLinkedNinjaGearsetNumbers(value, updateVisibleCofferGearset: true);
+    }
+
+    public bool UseNinjaForDangerousVisibleCoffers { get; set; }
+    public int VisibleCofferHideThresholdDistance { get; set; } = 120;
+    public int VisibleCofferNinjaGearsetNumber
+    {
+        get => visibleCofferNinjaGearsetNumber;
+        set => SetLinkedNinjaGearsetNumbers(value, updateVisibleCofferGearset: false);
+    }
+
     public int FateGearsetNumber { get; set; }
     public int FateDismountDistance { get; set; } = 10;
     public int ArrivalDistance { get; set; } = 5;
@@ -116,7 +135,7 @@ public class Configuration : IPluginConfiguration
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
 
-        if (Version >= 1)
+        if (Version >= 2)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -165,11 +184,47 @@ public class Configuration : IPluginConfiguration
             logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=VisibleTreasureCofferMaximumAggroLevel");
         }
 
+        if (Version < 2)
+        {
+            VisibleCofferHideThresholdDistance = HideThresholdDistance;
+            SetLinkedNinjaGearsetNumbers(NinjaGearsetNumber, updateVisibleCofferGearset: true);
+            logger?.Info($"[Configuration] op=migration-copy source=HideThresholdDistance value={HideThresholdDistance} target=VisibleCofferHideThresholdDistance");
+            logger?.Info($"[Configuration] op=migration-copy source=NinjaGearsetNumber value={NinjaGearsetNumber} target=VisibleCofferNinjaGearsetNumber");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 1;
-        logger?.Info("[Configuration] op=migration-complete version=1");
+        Version = 2;
+        logger?.Info("[Configuration] op=migration-complete version=2");
         return true;
+    }
+
+    private void SetLinkedNinjaGearsetNumbers(int value, bool updateVisibleCofferGearset)
+    {
+        if (syncingNinjaGearsetNumbers)
+        {
+            if (updateVisibleCofferGearset)
+            {
+                ninjaGearsetNumber = value;
+            }
+            else
+            {
+                visibleCofferNinjaGearsetNumber = value;
+            }
+
+            return;
+        }
+
+        syncingNinjaGearsetNumbers = true;
+        try
+        {
+            ninjaGearsetNumber = value;
+            visibleCofferNinjaGearsetNumber = value;
+        }
+        finally
+        {
+            syncingNinjaGearsetNumbers = false;
+        }
     }
 
     private static bool SetIdEnabled(List<uint> disabledIds, uint id, bool enabled)

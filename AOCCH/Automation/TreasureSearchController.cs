@@ -1402,7 +1402,7 @@ public sealed class TreasureSearchController : IDisposable
         {
             if (!configuration.UseNinjaForDangerousArea)
             {
-                return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because aggro level {candidate.AggroLevel} exceeds Maximum Aggro Level {configuration.MaximumAggroLevel} and Ninja travel is disabled.");
+                return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because it requires dangerous-area Ninja travel and Ninja travel is disabled.");
             }
 
             if (!dangerousTreasureTravelController.Start(GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions()))
@@ -1900,7 +1900,8 @@ public sealed class TreasureSearchController : IDisposable
     }
 
     private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
-        => candidate.AggroLevel > configuration.MaximumAggroLevel;
+        => candidate.AggroLevel > configuration.MaximumAggroLevel
+            || (candidate.HideThresholdDistance ?? 0) > 0;
 
     private DangerousTreasureTravelOptions GetDangerousTravelOptions()
         => new(configuration.NinjaGearsetNumber, configuration.HideThresholdDistance, configuration.MaximumAggroLevel);
