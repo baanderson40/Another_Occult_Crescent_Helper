@@ -742,6 +742,13 @@ public sealed class Plugin : IDalamudPlugin
     {
         var reason = $"Left South Horn for territory {territoryType}; resetting instance state.";
 
+        if (Configuration.StartingPotFate != StartingPotFateMode.Auto)
+        {
+            Logger.Info($"[Plugin] op=setting-change key=StartingPotFate old={Configuration.StartingPotFate} new={StartingPotFateMode.Auto} reason=south-horn-exit territory={territoryType}");
+            Configuration.StartingPotFate = StartingPotFateMode.Auto;
+            Configuration.Save();
+        }
+
         ResetAutomationState(reason);
     }
 
