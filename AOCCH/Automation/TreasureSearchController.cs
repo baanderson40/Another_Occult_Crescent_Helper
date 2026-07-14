@@ -466,6 +466,87 @@ public sealed class TreasureSearchController : IDisposable
         return BeginCurrentCandidate(reason);
     }
 
+    public bool TryPrepareActivePotRevealInteractionMatch(out VisibleCofferMatch? match, out string reason)
+    {
+        match = null;
+
+        if (!scanner.Snapshot.IsInSouthHorn)
+        {
+            reason = "Pot reveal interaction debugging requires South Horn.";
+            return false;
+        }
+
+        var candidateKey = ActiveCandidateKey;
+        if (candidateKey == null || orderedCandidates.Count == 0)
+        {
+            reason = "Pot reveal interaction debugging requires an active treasure candidate context.";
+            return false;
+        }
+
+        if (State == TreasureSearchState.ReadyForInteraction)
+        {
+            match = ActiveVisibleCofferMatch;
+            if (match != null)
+            {
+                reason = $"Using existing revealed coffer match for candidate {candidateKey.Label}.";
+                return true;
+            }
+
+            reason = $"Treasure search is waiting for interaction on {candidateKey.Label}, but no active visible coffer match is available.";
+            return false;
+        }
+
+        if (State != TreasureSearchState.AcquiringRevealedCoffer)
+        {
+            reason = $"Pot reveal interaction debugging requires treasure search state {TreasureSearchState.AcquiringRevealedCoffer} or {TreasureSearchState.ReadyForInteraction}. currentState={State}.";
+            return false;
+        }
+
+        if (!TryAcquireVisibleCofferFromActiveCandidate("debug-command"))
+        {
+            reason = $"No visible coffer has been acquired yet for active candidate {candidateKey.Label}.";
+            return false;
+        }
+
+        match = ActiveVisibleCofferMatch;
+        if (match != null)
+        {
+            reason = $"Acquired revealed coffer match for candidate {candidateKey.Label} via debug command.";
+            return true;
+        }
+
+        reason = $"Visible coffer acquisition succeeded for candidate {candidateKey.Label}, but no interaction match was recorded.";
+        return false;
+    }
+
+    public bool TryFindNearbyPotRevealCofferForDebug(out VisibleCoffer coffer, out string recognitionSource, out string objectKind)
+        => TryFindNearbyPotRevealCoffer(out coffer, out recognitionSource, out objectKind);
+
+    private bool TryBeginLatchedRevealAcquisition(TreasureHintSnapshot hintSnapshot, string source)
+    {
+        var revealEvent = hintSnapshot.RevealLatchedEvent;
+        if (revealEvent == null)
+        {
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=reveal-latch-honored candidate={activeCandidateKey?.Label ?? "none"} source={source} revision={revealEvent.Revision} kind={revealEvent.Kind} buffActive={scanner.Snapshot.HasTreasureBuff}");
+        BeginRevealedCofferAcquisition(revealEvent);
+        return true;
+    }
+
+    private bool TryBeginNearbyRevealFallback(string source)
+    {
+        if (!TryFindNearbyPotRevealCoffer(out var coffer, out var recognitionSource, out var objectKind))
+        {
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=nearby-reveal-fallback candidate={activeCandidateKey?.Label ?? "none"} source={source} recognition={recognitionSource} objectKind={objectKind} objectId={coffer.GameObjectId:X} baseId={coffer.DataId} playerDistance={coffer.DistanceToPlayer:0.0}y targetable={coffer.IsTargetable}");
+        BeginRevealedCofferAcquisition(null);
+        return true;
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
@@ -589,18 +670,7 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.HasTreasureBuff)
-        {
-            if (revealedCofferLatched)
-            {
-                logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=probe-expiry action=continue-post-reveal");
-                BeginRevealedCofferAcquisition(refinementEvent);
-                return;
-            }
-
-            AdvanceCandidate($"Treasure buff expired before probing treasure candidate {activeCandidateKey?.Label}.");
-            return;
-        }
+        var hintSnapshot = treasureHintTracker.Snapshot;
 
         if (candidateArrivedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - candidateArrivedAt < CandidateProbeSettleDelay)
         {
@@ -643,10 +713,42 @@ public sealed class TreasureSearchController : IDisposable
             }
         }
 
+        if (hintSnapshot.HasRevealLatched && TryBeginLatchedRevealAcquisition(hintSnapshot, "probe-latched"))
+        {
+            return;
+        }
+
+        if (hintSnapshot.IsPostBuffGraceActive)
+        {
+            logger.DebugThrottled(
+                "treasure-search-post-buff-grace-probe",
+                TimeSpan.FromMilliseconds(250),
+                $"Treasure search is holding probe candidate {activeCandidateKey?.Label} during post-buff grace until {hintSnapshot.PostBuffGraceDeadlineAt:O}.");
+            return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff)
+        {
+            if (revealedCofferLatched)
+            {
+                logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=probe-expiry action=continue-post-reveal");
+                BeginRevealedCofferAcquisition(refinementEvent);
+                return;
+            }
+
+            AdvanceCandidate($"Treasure buff expired before probing treasure candidate {activeCandidateKey?.Label}.");
+            return;
+        }
+
         if (candidateProbeDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= candidateProbeDeadlineAt)
         {
             if (candidateProbeAttemptCount >= MaximumCandidateProbeAttempts)
             {
+                if (TryBeginNearbyRevealFallback("probe-timeout-fallback"))
+                {
+                    return;
+                }
+
                 AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} produced no usable event after {candidateProbeAttemptCount} local Magical Elixir attempt(s).");
                 return;
             }
@@ -683,18 +785,7 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.HasTreasureBuff && !revealedCofferLatched)
-        {
-            AdvanceCandidate($"Treasure buff expired while refining candidate {activeCandidateKey?.Label}.");
-            return;
-        }
-
-        if (!scannerSnapshot.HasTreasureBuff && revealedCofferLatched)
-        {
-            logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=refine-expiry action=continue-post-reveal");
-            BeginRevealedCofferAcquisition(refinementEvent);
-            return;
-        }
+        var hintSnapshot = treasureHintTracker.Snapshot;
 
         if (!TryGetCurrentCandidate(out var activeCandidate))
         {
@@ -723,11 +814,49 @@ public sealed class TreasureSearchController : IDisposable
             }
         }
 
+        if (refinementEvent != null && (refinementEvent.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage))
+        {
+            BeginRevealedCofferAcquisition(refinementEvent);
+            return;
+        }
+
+        if (hintSnapshot.HasRevealLatched && TryBeginLatchedRevealAcquisition(hintSnapshot, "refine-latched"))
+        {
+            return;
+        }
+
+        if (hintSnapshot.IsPostBuffGraceActive)
+        {
+            logger.DebugThrottled(
+                "treasure-search-post-buff-grace-refine",
+                TimeSpan.FromMilliseconds(250),
+                $"Treasure refinement is holding candidate {activeCandidateKey?.Label} during post-buff grace until {hintSnapshot.PostBuffGraceDeadlineAt:O}.");
+            return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff && !revealedCofferLatched)
+        {
+            AdvanceCandidate($"Treasure buff expired while refining candidate {activeCandidateKey?.Label}.");
+            return;
+        }
+
+        if (!scannerSnapshot.HasTreasureBuff && revealedCofferLatched)
+        {
+            logger.Info($"{BuildLogTag()} op=reveal-latched candidate={activeCandidateKey?.Label ?? "none"} source=refine-expiry action=continue-post-reveal");
+            BeginRevealedCofferAcquisition(refinementEvent);
+            return;
+        }
+
         if (refinementEvent == null)
         {
             if (refinementProbeDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= refinementProbeDeadlineAt)
             {
                 logger.Info($"{BuildLogTag()} op=refine-probe-empty candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementProbeAttemptCount} action=retry-current-position");
+
+                if (TryBeginNearbyRevealFallback("refine-timeout-fallback"))
+                {
+                    return;
+                }
             }
 
             if (!TryStartRefinementProbe($"Refinement is probing candidate {activeCandidateKey?.Label} after local movement."))

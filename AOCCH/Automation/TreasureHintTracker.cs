@@ -10,6 +10,7 @@ namespace AOCCH.Automation;
 
 public sealed class TreasureHintTracker : IDisposable
 {
+    private static readonly TimeSpan PostBuffGraceDuration = TimeSpan.FromSeconds(1.5);
     private const uint TreasureCofferRevealLogMessageId = 10985u;
     private const uint TreasureHintImmediateLogMessageId = 10986u;
     private const uint TreasureHintCloseLogMessageId = 10987u;
@@ -255,6 +256,7 @@ public sealed class TreasureHintTracker : IDisposable
                 InitialHintEvent = snapshot.InitialHintEvent,
                 LastHintEvent = snapshot.LastHintEvent,
                 LastEvent = snapshot.LastEvent,
+                RevealLatchedEvent = snapshot.RevealLatchedEvent,
                 LastTransition = reason,
                 LastResetReason = snapshot.LastResetReason,
             };
@@ -297,6 +299,20 @@ public sealed class TreasureHintTracker : IDisposable
         }
         else if (lastTreasureBuffState == true && !scannerSnapshot.HasTreasureBuff)
         {
+            if (Snapshot.HasRevealLatched)
+            {
+                logger.Info($"[TreasureHintTracker session={Snapshot.SessionId}] op=reveal-latched-buff-cleared revision={Snapshot.RevealLatchedEvent?.Revision ?? 0} kind={Snapshot.RevealLatchedEvent?.Kind}");
+            }
+            else if (!Snapshot.IsPostBuffGraceActive)
+            {
+                BeginPostBuffGrace();
+            }
+        }
+
+        if (Snapshot.PostBuffGraceDeadlineAt != DateTimeOffset.MinValue
+            && DateTimeOffset.UtcNow >= Snapshot.PostBuffGraceDeadlineAt)
+        {
+            logger.Info($"[TreasureHintTracker session={Snapshot.SessionId}] op=post-buff-grace-expired deadline={Snapshot.PostBuffGraceDeadlineAt:O}");
             CompleteCurrentTreasureSession("Treasure buff expired or cleared.", TreasureSessionState.Expired);
         }
 
@@ -335,12 +351,20 @@ public sealed class TreasureHintTracker : IDisposable
     private void ApplyParsedTreasureEvent(TreasureHintEvent parsedEvent)
     {
         TreasureHintSnapshot updatedSnapshot;
+        var acceptedDuringPostBuffGrace = false;
         lock (gate)
         {
             if (snapshot.SessionState != TreasureSessionState.Active)
             {
                 return;
             }
+
+            if (snapshot.IsPostBuffGraceActive && parsedEvent.Kind is not TreasureHintKind.CofferReveal and not TreasureHintKind.CofferMessage)
+            {
+                return;
+            }
+
+            acceptedDuringPostBuffGrace = snapshot.IsPostBuffGraceActive;
 
             var nextRevision = snapshot.Revision + 1;
             var eventWithRevision = new TreasureHintEvent
@@ -357,10 +381,16 @@ public sealed class TreasureHintTracker : IDisposable
 
             var initialHint = snapshot.InitialHintEvent;
             var lastHint = snapshot.LastHintEvent;
+            var revealLatchedEvent = snapshot.RevealLatchedEvent;
             if (eventWithRevision.Kind == TreasureHintKind.Hint)
             {
                 initialHint ??= eventWithRevision;
                 lastHint = eventWithRevision;
+            }
+
+            if (eventWithRevision.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage)
+            {
+                revealLatchedEvent = eventWithRevision;
             }
 
             updatedSnapshot = new TreasureHintSnapshot
@@ -374,6 +404,10 @@ public sealed class TreasureHintTracker : IDisposable
                 InitialHintEvent = initialHint,
                 LastHintEvent = lastHint,
                 LastEvent = eventWithRevision,
+                RevealLatchedEvent = revealLatchedEvent,
+                PostBuffGraceDeadlineAt = eventWithRevision.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage
+                    ? DateTimeOffset.MinValue
+                    : snapshot.PostBuffGraceDeadlineAt,
                 LastTransition = BuildTransitionMessage(eventWithRevision),
                 LastResetReason = snapshot.LastResetReason,
             };
@@ -381,7 +415,49 @@ public sealed class TreasureHintTracker : IDisposable
             snapshot = updatedSnapshot;
         }
 
+        if (parsedEvent.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage)
+        {
+            if (acceptedDuringPostBuffGrace)
+            {
+                logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=post-buff-grace-reveal-accepted revision={updatedSnapshot.RevealLatchedEvent?.Revision ?? 0} kind={updatedSnapshot.RevealLatchedEvent?.Kind}");
+            }
+
+            logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=reveal-latched revision={updatedSnapshot.RevealLatchedEvent?.Revision ?? 0} kind={updatedSnapshot.RevealLatchedEvent?.Kind}");
+        }
+
         logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=event revision={updatedSnapshot.Revision} transition=\"{updatedSnapshot.LastTransition}\"");
+    }
+
+    private void BeginPostBuffGrace()
+    {
+        TreasureHintSnapshot next;
+        lock (gate)
+        {
+            if (snapshot.SessionState != TreasureSessionState.Active || snapshot.HasRevealLatched || snapshot.IsPostBuffGraceActive)
+            {
+                return;
+            }
+
+            next = new TreasureHintSnapshot
+            {
+                SessionState = snapshot.SessionState,
+                SessionId = snapshot.SessionId,
+                StartedAt = snapshot.StartedAt,
+                CompletedAt = snapshot.CompletedAt,
+                CompletionReason = snapshot.CompletionReason,
+                Revision = snapshot.Revision,
+                InitialHintEvent = snapshot.InitialHintEvent,
+                LastHintEvent = snapshot.LastHintEvent,
+                LastEvent = snapshot.LastEvent,
+                RevealLatchedEvent = snapshot.RevealLatchedEvent,
+                PostBuffGraceDeadlineAt = DateTimeOffset.UtcNow + PostBuffGraceDuration,
+                LastTransition = snapshot.LastTransition,
+                LastResetReason = snapshot.LastResetReason,
+            };
+            snapshot = next;
+        }
+
+        logger.Info($"[TreasureHintTracker session={next.SessionId}] op=post-buff-grace-start deadline={next.PostBuffGraceDeadlineAt:O}");
     }
 
     private void ApplyCofferSurveySnapshot(TreasureCofferSurveySnapshot parsedSurvey)

@@ -11,12 +11,15 @@ using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Game.Command;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using AOCCH.Windows;
 using Dalamud.Game.ClientState.Conditions;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace AOCCH;
 
@@ -25,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     private const uint SouthHornTerritoryTypeId = 1252;
     private static readonly HashSet<uint> KnownTreasureCofferBaseIds = [2014741u, 2014742u, 2014743u];
     private const float PotCofferDebugRadius = 60f;
+    private const float ManualPotInteractFallbackRadius = 30f;
     private const int PotCofferDebugEntryLimit = 30;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
@@ -135,7 +139,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, debug-autocoffer, help."
+            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, debug-potinteract, debug-autocoffer, probe-foray, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -265,8 +269,15 @@ public sealed class Plugin : IDalamudPlugin
                 Logger.Info("[Plugin] op=slash-command-action action=debug-potcoffer");
                 LogPotCofferDebugSnapshot();
                 break;
+            case "debug-potinteract":
+                HandleDebugPotInteractCommand();
+                break;
             case "debug-autocoffer":
                 HandleDebugAutomaticCofferCommand();
+                break;
+            case "probe-foray":
+                Logger.Info("[Plugin] op=slash-command-action action=probe-foray");
+                RunProbeForay();
                 break;
             default:
                 if (normalizedArgs.StartsWith("testkeyitem", StringComparison.Ordinal))
@@ -296,8 +307,109 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
         ChatGui.Print("/aocch testkeyitem [wait] - Use Magical Elixir via the production inventory path with detailed treasure logs");
         ChatGui.Print("/aocch debug-potcoffer - Log nearby raw objects for pot treasure reveal debugging");
+        ChatGui.Print("/aocch debug-potinteract - Start coffer interaction for the active pot reveal match using the production interaction controller");
         ChatGui.Print("/aocch debug-autocoffer - Run the automatic coffer survey flow without starting the coffer route");
+        ChatGui.Print("/aocch probe-foray - Log player OC state plus current target level/foray data");
         ChatGui.Print("/aocch help - Show this help");
+    }
+
+    private void HandleDebugPotInteractCommand()
+    {
+        if (CofferInteractionController.IsRunning)
+        {
+            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=coffer-interaction-running");
+            ChatGui.Print("Pot coffer interaction debug is blocked because coffer interaction is already running.");
+            return;
+        }
+
+        if (!TryPrepareDebugPotInteractionMatch(out var match, out var reason) || match == null)
+        {
+            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=active-pot-match-unavailable detail=\"{reason}\"");
+            ChatGui.Print(reason);
+            return;
+        }
+
+        Logger.Info(
+            $"[Plugin] op=slash-command-action action=debug-potinteract candidate={match.CandidateKey.Label} flow={match.Flow} trustworthy={match.IsTrustworthy} baseId={match.Coffer.DataId} objectId={match.Coffer.GameObjectId:X} playerDistance={match.Coffer.DistanceToPlayer:0.0}y reason=\"{reason}\" attribution=\"{match.AttributionReason}\"");
+
+        if (!CofferInteractionController.Start(match))
+        {
+            var failureDetail = CofferInteractionController.LastError.Length == 0
+                ? CofferInteractionController.LastTransition
+                : CofferInteractionController.LastError;
+            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=coffer-start-failed detail=\"{failureDetail}\"");
+            ChatGui.Print(failureDetail);
+            return;
+        }
+
+        ChatGui.Print($"Started pot coffer interaction debug for {match.CandidateKey.Label}.");
+    }
+
+    private bool TryPrepareDebugPotInteractionMatch(out VisibleCofferMatch? match, out string reason)
+    {
+        match = null;
+
+        if (TreasureSearchController.TryPrepareActivePotRevealInteractionMatch(out match, out reason) && match != null)
+        {
+            return true;
+        }
+
+        var productionReason = reason;
+        if (!Scanner.Snapshot.IsInSouthHorn)
+        {
+            reason = productionReason;
+            return false;
+        }
+
+        if (!TryBuildManualPotRevealInteractionMatch(out match, out var manualReason) || match == null)
+        {
+            reason = $"{productionReason} Manual fallback also failed: {manualReason}";
+            return false;
+        }
+
+        reason = $"{productionReason} Falling back to manual nearby coffer match.";
+        return true;
+    }
+
+    private bool TryBuildManualPotRevealInteractionMatch(out VisibleCofferMatch? match, out string reason)
+    {
+        match = null;
+
+        var snapshot = Scanner.Snapshot;
+        if (!TreasureSearchController.TryFindNearbyPotRevealCofferForDebug(out var coffer, out var recognitionSource, out var objectKind))
+        {
+            reason = $"No recognized reveal coffer was found within {ManualPotInteractFallbackRadius:0.0}y of the player for manual fallback.";
+            return false;
+        }
+
+        if (coffer.DistanceToPlayer > ManualPotInteractFallbackRadius)
+        {
+            reason = $"Nearest recognized reveal coffer {coffer.Name} ({coffer.GameObjectId:X}) is {coffer.DistanceToPlayer:0.0}y away, outside the {ManualPotInteractFallbackRadius:0.0}y manual fallback radius.";
+            return false;
+        }
+
+        if (!coffer.IsTargetable)
+        {
+            reason = $"Recognized reveal coffer {coffer.Name} ({coffer.GameObjectId:X}) is within {ManualPotInteractFallbackRadius:0.0}y, but it is not targetable yet. recognition={recognitionSource} objectKind={objectKind}.";
+            return false;
+        }
+
+        match = new VisibleCofferMatch
+        {
+            Flow = CofferInteractionFlow.PotReveal,
+            CandidateKey = new TreasureCandidateKey
+            {
+                Label = "debug-manual",
+                CandidateKey = "debug-manual",
+            },
+            Coffer = coffer,
+            MatchDistance = 0f,
+            IsTrustworthy = false,
+            AttributionReason = $"Manual debug fallback selected a recognized reveal coffer within {ManualPotInteractFallbackRadius:0.0}y while no active treasure-search candidate context was available. recognition={recognitionSource} objectKind={objectKind} playerDistance={coffer.DistanceToPlayer:0.0}y treasureBuff={snapshot.HasTreasureBuff}.",
+        };
+        Logger.Info($"[Plugin] op=debug-potinteract-manual-match objectId={coffer.GameObjectId:X} baseId={coffer.DataId} name='{coffer.Name}' playerDistance={coffer.DistanceToPlayer:0.0}y recognition={recognitionSource} objectKind={objectKind} treasureBuff={snapshot.HasTreasureBuff}");
+        reason = $"Using manual nearby coffer fallback for {coffer.Name} ({coffer.GameObjectId:X}).";
+        return true;
     }
 
     private void HandleDebugAutomaticCofferCommand()
@@ -481,6 +593,76 @@ public sealed class Plugin : IDalamudPlugin
         {
             Logger.Info(entry.Message);
         }
+    }
+
+    private unsafe void RunProbeForay()
+    {
+        var snapshot = Scanner.Snapshot;
+        var player = ObjectTable.LocalPlayer;
+        var playerPosition = player?.Position;
+        var playerPositionText = playerPosition == null
+            ? "unavailable"
+            : $"<{playerPosition.Value.X:0.0}, {playerPosition.Value.Y:0.0}, {playerPosition.Value.Z:0.0}>";
+
+        var state = PublicContentOccultCrescent.GetState();
+        var stateAvailable = state != null;
+        var currentKnowledge = stateAvailable ? state->CurrentKnowledge : 0u;
+        var neededKnowledge = stateAvailable ? state->NeededKnowledge : 0u;
+        var knowledgeLevelSync = stateAvailable ? state->KnowledgeLevelSync : (byte)0;
+        var currentSupportJob = stateAvailable ? state->CurrentSupportJob : (byte)0;
+        var supportJobLevel = 0;
+        if (stateAvailable)
+        {
+            var supportJobLevels = state->SupportJobLevels.ToArray();
+            if (currentSupportJob < supportJobLevels.Length)
+            {
+                supportJobLevel = supportJobLevels[currentSupportJob];
+            }
+        }
+
+        Logger.Info($"[Plugin] op=probe-foray-player territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={playerPositionText} hp={player?.CurrentHp ?? 0} ocState={stateAvailable} knowledge={currentKnowledge} neededKnowledge={neededKnowledge} knowledgeSync={knowledgeLevelSync} supportJob={currentSupportJob} supportJobLevel={supportJobLevel}");
+
+        var target = TargetManager.Target;
+        if (target == null)
+        {
+            Logger.Info("[Plugin] op=probe-foray-target available=false reason=no-target");
+            ChatGui.Print($"Probe: no current target; player knowledge={currentKnowledge} sync={knowledgeLevelSync} ocState={stateAvailable}.");
+            return;
+        }
+
+        var targetPositionText = $"<{target.Position.X:0.0}, {target.Position.Y:0.0}, {target.Position.Z:0.0}>";
+        var targetValid = target.IsValid();
+        var targetable = target.IsTargetable;
+        var normalLevel = -1;
+        var forayInfoAvailable = false;
+        var forayLevel = -1;
+        var forayElement = -1;
+        var targetIsBattleNpc = target is IBattleNpc;
+        var characterPointer = (Character*)target.Address;
+        var targetIsCharacter = target is ICharacter && characterPointer != null && characterPointer->VirtualTable != null;
+        var battleCharaPointer = targetIsBattleNpc && targetIsCharacter ? (BattleChara*)characterPointer : null;
+        var fateId = targetIsCharacter ? characterPointer->FateId : (ushort)0;
+
+        if (targetIsCharacter)
+        {
+            normalLevel = characterPointer->Level;
+            var forayInfo = characterPointer->GetForayInfo();
+            if (forayInfo != null)
+            {
+                forayInfoAvailable = true;
+                forayLevel = forayInfo->Level;
+                forayElement = forayInfo->Element;
+            }
+            else if (battleCharaPointer != null)
+            {
+                forayInfoAvailable = true;
+                forayLevel = battleCharaPointer->ForayInfo.Level;
+                forayElement = battleCharaPointer->ForayInfo.Element;
+            }
+        }
+
+        Logger.Info($"[Plugin] op=probe-foray-target available=true name='{target.Name}' kind={target.ObjectKind} objectId={target.GameObjectId:X} baseId={target.BaseId} objectIndex={target.ObjectIndex} fateId={fateId} pos={targetPositionText} valid={targetValid} targetable={targetable} isCharacter={targetIsCharacter} isBattleNpc={targetIsBattleNpc} normalLevel={normalLevel} forayInfo={forayInfoAvailable} forayLevel={forayLevel} forayElement={forayElement}");
+        ChatGui.Print($"Probe: target=\"{target.Name}\" lvl={normalLevel} forayLvl={forayLevel} elem={forayElement} knowledge={currentKnowledge} sync={knowledgeLevelSync}");
     }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
