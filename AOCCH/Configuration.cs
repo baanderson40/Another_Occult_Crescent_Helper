@@ -81,6 +81,7 @@ public class Configuration : IPluginConfiguration
     public bool SkipHighLevelCavernsDuringAshkin { get; set; }
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
+    public int MainWindowStatusTextScalePercent { get; set; } = 100;
 
     public bool IsCriticalEncounterEnabled(uint id)
         => !DisabledCriticalEncounterIds.Contains(id);
@@ -126,6 +127,7 @@ public class Configuration : IPluginConfiguration
     {
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         Plugin.PluginInterface.SavePluginConfig(this);
         logger?.Debug("Configuration saved.");
     }
@@ -134,6 +136,7 @@ public class Configuration : IPluginConfiguration
     {
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
 
         if (Version >= 2)
         {

@@ -407,6 +407,16 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
+        var mainWindowStatusTextScalePercent = configuration.MainWindowStatusTextScalePercent;
+        ImGui.SetNextItemWidth(160f);
+        if (ImGui.SliderInt("Main Window Status Text Size", ref mainWindowStatusTextScalePercent, 85, 150, "%d%%"))
+        {
+            var nextValue = Math.Clamp(mainWindowStatusTextScalePercent, 85, 150);
+            logger.Info($"[Config] op=setting-change key=MainWindowStatusTextScalePercent old={configuration.MainWindowStatusTextScalePercent} new={nextValue}");
+            configuration.MainWindowStatusTextScalePercent = nextValue;
+            configuration.Save();
+        }
+
         var scannerOnlyMode = configuration.ScannerOnlyMode;
         if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
         {
