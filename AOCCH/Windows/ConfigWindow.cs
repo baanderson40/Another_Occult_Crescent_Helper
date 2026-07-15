@@ -283,6 +283,32 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawTreasureCoffersTab()
     {
+        var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
+        if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableAutomaticTreasureCofferRoute old={configuration.EnableAutomaticTreasureCofferRoute} new={enableAutomaticTreasureCofferRoute}");
+            configuration.EnableAutomaticTreasureCofferRoute = enableAutomaticTreasureCofferRoute;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
+
+        DrawPotsIntSetting(
+            "Automatic Silver Threshold",
+            configuration.AutomaticTreasureCofferSilverThreshold,
+            0,
+            8,
+            value => configuration.AutomaticTreasureCofferSilverThreshold = value,
+            nameof(configuration.AutomaticTreasureCofferSilverThreshold));
+        DrawPotsIntSetting(
+            "Automatic Bronze Threshold",
+            configuration.AutomaticTreasureCofferBronzeThreshold,
+            0,
+            30,
+            value => configuration.AutomaticTreasureCofferBronzeThreshold = value,
+            nameof(configuration.AutomaticTreasureCofferBronzeThreshold));
+        DrawSettingTooltip("0 means any amount of that type. Both automatic threshold checks must pass. A 0/0 configuration starts the route when the survey finds at least one coffer of either type.");
+
+        ImGui.Separator();
         ImGui.TextUnformatted("Overworld Coffer Route");
 
         DrawPotsIntSetting(
@@ -300,6 +326,9 @@ public class ConfigWindow : Window, IDisposable
             28,
             value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
             nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dangerous Travel");
 
         var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
         if (ImGui.Checkbox("Use Ninja For Dangerous Overworld Coffers", ref useNinjaForDangerousVisibleCoffers))
@@ -329,30 +358,8 @@ public class ConfigWindow : Window, IDisposable
             DrawSettingTooltip("This gearset value is linked with the pots/revealed treasure Ninja gearset setting. Changing either one updates both.");
         }
 
-        var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
-        if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
-        {
-            logger.Info($"[Config] op=setting-change key=EnableAutomaticTreasureCofferRoute old={configuration.EnableAutomaticTreasureCofferRoute} new={enableAutomaticTreasureCofferRoute}");
-            configuration.EnableAutomaticTreasureCofferRoute = enableAutomaticTreasureCofferRoute;
-            configuration.Save();
-        }
-        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
-
-        DrawPotsIntSetting(
-            "Automatic Silver Threshold",
-            configuration.AutomaticTreasureCofferSilverThreshold,
-            0,
-            8,
-            value => configuration.AutomaticTreasureCofferSilverThreshold = value,
-            nameof(configuration.AutomaticTreasureCofferSilverThreshold));
-        DrawPotsIntSetting(
-            "Automatic Bronze Threshold",
-            configuration.AutomaticTreasureCofferBronzeThreshold,
-            0,
-            30,
-            value => configuration.AutomaticTreasureCofferBronzeThreshold = value,
-            nameof(configuration.AutomaticTreasureCofferBronzeThreshold));
-        DrawSettingTooltip("0 means any amount of that type. Both automatic threshold checks must pass. A 0/0 configuration starts the route when the survey finds at least one coffer of either type.");
+        ImGui.Separator();
+        ImGui.TextUnformatted("Route Rules");
 
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
@@ -363,9 +370,6 @@ public class ConfigWindow : Window, IDisposable
         }
 
         DrawSettingTooltip("Reserved for Lua-parity route rules in the overworld coffer route controller.");
-
-        ImGui.TextWrapped($"Loaded overworld coffer spots: {data.VisibleCofferFarmSpots.Count}");
-        ImGui.TextWrapped($"Loaded overworld coffer route entries: {data.VisibleCofferFarmRoute.Count}");
     }
 
     private void DrawSettingsTab()
