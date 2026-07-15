@@ -34,6 +34,7 @@ public sealed class MovementController : IDisposable
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
     private const float AethernetApproachTolerance = 0.25f;
+    private const float BaseCampSideArcDegrees = 50f;
     private const float ProgressThreshold = 2f;
     private const int MaxAethernetAttempts = 3;
     private const int MaxReturnAttempts = 3;
@@ -1701,6 +1702,11 @@ public sealed class MovementController : IDisposable
             return step.Destination;
         }
 
+        if (step.Kind == RouteStepKind.RecoverToBaseCamp && stepAttemptCount == 0)
+        {
+            return GetSideBiasedAethernetApproachPoint(playerPosition, step);
+        }
+
         return stepAttemptCount == 0
             ? GetDirectionalAethernetApproachPoint(playerPosition, step)
             : GetRandomAethernetBandPoint(step);
@@ -1751,17 +1757,45 @@ public sealed class MovementController : IDisposable
             step.InteractionCenter.Z + (normalized.Y * targetRadius));
     }
 
-    private static Vector3 GetRandomAethernetBandPoint(RouteStep step)
+    private static Vector3 GetSideBiasedAethernetApproachPoint(Vector3 playerPosition, RouteStep step)
     {
-        var innerMin = GetAethernetInnerBandTarget(step);
-        var innerMax = MathF.Min(innerMin + AethernetBandWidth, step.InteractDistanceMax);
-        var angle = (float)(Random.Shared.NextDouble() * Math.PI * 2d);
-        var radiusSquared = (float)Random.Shared.NextDouble();
-        var radius = MathF.Sqrt((radiusSquared * ((innerMax * innerMax) - (innerMin * innerMin))) + (innerMin * innerMin));
+        var delta = new Vector2(playerPosition.X - step.InteractionCenter.X, playerPosition.Z - step.InteractionCenter.Z);
+        var length = delta.Length();
+        if (length <= float.Epsilon)
+        {
+            return GetRandomAethernetBandPoint(step);
+        }
+
+        var outward = delta / length;
+        var side = Random.Shared.Next(2) == 0
+            ? new Vector2(-outward.Y, outward.X)
+            : new Vector2(outward.Y, -outward.X);
+        var baseAngle = MathF.Atan2(side.Y, side.X);
+        var halfArcRadians = (BaseCampSideArcDegrees * (MathF.PI / 180f)) * 0.5f;
+        var angle = baseAngle + (((float)Random.Shared.NextDouble() * 2f - 1f) * halfArcRadians);
+        var radius = GetRandomAethernetBandRadius(step);
         return new Vector3(
             step.InteractionCenter.X + (MathF.Cos(angle) * radius),
             step.InteractionCenter.Y,
             step.InteractionCenter.Z + (MathF.Sin(angle) * radius));
+    }
+
+    private static Vector3 GetRandomAethernetBandPoint(RouteStep step)
+    {
+        var angle = (float)(Random.Shared.NextDouble() * Math.PI * 2d);
+        var radius = GetRandomAethernetBandRadius(step);
+        return new Vector3(
+            step.InteractionCenter.X + (MathF.Cos(angle) * radius),
+            step.InteractionCenter.Y,
+            step.InteractionCenter.Z + (MathF.Sin(angle) * radius));
+    }
+
+    private static float GetRandomAethernetBandRadius(RouteStep step)
+    {
+        var innerMin = GetAethernetInnerBandTarget(step);
+        var innerMax = MathF.Min(innerMin + AethernetBandWidth, step.InteractDistanceMax);
+        var radiusSquared = (float)Random.Shared.NextDouble();
+        return MathF.Sqrt((radiusSquared * ((innerMax * innerMax) - (innerMin * innerMin))) + (innerMin * innerMin));
     }
 
     private static float GetAethernetInnerBandTarget(RouteStep step)
