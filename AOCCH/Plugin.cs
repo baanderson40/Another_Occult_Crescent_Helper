@@ -10,6 +10,7 @@ using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
+using AOCCH.Shopping;
 using Dalamud.Game.Command;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.IoC;
@@ -77,6 +78,7 @@ public sealed class Plugin : IDalamudPlugin
     public PotFarmController PotFarmController { get; init; }
     public FarmSessionController FarmSessionController { get; init; }
     public AutomaticTreasureCofferDebugController AutomaticTreasureCofferDebugController { get; init; }
+    public ShopInspectorController ShopInspectorController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -126,6 +128,7 @@ public sealed class Plugin : IDalamudPlugin
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
+        ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
 
         ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -185,6 +188,7 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
         DebugWindow.Dispose();
         AutomaticTreasureCofferDebugController.Dispose();
+        ShopInspectorController.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
         TreasureCofferFarmController.Dispose();

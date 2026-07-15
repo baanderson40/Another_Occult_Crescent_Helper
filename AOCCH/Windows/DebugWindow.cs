@@ -27,6 +27,7 @@ public sealed class DebugWindow : Window, IDisposable
         Autorotation,
         BuffRotation,
         DeathRecovery,
+        ShopInspector,
         Movement,
         CriticalEngagements,
         Fates,
@@ -125,6 +126,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.Autorotation, "Autorotation");
         DrawSectionButton(DebugSection.BuffRotation, "Buff Rotation");
         DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
+        DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
         DrawSectionButton(DebugSection.Movement, "Movement");
         DrawSectionButton(DebugSection.CriticalEngagements, "Critical Engagements");
         DrawSectionButton(DebugSection.Fates, "FATEs");
@@ -182,6 +184,9 @@ public sealed class DebugWindow : Window, IDisposable
             case DebugSection.DeathRecovery:
                 DrawDeathRecovery();
                 break;
+            case DebugSection.ShopInspector:
+                DrawShopInspector();
+                break;
             case DebugSection.Movement:
                 DrawMovement(snapshot);
                 break;
@@ -208,6 +213,93 @@ public sealed class DebugWindow : Window, IDisposable
         => timestamp == DateTimeOffset.MinValue
             ? "Waiting for first scan"
             : timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private void DrawShopInspector()
+    {
+        var snapshot = plugin.ShopInspectorController.Snapshot;
+
+        ImGui.TextUnformatted("Shop Inspector");
+        ImGui.TextUnformatted($"Captured: {FormatTimestamp(snapshot.CapturedAt)}");
+        ImGui.TextUnformatted($"SelectIconString Open: {(snapshot.IsSelectIconStringOpen ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"ShopExchangeCurrency Open: {(snapshot.IsShopExchangeCurrencyOpen ? "Yes" : "No")}");
+
+        if (snapshot.IsShopExchangeCurrencyOpen)
+        {
+            var currencyLabel = string.IsNullOrEmpty(snapshot.CurrencyName)
+                ? $"Currency Item ID {snapshot.CurrencyItemId}"
+                : $"{snapshot.CurrencyName} ({snapshot.CurrencyItemId})";
+            ImGui.TextUnformatted($"Currency: {currencyLabel}");
+            ImGui.TextUnformatted($"Currency Amount: {snapshot.CurrencyAmount}");
+        }
+
+        if (!string.IsNullOrEmpty(snapshot.LastError))
+        {
+            ImGui.TextWrapped($"Last Error: {snapshot.LastError}");
+        }
+
+        if (ImGui.Button("Log Current Shop Snapshot"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=log-shop-snapshot");
+            plugin.ShopInspectorController.LogCurrentSnapshot();
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Select Menu Entries");
+        if (snapshot.MenuEntries.Count == 0)
+        {
+            ImGui.TextUnformatted("No SelectIconString entries detected.");
+        }
+        else
+        {
+            foreach (var entry in snapshot.MenuEntries)
+            {
+                ImGui.TextWrapped($"- [{entry.Index}] {entry.Label}");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Shop Entries");
+        if (snapshot.ShopEntries.Count == 0)
+        {
+            ImGui.TextUnformatted("No ShopExchangeCurrency entries detected.");
+            return;
+        }
+
+        if (!ImGui.BeginTable("ShopInspectorEntries", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 90f);
+        ImGui.TableSetupColumn("Name");
+        ImGui.TableSetupColumn("Cost", ImGuiTableColumnFlags.WidthFixed, 90f);
+        ImGui.TableSetupColumn("Currency", ImGuiTableColumnFlags.WidthFixed, 140f);
+        ImGui.TableSetupColumn("Row Index", ImGuiTableColumnFlags.WidthFixed, 80f);
+        ImGui.TableHeadersRow();
+
+        foreach (var entry in snapshot.ShopEntries)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.TextUnformatted(entry.ItemId.ToString(CultureInfo.InvariantCulture));
+
+            ImGui.TableNextColumn();
+            ImGui.TextWrapped(entry.ItemName);
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(entry.Cost.ToString(CultureInfo.InvariantCulture));
+
+            ImGui.TableNextColumn();
+            ImGui.TextWrapped(string.IsNullOrEmpty(entry.CurrencyName)
+                ? entry.CurrencyItemId.ToString(CultureInfo.InvariantCulture)
+                : entry.CurrencyName);
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(entry.RowIndex.ToString(CultureInfo.InvariantCulture));
+        }
+
+        ImGui.EndTable();
+    }
 
     private void DrawCriticalEncounters(ScannerSnapshot snapshot)
     {
