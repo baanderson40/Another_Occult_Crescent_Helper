@@ -93,6 +93,8 @@ public sealed class TreasureSearchController : IDisposable
     private Vector3 traversalOriginCenter;
     private DateTimeOffset candidateTravelLastProgressAt = DateTimeOffset.MinValue;
     private float candidateTravelProgressDistance = float.MaxValue;
+    private Vector3 candidateTravelLastObservedPosition;
+    private bool hasCandidateTravelObservedPosition;
     private DateTimeOffset candidateArrivedAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateProbeDeadlineAt = DateTimeOffset.MinValue;
     private DateTimeOffset candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1416,8 +1418,9 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        var initialTravelDistance = Plugin.ObjectTable.LocalPlayer?.Position is { } playerPosition
-            ? CalculateFlatDistance(playerPosition, targetPosition)
+        var currentPlayerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
+        var initialTravelDistance = currentPlayerPosition.HasValue
+            ? CalculateFlatDistance(currentPlayerPosition.Value, targetPosition)
             : float.MaxValue;
         lock (gate)
         {
@@ -1425,6 +1428,8 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateKey = candidateKey;
             candidateTravelLastProgressAt = DateTimeOffset.UtcNow;
             candidateTravelProgressDistance = initialTravelDistance;
+            candidateTravelLastObservedPosition = currentPlayerPosition ?? Vector3.Zero;
+            hasCandidateTravelObservedPosition = currentPlayerPosition.HasValue;
             candidateArrivedAt = DateTimeOffset.MinValue;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1913,6 +1918,7 @@ public sealed class TreasureSearchController : IDisposable
         var now = DateTimeOffset.UtcNow;
         var dangerousTravelRunning = dangerousTreasureTravelController.IsRunning;
         var madeProgress = false;
+        var movementProgress = false;
         var bestDistance = distance;
         var progressAge = TimeSpan.Zero;
 
@@ -1922,24 +1928,35 @@ public sealed class TreasureSearchController : IDisposable
             {
                 candidateTravelLastProgressAt = now;
                 candidateTravelProgressDistance = distance;
+                candidateTravelLastObservedPosition = playerPosition.Value;
+                hasCandidateTravelObservedPosition = true;
             }
             else if (candidateTravelProgressDistance - distance >= CandidateTravelProgressThreshold)
             {
                 candidateTravelLastProgressAt = now;
                 candidateTravelProgressDistance = distance;
+                candidateTravelLastObservedPosition = playerPosition.Value;
+                hasCandidateTravelObservedPosition = true;
                 madeProgress = true;
+            }
+            else if (!hasCandidateTravelObservedPosition || CalculateFlatDistance(candidateTravelLastObservedPosition, playerPosition.Value) >= CandidateTravelProgressThreshold)
+            {
+                candidateTravelLastProgressAt = now;
+                candidateTravelLastObservedPosition = playerPosition.Value;
+                hasCandidateTravelObservedPosition = true;
+                movementProgress = true;
             }
 
             bestDistance = candidateTravelProgressDistance;
             progressAge = now - candidateTravelLastProgressAt;
         }
 
-        if (madeProgress)
+        if (madeProgress || movementProgress)
         {
             logger.DebugThrottled(
                 "treasure-search-travel-progress",
                 WaitLogInterval,
-                $"Treasure search made progress toward candidate {activeCandidateKey.Label}. distance={distance:0.0} bestDistance={bestDistance:0.0} dangerous={dangerousTravelRunning} dangerousState={(dangerousTravelRunning ? dangerousTreasureTravelController.State.ToString() : "none")} movementState={movementController.State}.");
+                $"Treasure search made progress toward candidate {activeCandidateKey.Label}. distance={distance:0.0} bestDistance={bestDistance:0.0} progress={(madeProgress ? "target-distance" : "player-movement")} dangerous={dangerousTravelRunning} dangerousState={(dangerousTravelRunning ? dangerousTreasureTravelController.State.ToString() : "none")} movementState={movementController.State}.");
             return false;
         }
 
@@ -1965,6 +1982,8 @@ public sealed class TreasureSearchController : IDisposable
     {
         candidateTravelLastProgressAt = DateTimeOffset.MinValue;
         candidateTravelProgressDistance = float.MaxValue;
+        candidateTravelLastObservedPosition = Vector3.Zero;
+        hasCandidateTravelObservedPosition = false;
     }
 
     private bool IsHandledCandidate(string label)
