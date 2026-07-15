@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Reflection;
+using System.Threading.Tasks;
 using AOCCH.Logging;
 using Dalamud.Plugin.Ipc;
 
@@ -20,7 +22,7 @@ public sealed class VNavmeshIpc
     private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> nearestPoint;
     private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> pointOnFloor;
     private readonly ICallGateSubscriber<Vector3, Vector3, bool, object?> pathfindRoute;
-    private readonly ICallGateSubscriber<Vector3, Vector3, bool, object?> navPathfindRoute;
+    private readonly ICallGateSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>> navPathfindRoute;
 
     private bool? lastAvailability;
 
@@ -37,7 +39,7 @@ public sealed class VNavmeshIpc
         nearestPoint = Plugin.PluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
         pointOnFloor = Plugin.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
         pathfindRoute = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, object?>("vnavmesh.Pathfind");
-        navPathfindRoute = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, object?>("vnavmesh.Nav.Pathfind");
+        navPathfindRoute = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>("vnavmesh.Nav.Pathfind");
     }
 
     public bool IsReady()
@@ -68,18 +70,36 @@ public sealed class VNavmeshIpc
         => Invoke("vnavmesh.Query.Mesh.PointOnFloor",
             () => pointOnFloor.InvokeFunc(position, allowUnlandable, halfExtentXZ), null);
 
-    public bool HasRoute(Vector3 fromPosition, Vector3 toPosition, bool fly = false)
+    public bool? HasRoute(Vector3 fromPosition, Vector3 toPosition, bool fly = false)
     {
-        var task = TryInvokePathfind("vnavmesh.Pathfind", () => pathfindRoute.InvokeFunc(fromPosition, toPosition, fly));
-        task ??= TryInvokePathfind("vnavmesh.Nav.Pathfind", () => navPathfindRoute.InvokeFunc(fromPosition, toPosition, fly));
-        if (task == null)
+        var legacyTask = TryInvokePathfind("vnavmesh.Pathfind", () => pathfindRoute.InvokeFunc(fromPosition, toPosition, fly));
+        if (TryResolvePathResult(legacyTask, out var legacyHasRoute))
         {
-            return false;
+            return legacyHasRoute;
         }
 
-        return TryResolvePathResult(task, out var hasRoute)
+        var navTask = TryInvokeNavPathfind(fromPosition, toPosition, fly);
+        if (navTask == null)
+        {
+            return null;
+        }
+
+        return TryResolvePathResult(navTask, out var hasRoute)
             ? hasRoute
-            : true;
+            : null;
+    }
+
+    private Task<List<Vector3>>? TryInvokeNavPathfind(Vector3 fromPosition, Vector3 toPosition, bool fly)
+    {
+        try
+        {
+            return navPathfindRoute.InvokeFunc(fromPosition, toPosition, fly);
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"IPC call failed for vnavmesh.Nav.Pathfind: {ex.Message}");
+            return null;
+        }
     }
 
     public void Stop()
@@ -164,6 +184,26 @@ public sealed class VNavmeshIpc
             var result = resultProperty.GetValue(task);
             hasRoute = CountEnumerableEntries(result) > 0;
             return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryResolvePathResult(Task<List<Vector3>> task, out bool hasRoute)
+    {
+        hasRoute = false;
+
+        try
+        {
+            if (!task.Wait(TimeSpan.FromSeconds(2)))
+            {
+                return false;
+            }
+
+            hasRoute = task.Status == TaskStatus.RanToCompletion && task.Result.Count > 0;
+            return task.Status == TaskStatus.RanToCompletion;
         }
         catch
         {

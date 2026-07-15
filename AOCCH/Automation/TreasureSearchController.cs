@@ -2036,11 +2036,17 @@ public sealed class TreasureSearchController : IDisposable
                 return null;
             }
 
-            if (!TryHasCachedRefinementRoute(playerPosition, snappedTarget))
+            var routeState = TryHasCachedRefinementRoute(playerPosition, snappedTarget);
+            if (routeState == false)
             {
                 RecordRejection("no_route");
                 logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}> but pathfind returned no route.");
                 return null;
+            }
+
+            if (routeState == null)
+            {
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}> but route validation IPC was unavailable; accepting target without a precheck result.");
             }
 
             return new RefinementMovePlan(
@@ -2421,7 +2427,7 @@ public sealed class TreasureSearchController : IDisposable
             _ => string.Empty,
         };
 
-    private bool TryHasCachedRefinementRoute(Vector3 fromPosition, Vector3 toPosition)
+    private bool? TryHasCachedRefinementRoute(Vector3 fromPosition, Vector3 toPosition)
     {
         var now = DateTimeOffset.UtcNow;
         var cacheKey = BuildRefinementRouteCacheKey(fromPosition, toPosition);
@@ -2432,7 +2438,11 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var hasRoute = movementController.HasPathfindRoute(fromPosition, toPosition);
-        refinementRouteCache[cacheKey] = (hasRoute, now);
+        if (hasRoute.HasValue)
+        {
+            refinementRouteCache[cacheKey] = (hasRoute.Value, now);
+        }
+
         PruneRefinementRouteCache(now);
         return hasRoute;
     }
