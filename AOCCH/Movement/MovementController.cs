@@ -455,9 +455,6 @@ public sealed class MovementController : IDisposable
     public Vector3? FindPointOnFloor(Vector3 position, float halfExtentXZ = 2f, bool allowUnlandable = false)
         => vnavmesh.FindPointOnFloor(position, allowUnlandable, halfExtentXZ);
 
-    public bool? HasPathfindRoute(Vector3 fromPosition, Vector3 toPosition, bool fly = false)
-        => vnavmesh.HasRoute(fromPosition, toPosition, fly);
-
     public void Stop(string reason)
     {
         vnavmesh.Stop();

@@ -1,9 +1,5 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Numerics;
-using System.Reflection;
-using System.Threading.Tasks;
 using AOCCH.Logging;
 using Dalamud.Plugin.Ipc;
 
@@ -21,9 +17,6 @@ public sealed class VNavmeshIpc
     private readonly ICallGateSubscriber<object> stopPath;
     private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> nearestPoint;
     private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> pointOnFloor;
-    private readonly ICallGateSubscriber<Vector3, Vector3, bool, object?> pathfindRoute;
-    private readonly ICallGateSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>> navPathfindRoute;
-
     private bool? lastAvailability;
 
     public VNavmeshIpc(AocchLogger logger)
@@ -38,8 +31,6 @@ public sealed class VNavmeshIpc
         stopPath = Plugin.PluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
         nearestPoint = Plugin.PluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
         pointOnFloor = Plugin.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
-        pathfindRoute = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, object?>("vnavmesh.Pathfind");
-        navPathfindRoute = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>("vnavmesh.Nav.Pathfind");
     }
 
     public bool IsReady()
@@ -69,38 +60,6 @@ public sealed class VNavmeshIpc
     public Vector3? FindPointOnFloor(Vector3 position, bool allowUnlandable, float halfExtentXZ)
         => Invoke("vnavmesh.Query.Mesh.PointOnFloor",
             () => pointOnFloor.InvokeFunc(position, allowUnlandable, halfExtentXZ), null);
-
-    public bool? HasRoute(Vector3 fromPosition, Vector3 toPosition, bool fly = false)
-    {
-        var legacyTask = TryInvokePathfind("vnavmesh.Pathfind", () => pathfindRoute.InvokeFunc(fromPosition, toPosition, fly));
-        if (TryResolvePathResult(legacyTask, out var legacyHasRoute))
-        {
-            return legacyHasRoute;
-        }
-
-        var navTask = TryInvokeNavPathfind(fromPosition, toPosition, fly);
-        if (navTask == null)
-        {
-            return null;
-        }
-
-        return TryResolvePathResult(navTask, out var hasRoute)
-            ? hasRoute
-            : null;
-    }
-
-    private Task<List<Vector3>>? TryInvokeNavPathfind(Vector3 fromPosition, Vector3 toPosition, bool fly)
-    {
-        try
-        {
-            return navPathfindRoute.InvokeFunc(fromPosition, toPosition, fly);
-        }
-        catch (Exception ex)
-        {
-            logger.Debug($"IPC call failed for vnavmesh.Nav.Pathfind: {ex.Message}");
-            return null;
-        }
-    }
 
     public void Stop()
     {
@@ -136,106 +95,6 @@ public sealed class VNavmeshIpc
             logger.Debug($"IPC call failed for {operation}: {ex.Message}");
             return fallback;
         }
-    }
-
-    private object? TryInvokePathfind(string operation, Func<object?> action)
-    {
-        try
-        {
-            return action();
-        }
-        catch (Exception ex)
-        {
-            logger.Debug($"IPC call failed for {operation}: {ex.Message}");
-            return null;
-        }
-    }
-
-    private static bool TryResolvePathResult(object task, out bool hasRoute)
-    {
-        hasRoute = false;
-
-        try
-        {
-            var taskType = task.GetType();
-            var isCompleted = taskType.GetProperty("IsCompleted", BindingFlags.Public | BindingFlags.Instance);
-            var resultProperty = taskType.GetProperty("Result", BindingFlags.Public | BindingFlags.Instance);
-            if (isCompleted == null || resultProperty == null)
-            {
-                return false;
-            }
-
-            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                if (isCompleted.GetValue(task) is true)
-                {
-                    break;
-                }
-
-                System.Threading.Thread.Sleep(10);
-            }
-
-            if (isCompleted.GetValue(task) is not true)
-            {
-                return false;
-            }
-
-            var result = resultProperty.GetValue(task);
-            hasRoute = CountEnumerableEntries(result) > 0;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryResolvePathResult(Task<List<Vector3>> task, out bool hasRoute)
-    {
-        hasRoute = false;
-
-        try
-        {
-            if (!task.Wait(TimeSpan.FromSeconds(2)))
-            {
-                return false;
-            }
-
-            hasRoute = task.Status == TaskStatus.RanToCompletion && task.Result.Count > 0;
-            return task.Status == TaskStatus.RanToCompletion;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static int CountEnumerableEntries(object? result)
-    {
-        if (result == null)
-        {
-            return 0;
-        }
-
-        var countProperty = result.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
-        if (countProperty?.GetValue(result) is int count)
-        {
-            return count;
-        }
-
-        if (result is IEnumerable enumerable)
-        {
-            var total = 0;
-            foreach (var _ in enumerable)
-            {
-                total++;
-            }
-
-            return total;
-        }
-
-        return 0;
     }
 
     private void SetAvailability(bool available)

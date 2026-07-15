@@ -42,6 +42,7 @@ public sealed class TreasureSearchController : IDisposable
     private const float LocalMoveSkipDistance = 3f;
     private const float PotRevealCofferScanRadius = 28f;
     private const float CandidateTravelProgressThreshold = 2f;
+    private const float PointOnFloorOverrideScoreAdvantage = 1f;
     private const int MaximumCandidateRefinementSteps = 12;
     private const float NavmeshMinimumValidY = -400f;
     private const float NavmeshMaximumValidY = 500f;
@@ -49,7 +50,6 @@ public sealed class TreasureSearchController : IDisposable
     private const float NavmeshSentinelTolerance = 0.5f;
     private const float NavmeshMaxVerticalSnap = 180f;
     private const float NavmeshCoordinateAbsLimit = 100000f;
-    private const float RefinementRouteCacheGridSize = 1f;
     private static readonly float[] RefinementSearchRadii = [2f, 4f, 6f, 10f, 20f];
     private static readonly float[] RefinementStepMultipliers = [1f, 0.75f, 0.5f, 0.25f];
     private static readonly TimeSpan CandidateProbeSettleDelay = TimeSpan.FromMilliseconds(300);
@@ -59,9 +59,7 @@ public sealed class TreasureSearchController : IDisposable
     private static readonly TimeSpan DangerousCandidateTravelStallTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan RevealedCofferAcquireTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan RefinementRouteCacheDuration = TimeSpan.FromMilliseconds(750);
     private const int MaximumCandidateProbeAttempts = 3;
-    private const int MaximumRefinementRouteCacheEntries = 64;
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -78,8 +76,6 @@ public sealed class TreasureSearchController : IDisposable
     private readonly object gate = new();
     private readonly HashSet<string> handledCandidateLabels = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TreasureCofferCandidateData> orderedCandidates = [];
-    private readonly Dictionary<string, (bool HasRoute, DateTimeOffset ObservedAt)> refinementRouteCache = new(StringComparer.Ordinal);
-
     private TreasureSearchState state = TreasureSearchState.Idle;
     private TreasureSearchRunResult lastResult;
     private string lastTransition = "Idle";
@@ -361,7 +357,6 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
             revealedCofferLatched = false;
-            refinementRouteCache.Clear();
             lastError = string.Empty;
             lastResult = TreasureSearchRunResult.None;
         }
@@ -430,7 +425,6 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateResolvedPosition = Vector3.Zero;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
             revealedCofferLatched = false;
-            refinementRouteCache.Clear();
         }
 
         logger.Info($"[Treasure] op=reset reason={reason}");
@@ -1450,7 +1444,6 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateResolvedPosition = targetPosition;
             revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
             revealedCofferLatched = false;
-            refinementRouteCache.Clear();
             lastNavmeshRejectionSummary = string.Empty;
             pendingCandidateAdvanceReason = string.Empty;
         }
@@ -2055,19 +2048,6 @@ public sealed class TreasureSearchController : IDisposable
                 return null;
             }
 
-            var routeState = TryHasCachedRefinementRoute(playerPosition, snappedTarget);
-            if (routeState == false)
-            {
-                RecordRejection("no_route");
-                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}> but pathfind returned no route.");
-                return null;
-            }
-
-            if (routeState == null)
-            {
-                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}> but route validation IPC was unavailable; accepting target without a precheck result.");
-            }
-
             return new RefinementMovePlan(
                 rawTarget,
                 snappedTarget,
@@ -2091,18 +2071,18 @@ public sealed class TreasureSearchController : IDisposable
             {
                 RefinementMovePlan? radiusBestPlan = null;
 
-                var floorPoint = movementController.FindPointOnFloor(rawTarget, radius);
-                var floorPlan = ValidateMeshTarget(rawTarget, floorPoint, "PointOnFloor", radius, step, multiplier);
-                if (floorPlan != null)
-                {
-                    radiusBestPlan = floorPlan;
-                }
-
                 var nearestPoint = movementController.FindNearestNavigablePoint(rawTarget, radius, MathF.Max(8f, radius * 0.4f));
                 var nearestPlan = ValidateMeshTarget(rawTarget, nearestPoint, "NearestPoint", radius, step, multiplier);
-                if (nearestPlan != null && (radiusBestPlan == null || nearestPlan.Score < radiusBestPlan.Score))
+                if (nearestPlan != null)
                 {
                     radiusBestPlan = nearestPlan;
+                }
+
+                var floorPoint = movementController.FindPointOnFloor(rawTarget, radius);
+                var floorPlan = ValidateMeshTarget(rawTarget, floorPoint, "PointOnFloor", radius, step, multiplier);
+                if (floorPlan != null && (radiusBestPlan == null || floorPlan.Score + PointOnFloorOverrideScoreAdvantage < radiusBestPlan.Score))
+                {
+                    radiusBestPlan = floorPlan;
                 }
 
                 if (radiusBestPlan != null && (bestPlan == null || radiusBestPlan.Score < bestPlan.Score))
@@ -2445,62 +2425,6 @@ public sealed class TreasureSearchController : IDisposable
             TreasureDirection.Northwest => "northwest",
             _ => string.Empty,
         };
-
-    private bool? TryHasCachedRefinementRoute(Vector3 fromPosition, Vector3 toPosition)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var cacheKey = BuildRefinementRouteCacheKey(fromPosition, toPosition);
-        if (refinementRouteCache.TryGetValue(cacheKey, out var cached)
-            && now - cached.ObservedAt <= RefinementRouteCacheDuration)
-        {
-            return cached.HasRoute;
-        }
-
-        var hasRoute = movementController.HasPathfindRoute(fromPosition, toPosition);
-        if (hasRoute.HasValue)
-        {
-            refinementRouteCache[cacheKey] = (hasRoute.Value, now);
-        }
-
-        PruneRefinementRouteCache(now);
-        return hasRoute;
-    }
-
-    private void PruneRefinementRouteCache(DateTimeOffset now)
-    {
-        if (refinementRouteCache.Count <= MaximumRefinementRouteCacheEntries)
-        {
-            return;
-        }
-
-        foreach (var expiredKey in refinementRouteCache
-                     .Where(entry => now - entry.Value.ObservedAt > RefinementRouteCacheDuration)
-                     .Select(entry => entry.Key)
-                     .ToArray())
-        {
-            refinementRouteCache.Remove(expiredKey);
-        }
-
-        if (refinementRouteCache.Count <= MaximumRefinementRouteCacheEntries)
-        {
-            return;
-        }
-
-        foreach (var oldestKey in refinementRouteCache
-                     .OrderBy(entry => entry.Value.ObservedAt)
-                     .Take(refinementRouteCache.Count - MaximumRefinementRouteCacheEntries)
-                     .Select(entry => entry.Key)
-                     .ToArray())
-        {
-            refinementRouteCache.Remove(oldestKey);
-        }
-    }
-
-    private static string BuildRefinementRouteCacheKey(Vector3 fromPosition, Vector3 toPosition)
-        => $"{RoundToGrid(fromPosition.X):0.0},{RoundToGrid(fromPosition.Z):0.0}->{RoundToGrid(toPosition.X):0.0},{RoundToGrid(toPosition.Z):0.0}";
-
-    private static float RoundToGrid(float value)
-        => MathF.Round(value / RefinementRouteCacheGridSize) * RefinementRouteCacheGridSize;
 
     private static bool IsLocalTreasureDistance(string distanceBucket)
         => string.Equals(distanceBucket, "close", StringComparison.Ordinal)
