@@ -119,7 +119,8 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (DrawIconButton(FontAwesomeIcon.Skull, "panic-stop", "Panic Stop"))
+        var panicStopBlocker = GetPanicStopBlocker();
+        if (DrawIconButton(FontAwesomeIcon.Skull, "panic-stop", "Panic Stop", panicStopBlocker == null, panicStopBlocker))
         {
             PanicStop();
         }
@@ -142,6 +143,9 @@ public sealed class MainWindow : Window, IDisposable
         plugin.Logger.Warning("[MainWindow] op=ui-action action=panic-stop");
         plugin.PanicStopAll();
     }
+
+    private string? GetPanicStopBlocker()
+        => scanner.Snapshot.IsInSouthHorn ? null : "Panic Stop requires South Horn.";
 
     private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null)
     {
@@ -189,6 +193,11 @@ public sealed class MainWindow : Window, IDisposable
         if (farmSessionController.IsRunning)
         {
             return "Farm session is already running.";
+        }
+
+        if (!scanner.Snapshot.IsInSouthHorn)
+        {
+            return "Farm session start requires South Horn.";
         }
 
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning || treasureCofferFarmController.IsRunning)
