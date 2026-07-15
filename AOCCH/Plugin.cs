@@ -79,6 +79,9 @@ public sealed class Plugin : IDalamudPlugin
     public FarmSessionController FarmSessionController { get; init; }
     public AutomaticTreasureCofferDebugController AutomaticTreasureCofferDebugController { get; init; }
     public ShopInspectorController ShopInspectorController { get; init; }
+    public ShopPurchaseController ShopPurchaseController { get; init; }
+    public CurrentCurrencyShopPageMatcher CurrentCurrencyShopPageMatcher { get; init; }
+    public ManualCurrencyShoppingController ManualCurrencyShoppingController { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -129,8 +132,11 @@ public sealed class Plugin : IDalamudPlugin
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
         ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
+        ShopPurchaseController = new ShopPurchaseController(Framework, GameGui, Logger);
+        CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
+        ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, FarmSessionController, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
 
-        ConfigWindow = new ConfigWindow(Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
+        ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
         DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController, TreasureCofferFarmController);
@@ -188,7 +194,9 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
         DebugWindow.Dispose();
         AutomaticTreasureCofferDebugController.Dispose();
+        ManualCurrencyShoppingController.Dispose();
         ShopInspectorController.Dispose();
+        ShopPurchaseController.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
         TreasureCofferFarmController.Dispose();

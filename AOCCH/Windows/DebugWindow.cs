@@ -48,6 +48,9 @@ public sealed class DebugWindow : Window, IDisposable
     private readonly FarmSessionController farmSessionController;
     private readonly TreasureCofferFarmController treasureCofferFarmController;
     private DebugSection selectedSection = DebugSection.Overview;
+    private int shopAtkValueStartIndex;
+    private int shopAtkValueCount = 160;
+    private int shopMenuIndex;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -222,6 +225,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Captured: {FormatTimestamp(snapshot.CapturedAt)}");
         ImGui.TextUnformatted($"SelectIconString Open: {(snapshot.IsSelectIconStringOpen ? "Yes" : "No")}");
         ImGui.TextUnformatted($"ShopExchangeCurrency Open: {(snapshot.IsShopExchangeCurrencyOpen ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"ShopExchangeItem Open: {(snapshot.IsShopExchangeItemOpen ? "Yes" : "No")}");
 
         if (snapshot.IsShopExchangeCurrencyOpen)
         {
@@ -230,6 +234,7 @@ public sealed class DebugWindow : Window, IDisposable
                 : $"{snapshot.CurrencyName} ({snapshot.CurrencyItemId})";
             ImGui.TextUnformatted($"Currency: {currencyLabel}");
             ImGui.TextUnformatted($"Currency Amount: {snapshot.CurrencyAmount}");
+            ImGui.TextUnformatted($"Selected Tab: {snapshot.SelectedTabId}");
         }
 
         if (!string.IsNullOrEmpty(snapshot.LastError))
@@ -237,10 +242,71 @@ public sealed class DebugWindow : Window, IDisposable
             ImGui.TextWrapped($"Last Error: {snapshot.LastError}");
         }
 
+        ImGui.TextWrapped($"Purchase Status: {plugin.ShopPurchaseController.LastStatus}");
+        ImGui.TextWrapped($"AtkValue Capture: {plugin.ShopInspectorController.AtkValueCaptureStatus}");
+
+        shopMenuIndex = plugin.ShopInspectorController.CurrentMenuIndex < 0 ? shopMenuIndex : plugin.ShopInspectorController.CurrentMenuIndex;
+        ImGui.SetNextItemWidth(90f);
+        if (ImGui.InputInt("Current Menu Index", ref shopMenuIndex))
+        {
+            plugin.ShopInspectorController.SetCurrentMenuIndex(shopMenuIndex);
+        }
+
+        var currentMenuLabel = plugin.ShopInspectorController.CurrentMenuLabel;
+        ImGui.TextWrapped($"Current Menu Label: {(string.IsNullOrEmpty(currentMenuLabel) ? "Unknown" : currentMenuLabel)}");
+        ImGui.TextWrapped($"Latched Menu: {(plugin.ShopInspectorController.LatchedMenuIndex < 0 ? "None" : $"{plugin.ShopInspectorController.LatchedMenuIndex} / {plugin.ShopInspectorController.LatchedMenuLabel}")}");
+        ImGui.TextWrapped($"Effective Menu: {(plugin.ShopInspectorController.EffectiveMenuIndex < 0 ? "Unknown" : $"{plugin.ShopInspectorController.EffectiveMenuIndex} / {plugin.ShopInspectorController.EffectiveMenuLabel}")}");
+
         if (ImGui.Button("Log Current Shop Snapshot"))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=log-shop-snapshot");
             plugin.ShopInspectorController.LogCurrentSnapshot();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Log Static Catalog Capture"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=log-currency-catalog-capture");
+            plugin.ShopInspectorController.LogCurrentCurrencyCatalogCapture();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Capture Menu Context"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=capture-menu-context");
+            plugin.ShopInspectorController.CaptureManualMenuContext();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Clear Latched Menu"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=clear-latched-menu");
+            plugin.ShopInspectorController.ClearLatchedMenuContext();
+        }
+
+        ImGui.SetNextItemWidth(90f);
+        ImGui.InputInt("AtkValue Start", ref shopAtkValueStartIndex);
+        ImGui.SetNextItemWidth(90f);
+        ImGui.InputInt("AtkValue Count", ref shopAtkValueCount);
+
+        if (ImGui.Button("Capture Baseline AtkValues"))
+        {
+            plugin.Logger.Info($"[DebugWindow] op=ui-action action=capture-shop-atkvalues startIndex={shopAtkValueStartIndex} count={shopAtkValueCount}");
+            plugin.ShopInspectorController.CaptureShopExchangeCurrencyAtkValues(shopAtkValueStartIndex, shopAtkValueCount);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Compare Current AtkValues"))
+        {
+            plugin.Logger.Info($"[DebugWindow] op=ui-action action=compare-shop-atkvalues startIndex={shopAtkValueStartIndex} count={shopAtkValueCount}");
+            plugin.ShopInspectorController.CompareShopExchangeCurrencyAtkValues(shopAtkValueStartIndex, shopAtkValueCount);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Clear AtkValue Baseline"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=clear-shop-atkvalue-baseline");
+            plugin.ShopInspectorController.ClearCapturedShopExchangeCurrencyAtkValues();
         }
 
         ImGui.Separator();
@@ -258,28 +324,81 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Shop Entries");
+        ImGui.TextUnformatted("ShopExchangeCurrency Entries");
         if (snapshot.ShopEntries.Count == 0)
         {
             ImGui.TextUnformatted("No ShopExchangeCurrency entries detected.");
+        }
+        else if (ImGui.BeginTable("ShopInspectorEntries", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
+        {
+            ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 90f);
+            ImGui.TableSetupColumn("Name");
+            ImGui.TableSetupColumn("Cost", ImGuiTableColumnFlags.WidthFixed, 90f);
+            ImGui.TableSetupColumn("Currency", ImGuiTableColumnFlags.WidthFixed, 140f);
+            ImGui.TableSetupColumn("Row Index", ImGuiTableColumnFlags.WidthFixed, 80f);
+            ImGui.TableSetupColumn("Action", ImGuiTableColumnFlags.WidthFixed, 70f);
+            ImGui.TableHeadersRow();
+
+            foreach (var entry in snapshot.ShopEntries)
+            {
+                ImGui.TableNextRow();
+                ImGui.PushID($"currency_{entry.ItemId}_{entry.RowIndex}");
+                ImGui.TableSetColumnIndex(0);
+                ImGui.TextUnformatted(entry.ItemId.ToString(CultureInfo.InvariantCulture));
+
+                ImGui.TableNextColumn();
+                ImGui.TextWrapped(entry.ItemName);
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(entry.Cost.ToString(CultureInfo.InvariantCulture));
+
+                ImGui.TableNextColumn();
+                ImGui.TextWrapped(string.IsNullOrEmpty(entry.CurrencyName)
+                    ? entry.CurrencyItemId.ToString(CultureInfo.InvariantCulture)
+                    : entry.CurrencyName);
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(entry.RowIndex.ToString(CultureInfo.InvariantCulture));
+
+                ImGui.TableNextColumn();
+                ImGui.BeginDisabled(plugin.ShopPurchaseController.IsBusy);
+                if (ImGui.Button("Buy 1"))
+                {
+                    plugin.Logger.Info($"[DebugWindow] op=ui-action action=buy-shop-exchange-currency itemId={entry.ItemId} rowIndex={entry.RowIndex}");
+                    plugin.ShopPurchaseController.TryBuyCurrencyEntry(entry, 1);
+                }
+                ImGui.EndDisabled();
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("ShopExchangeItem Entries");
+        if (snapshot.ItemExchangeEntries.Count == 0)
+        {
+            ImGui.TextUnformatted("No ShopExchangeItem entries detected.");
             return;
         }
 
-        if (!ImGui.BeginTable("ShopInspectorEntries", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
+        if (!ImGui.BeginTable("ShopInspectorItemExchangeEntries", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
         {
             return;
         }
 
         ImGui.TableSetupColumn("Item ID", ImGuiTableColumnFlags.WidthFixed, 90f);
         ImGui.TableSetupColumn("Name");
-        ImGui.TableSetupColumn("Cost", ImGuiTableColumnFlags.WidthFixed, 90f);
-        ImGui.TableSetupColumn("Currency", ImGuiTableColumnFlags.WidthFixed, 140f);
+        ImGui.TableSetupColumn("Quantity", ImGuiTableColumnFlags.WidthFixed, 70f);
+        ImGui.TableSetupColumn("Requirements");
         ImGui.TableSetupColumn("Row Index", ImGuiTableColumnFlags.WidthFixed, 80f);
+        ImGui.TableSetupColumn("Action", ImGuiTableColumnFlags.WidthFixed, 70f);
         ImGui.TableHeadersRow();
 
-        foreach (var entry in snapshot.ShopEntries)
+        foreach (var entry in snapshot.ItemExchangeEntries)
         {
             ImGui.TableNextRow();
+            ImGui.PushID($"exchange_{entry.ItemId}_{entry.RowIndex}");
             ImGui.TableSetColumnIndex(0);
             ImGui.TextUnformatted(entry.ItemId.ToString(CultureInfo.InvariantCulture));
 
@@ -287,15 +406,26 @@ public sealed class DebugWindow : Window, IDisposable
             ImGui.TextWrapped(entry.ItemName);
 
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(entry.Cost.ToString(CultureInfo.InvariantCulture));
+            ImGui.TextUnformatted(entry.Quantity.ToString(CultureInfo.InvariantCulture));
 
             ImGui.TableNextColumn();
-            ImGui.TextWrapped(string.IsNullOrEmpty(entry.CurrencyName)
-                ? entry.CurrencyItemId.ToString(CultureInfo.InvariantCulture)
-                : entry.CurrencyName);
+            var requirementsText = entry.RequiredItems.Count == 0
+                ? "None"
+                : string.Join(", ", entry.RequiredItems.Select(requiredItem => $"{requiredItem.ItemName} x{requiredItem.RequiredAmount}"));
+            ImGui.TextWrapped(requirementsText);
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(entry.RowIndex.ToString(CultureInfo.InvariantCulture));
+
+            ImGui.TableNextColumn();
+            ImGui.BeginDisabled(plugin.ShopPurchaseController.IsBusy);
+            if (ImGui.Button("Buy 1"))
+            {
+                plugin.Logger.Info($"[DebugWindow] op=ui-action action=buy-shop-exchange-item itemId={entry.ItemId} rowIndex={entry.RowIndex}");
+                plugin.ShopPurchaseController.TryBuyItemExchangeEntry(entry, 1);
+            }
+            ImGui.EndDisabled();
+            ImGui.PopID();
         }
 
         ImGui.EndTable();

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using AOCCH.Data;
 using AOCCH.Logging;
+using AOCCH.Shopping;
 
 namespace AOCCH;
 
@@ -19,6 +20,32 @@ public enum StartingPotFateMode
     Auto,
     PersistentPots,
     PleadingPots,
+}
+
+public enum CurrencyShopTargetMode
+{
+    Keep,
+    BuyAmount,
+    SpendExcess,
+}
+
+[Serializable]
+public sealed class CurrencyShopReserveSetting
+{
+    public uint CurrencyItemId { get; set; }
+    public int ReserveAmount { get; set; }
+}
+
+[Serializable]
+public sealed class CurrencyShopTarget
+{
+    public bool Enabled { get; set; } = true;
+    public uint ItemId { get; set; }
+    public int MenuIndex { get; set; }
+    public int TabId { get; set; } = -1;
+    public CurrencyShopTargetMode Mode { get; set; }
+    public int TargetAmount { get; set; } = 1;
+    public int Priority { get; set; }
 }
 
 [Serializable]
@@ -82,6 +109,14 @@ public class Configuration : IPluginConfiguration
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;
+    public bool EnableManualCurrencyShopping { get; set; }
+    public bool EnableAutoCurrencyShopping { get; set; }
+    public int SilverStartThreshold { get; set; }
+    public int GoldStartThreshold { get; set; }
+    public bool RunOnlyWhenIdle { get; set; } = true;
+    public bool RequireVendorNearby { get; set; } = true;
+    public List<CurrencyShopReserveSetting> CurrencyShopReserves { get; set; } = [];
+    public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
 
     public bool IsCriticalEncounterEnabled(uint id)
         => !DisabledCriticalEncounterIds.Contains(id);
@@ -128,6 +163,7 @@ public class Configuration : IPluginConfiguration
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
+        ClampCurrencyShopSettings();
         Plugin.PluginInterface.SavePluginConfig(this);
         logger?.Debug("Configuration saved.");
     }
@@ -137,6 +173,7 @@ public class Configuration : IPluginConfiguration
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
+        ClampCurrencyShopSettings();
 
         if (Version >= 2)
         {
@@ -251,5 +288,26 @@ public class Configuration : IPluginConfiguration
 
         disabledIds.Add(id);
         return true;
+    }
+
+    private void ClampCurrencyShopSettings()
+    {
+        CurrencyShopReserves ??= [];
+        CurrencyShopTargets ??= [];
+
+        foreach (var reserve in CurrencyShopReserves)
+        {
+            reserve.ReserveAmount = Math.Max(0, reserve.ReserveAmount);
+        }
+
+        SilverStartThreshold = Math.Max(0, SilverStartThreshold);
+        GoldStartThreshold = Math.Max(0, GoldStartThreshold);
+
+        foreach (var target in CurrencyShopTargets)
+        {
+            target.TabId = Math.Max(-1, target.TabId);
+            target.TargetAmount = Math.Max(0, target.TargetAmount);
+            target.Priority = Math.Max(0, target.Priority);
+        }
     }
 }

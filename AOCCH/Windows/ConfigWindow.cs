@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using AOCCH.Data;
 using AOCCH.Logging;
+using AOCCH.Shopping;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
@@ -12,6 +13,7 @@ namespace AOCCH.Windows;
 
 public class ConfigWindow : Window, IDisposable
 {
+    private static readonly string[] CurrencyShopTargetModeLabels = ["Keep", "Buy Amount", "Spend Excess"];
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
     private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (North)", "Pleading Pots (South)"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
@@ -20,6 +22,7 @@ public class ConfigWindow : Window, IDisposable
     private const float SettingsTextInputMinWidth = 120f;
     private const float SettingsTextInputMaxWidth = 240f;
 
+    private readonly Plugin plugin;
     private readonly Configuration configuration;
     private readonly OccultCrescentData data;
     private readonly OccultCrescentNameResolver nameResolver;
@@ -30,6 +33,7 @@ public class ConfigWindow : Window, IDisposable
     // This allows for labels to be dynamic, like "{FPS Counter}fps###XYZ counter window",
     // and the window ID will always be "###XYZ counter window" for ImGui
     public ConfigWindow(
+        Plugin plugin,
         Configuration configuration,
         OccultCrescentData data,
         OccultCrescentNameResolver nameResolver,
@@ -40,6 +44,7 @@ public class ConfigWindow : Window, IDisposable
         Size = new Vector2(620, 360);
         SizeCondition = ImGuiCond.FirstUseEver;
 
+        this.plugin = plugin;
         this.configuration = configuration;
         this.data = data;
         this.nameResolver = nameResolver;
@@ -83,6 +88,12 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.BeginTabItem("Settings"))
         {
             DrawSettingsTab();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Shopping"))
+        {
+            DrawShoppingTab();
             ImGui.EndTabItem();
         }
 
@@ -430,6 +441,249 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
+    }
+
+    private void DrawShoppingTab()
+    {
+        var enableManualCurrencyShopping = configuration.EnableManualCurrencyShopping;
+        if (ImGui.Checkbox("Enable Manual Currency Shopping", ref enableManualCurrencyShopping))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableManualCurrencyShopping old={configuration.EnableManualCurrencyShopping} new={enableManualCurrencyShopping}");
+            configuration.EnableManualCurrencyShopping = enableManualCurrencyShopping;
+            configuration.Save();
+        }
+
+        var enableAutoCurrencyShopping = configuration.EnableAutoCurrencyShopping;
+        if (ImGui.Checkbox("Enable Automatic Shopping Triggers", ref enableAutoCurrencyShopping))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableAutoCurrencyShopping old={configuration.EnableAutoCurrencyShopping} new={enableAutoCurrencyShopping}");
+            configuration.EnableAutoCurrencyShopping = enableAutoCurrencyShopping;
+            configuration.Save();
+        }
+
+        var silverStartThreshold = configuration.SilverStartThreshold;
+        ImGui.SetNextItemWidth(120f);
+        if (ImGui.InputInt("Silver Start Threshold", ref silverStartThreshold))
+        {
+            configuration.SilverStartThreshold = Math.Max(0, silverStartThreshold);
+            configuration.Save();
+        }
+
+        var goldStartThreshold = configuration.GoldStartThreshold;
+        ImGui.SetNextItemWidth(120f);
+        if (ImGui.InputInt("Gold Start Threshold", ref goldStartThreshold))
+        {
+            configuration.GoldStartThreshold = Math.Max(0, goldStartThreshold);
+            configuration.Save();
+        }
+
+        var runOnlyWhenIdle = configuration.RunOnlyWhenIdle;
+        if (ImGui.Checkbox("Run Only When Idle", ref runOnlyWhenIdle))
+        {
+            configuration.RunOnlyWhenIdle = runOnlyWhenIdle;
+            configuration.Save();
+        }
+
+        var requireVendorNearby = configuration.RequireVendorNearby;
+        if (ImGui.Checkbox("Require Vendor Nearby", ref requireVendorNearby))
+        {
+            configuration.RequireVendorNearby = requireVendorNearby;
+            configuration.Save();
+        }
+
+        var snapshot = plugin.ShopInspectorController.Snapshot;
+        var hasMatch = plugin.CurrentCurrencyShopPageMatcher.TryMatch(snapshot, out var currentMatch, out var matchReason);
+        var matchedPage = currentMatch?.Page;
+        var matchedTab = currentMatch?.Tab;
+        ImGui.TextWrapped($"Current Page Match: {(hasMatch && currentMatch != null ? $"{matchedPage!.MenuLabel} / {matchedTab!.TabLabel} (Tab {matchedTab.TabId})" : matchReason)}");
+        ImGui.TextWrapped($"Reported Shop Tab: {snapshot.SelectedTabId}");
+        ImGui.TextWrapped($"Shopping Status: {plugin.ManualCurrencyShoppingController.Status}");
+        ImGui.TextWrapped($"Shopping Progress: groups={plugin.ManualCurrencyShoppingController.CompletedGroupCount} purchases={plugin.ManualCurrencyShoppingController.CompletedPurchaseCount} current={plugin.ManualCurrencyShoppingController.CurrentGroupSummary}");
+        ImGui.TextWrapped($"Shopping Trigger: {plugin.ManualCurrencyShoppingController.TriggerStatus}");
+
+        if (plugin.ManualCurrencyShoppingController.IsRunning)
+        {
+            if (ImGui.Button("Stop Automatic Shopping"))
+            {
+                logger.Info("[Config] op=ui-action action=stop-automatic-shopping");
+                plugin.ManualCurrencyShoppingController.Stop("Automatic shopping stop requested.");
+            }
+        }
+        else
+        {
+            using (ImRaii.Disabled(!configuration.EnableManualCurrencyShopping))
+            {
+                if (ImGui.Button("Run Automatic Shopping"))
+                {
+                    logger.Info("[Config] op=ui-action action=run-automatic-shopping");
+                    plugin.ManualCurrencyShoppingController.Start();
+                }
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Currency Reserves");
+        if (hasMatch && matchedPage != null)
+        {
+            var reserve = GetOrCreateReserve(matchedPage.CurrencyItemId);
+            var reserveAmount = reserve.ReserveAmount;
+            ImGui.SetNextItemWidth(120f);
+            if (ImGui.InputInt($"{matchedPage.CurrencyName} Reserve##{matchedPage.CurrencyItemId}", ref reserveAmount))
+            {
+                reserve.ReserveAmount = Math.Max(0, reserveAmount);
+                logger.Info($"[Config] op=setting-change key=CurrencyReserve currencyItemId={matchedPage.CurrencyItemId} new={reserve.ReserveAmount}");
+                configuration.Save();
+            }
+        }
+        else if (configuration.CurrencyShopReserves.Count == 0)
+        {
+            ImGui.TextUnformatted("Open a supported currency page to edit its reserve.");
+        }
+        else
+        {
+            foreach (var reserve in configuration.CurrencyShopReserves)
+            {
+                ImGui.TextWrapped($"Currency {reserve.CurrencyItemId}: reserve {reserve.ReserveAmount}");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Shopping Targets");
+        if (configuration.CurrencyShopTargets.Count == 0)
+        {
+            ImGui.TextUnformatted("No current-page shopping targets configured.");
+        }
+        else
+        {
+            for (var i = 0; i < configuration.CurrencyShopTargets.Count; i++)
+            {
+                var target = configuration.CurrencyShopTargets[i];
+                var targetPage = ShopCurrencyCatalog.Pages.FirstOrDefault(page => page.MenuIndex == target.MenuIndex);
+                var targetTab = targetPage?.Tabs.FirstOrDefault(tab => tab.TabId == target.TabId);
+                var targetItem = targetTab?.Items.FirstOrDefault(item => item.ItemId == target.ItemId);
+                var targetItemName = targetItem == null
+                    ? null
+                    : ShoppingItemNameResolver.ResolveItemName(targetItem.ItemId, targetItem.Name);
+                ImGui.PushID($"shopping-target-{i}");
+
+                var enabled = target.Enabled;
+                if (ImGui.Checkbox("##enabled", ref enabled))
+                {
+                    target.Enabled = enabled;
+                    configuration.Save();
+                }
+                ImGui.SameLine();
+                ImGui.TextWrapped(targetItem == null
+                    ? $"Item {target.ItemId} on menu {target.MenuIndex} tab {target.TabId}"
+                    : $"{targetItemName} | {targetPage?.MenuLabel} / {targetTab?.TabLabel}");
+
+                var mode = (int)target.Mode;
+                ImGui.SetNextItemWidth(150f);
+                if (ImGui.Combo("Mode", ref mode, CurrencyShopTargetModeLabels, CurrencyShopTargetModeLabels.Length))
+                {
+                    target.Mode = (CurrencyShopTargetMode)mode;
+                    configuration.Save();
+                }
+
+                ImGui.SetNextItemWidth(90f);
+                var amount = target.TargetAmount;
+                if (ImGui.InputInt("Amount", ref amount))
+                {
+                    target.TargetAmount = Math.Max(0, amount);
+                    configuration.Save();
+                }
+
+                ImGui.SetNextItemWidth(90f);
+                var priority = target.Priority;
+                if (ImGui.InputInt("Priority", ref priority))
+                {
+                    target.Priority = Math.Max(0, priority);
+                    configuration.Save();
+                }
+
+                if (ImGui.Button("Remove"))
+                {
+                    configuration.CurrencyShopTargets.RemoveAt(i);
+                    configuration.Save();
+                    ImGui.PopID();
+                    break;
+                }
+
+                ImGui.Separator();
+                ImGui.PopID();
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Current Page/Tab Catalog Browser");
+        if (!hasMatch || matchedPage == null || matchedTab == null)
+        {
+            ImGui.TextUnformatted("Open a supported ShopExchangeCurrency page/tab to browse its items.");
+            return;
+        }
+
+        if (!ImGui.BeginTable("CurrentPageShoppingCatalog", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Item");
+        ImGui.TableSetupColumn("Cost", ImGuiTableColumnFlags.WidthFixed, 70f);
+        ImGui.TableSetupColumn("Row", ImGuiTableColumnFlags.WidthFixed, 60f);
+        ImGui.TableSetupColumn("Target", ImGuiTableColumnFlags.WidthFixed, 70f);
+        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
+        ImGui.TableHeadersRow();
+
+        foreach (var item in matchedTab.Items)
+        {
+            var existingTarget = configuration.CurrencyShopTargets.FirstOrDefault(target => target.ItemId == item.ItemId && target.MenuIndex == matchedPage.MenuIndex && target.TabId == matchedTab.TabId);
+            var itemName = ShoppingItemNameResolver.ResolveItemName(item.ItemId, item.Name);
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.TextWrapped(itemName);
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(item.Cost.ToString());
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(item.RowIndex.ToString());
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(existingTarget == null ? "No" : existingTarget.Mode.ToString());
+            ImGui.TableNextColumn();
+            using var disabled = ImRaii.Disabled(existingTarget != null);
+            if (ImGui.Button($"Add##{matchedPage.MenuIndex}_{matchedTab.TabId}_{item.ItemId}"))
+            {
+                configuration.CurrencyShopTargets.Add(new CurrencyShopTarget
+                {
+                    Enabled = true,
+                    ItemId = item.ItemId,
+                    MenuIndex = matchedPage.MenuIndex,
+                    TabId = matchedTab.TabId,
+                    Mode = CurrencyShopTargetMode.Keep,
+                    TargetAmount = 1,
+                    Priority = configuration.CurrencyShopTargets.Count,
+                });
+                configuration.Save();
+            }
+        }
+
+        ImGui.EndTable();
+    }
+
+    private CurrencyShopReserveSetting GetOrCreateReserve(uint currencyItemId)
+    {
+        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == currencyItemId);
+        if (reserve != null)
+        {
+            return reserve;
+        }
+
+        reserve = new CurrencyShopReserveSetting
+        {
+            CurrencyItemId = currencyItemId,
+            ReserveAmount = 0,
+        };
+        configuration.CurrencyShopReserves.Add(reserve);
+        configuration.Save();
+        return reserve;
     }
 
     private void DrawCriticalEncounterCheckboxList()
