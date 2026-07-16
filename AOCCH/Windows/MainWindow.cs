@@ -126,6 +126,13 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
+        if (DrawIconButton(FontAwesomeIcon.Store, "toggle-shopping", "Open Shopping", iconOffset: new Vector2(0f, -0.5f)))
+        {
+            plugin.Logger.Info("[MainWindow] op=ui-action action=open-shopping");
+            plugin.OpenShoppingUi();
+        }
+
+        ImGui.SameLine();
         if (DrawIconButton(FontAwesomeIcon.Scroll, "toggle-log", "Open Log"))
         {
             plugin.ToggleLogUi();
@@ -147,7 +154,7 @@ public sealed class MainWindow : Window, IDisposable
     private string? GetPanicStopBlocker()
         => scanner.Snapshot.IsInSouthHorn ? null : "Panic Stop requires South Horn.";
 
-    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null)
+    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null)
     {
         const float IconScale = 0.85f;
         var buttonSize = new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight());
@@ -173,6 +180,12 @@ public sealed class MainWindow : Window, IDisposable
         var iconPosition = new Vector2(
             rectMin.X + ((rectMax.X - rectMin.X) - iconSize.X) * 0.5f,
             rectMin.Y + ((rectMax.Y - rectMin.Y) - iconSize.Y) * 0.5f);
+        if (iconOffset.HasValue)
+        {
+            iconPosition += iconOffset.Value;
+        }
+
+        iconPosition = new Vector2(MathF.Round(iconPosition.X), MathF.Round(iconPosition.Y));
         drawList.AddText(UiBuilder.IconFont, iconFontSize, iconPosition, iconColor, iconText);
 
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))

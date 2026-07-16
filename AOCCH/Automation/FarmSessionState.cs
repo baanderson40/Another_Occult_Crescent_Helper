@@ -23,6 +23,7 @@ public enum FarmSessionState
     ResumingInterruptedCe,
     ResumingInterruptedFate,
     ResumingInterruptedPotFate,
+    RunningCurrencyShopping,
     IdleWaiting,
     Stopping,
     Stopped,

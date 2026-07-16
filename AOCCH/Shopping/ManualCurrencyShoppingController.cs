@@ -19,12 +19,15 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private const uint ExpeditionAntiquarianDataId = 1053614;
     private const uint EnlightenmentSilverPieceItemId = 45043;
     private const uint EnlightenmentGoldPieceItemId = 45044;
+    private const float VendorInteractionRange = 3.25f;
     private static readonly TimeSpan NavigationRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan NavigationSettleDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan NavigationLogThrottle = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan AutoStartCooldown = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan VendorDismountRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan VendorDismountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan VendorMenuOpenTimeout = TimeSpan.FromSeconds(3);
+    private const int MaxVendorMenuOpenAttempts = 3;
 
     private readonly IFramework framework;
     private readonly IGameGui gameGui;
@@ -35,7 +38,6 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private readonly ShopInspectorController shopInspectorController;
     private readonly ShopPurchaseController shopPurchaseController;
     private readonly CurrentCurrencyShopPageMatcher pageMatcher;
-    private readonly FarmSessionController farmSessionController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly BuffRotationController buffRotationController;
@@ -48,6 +50,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private string status = "Idle";
     private CurrencyShopTarget? activeTarget;
     private int? activeTargetIndex;
+    private int activeTargetOriginalAmount;
+    private string activeTargetItemName = string.Empty;
+    private ShoppingPurchaseIntent activePurchaseIntent;
     private bool purchaseWasInProgress;
     private bool completedAnyPurchases;
     private int completedGroupCount;
@@ -62,6 +67,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private string triggerStatus = "Automatic shopping disabled.";
     private bool vendorDismountPending;
     private DateTimeOffset vendorDismountStartedAt = DateTimeOffset.MinValue;
+    private bool vendorMenuOpenPending;
+    private DateTimeOffset vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+    private int vendorMenuOpenAttemptCount;
+    private bool vendorTravelPending;
+    private bool vendorRecoveryAttempted;
+    private bool vendorRecoveryPending;
 
     public ManualCurrencyShoppingController(
         IFramework framework,
@@ -73,7 +84,6 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         ShopInspectorController shopInspectorController,
         ShopPurchaseController shopPurchaseController,
         CurrentCurrencyShopPageMatcher pageMatcher,
-        FarmSessionController farmSessionController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
         BuffRotationController buffRotationController,
@@ -90,7 +100,6 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         this.shopInspectorController = shopInspectorController;
         this.shopPurchaseController = shopPurchaseController;
         this.pageMatcher = pageMatcher;
-        this.farmSessionController = farmSessionController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.buffRotationController = buffRotationController;
@@ -158,6 +167,28 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
     }
 
+    public string CurrentStatusSummary
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (activeTarget == null || activeTargetIndex == null || string.IsNullOrEmpty(activeTargetItemName))
+                {
+                    return status;
+                }
+
+                return activePurchaseIntent switch
+                {
+                    ShoppingPurchaseIntent.Buy => $"{status} | Buying {activeTargetItemName} {Math.Max(0, activeTargetOriginalAmount - activeTarget.BuyAmount)}/{activeTargetOriginalAmount}",
+                    ShoppingPurchaseIntent.Keep => $"{status} | Keeping {activeTargetItemName} {GetItemCount(activeTarget.ItemId)}/{activeTarget.KeepAmount}",
+                    ShoppingPurchaseIntent.KeepBuying => $"{status} | Keep Buying {activeTargetItemName}",
+                    _ => status,
+                };
+            }
+        }
+    }
+
     public string TriggerStatus
     {
         get
@@ -167,6 +198,19 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return triggerStatus;
             }
         }
+    }
+
+    public bool NeedsControlNow(DateTimeOffset now, bool allowDuringFarmSession, out string reason)
+    {
+        if (IsRunning)
+        {
+            reason = Status;
+            return true;
+        }
+
+        var evaluation = EvaluateAutoStart(allowDuringFarmSession);
+        reason = evaluation.Reason;
+        return evaluation.ShouldRun;
     }
 
     public void Dispose()
@@ -188,6 +232,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             status = "Starting manual current-page shopping.";
             activeTarget = null;
             activeTargetIndex = null;
+            activeTargetOriginalAmount = 0;
+            activeTargetItemName = string.Empty;
             purchaseWasInProgress = false;
             completedAnyPurchases = false;
             completedGroupCount = 0;
@@ -200,6 +246,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
             vendorDismountPending = false;
             vendorDismountStartedAt = DateTimeOffset.MinValue;
+            vendorTravelPending = false;
+            vendorMenuOpenPending = false;
+            vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+            vendorMenuOpenAttemptCount = 0;
+            vendorRecoveryAttempted = false;
+            vendorRecoveryPending = false;
         }
 
         logger.Info("[ManualCurrencyShopping] op=start");
@@ -214,6 +266,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             status = reason;
             activeTarget = null;
             activeTargetIndex = null;
+            activeTargetOriginalAmount = 0;
+            activeTargetItemName = string.Empty;
             purchaseWasInProgress = false;
             completedAnyPurchases = false;
             completedGroupCount = 0;
@@ -226,6 +280,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
             vendorDismountPending = false;
             vendorDismountStartedAt = DateTimeOffset.MinValue;
+            vendorTravelPending = false;
+            vendorMenuOpenPending = false;
+            vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+            vendorMenuOpenAttemptCount = 0;
+            vendorRecoveryAttempted = false;
+            vendorRecoveryPending = false;
         }
 
         autoStartBlockedUntil = DateTimeOffset.UtcNow + AutoStartCooldown;
@@ -342,7 +402,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return;
         }
 
-        var (target, targetIndex, itemDefinition) = targetSelection.Value;
+        var (target, targetIndex, itemDefinition, purchaseIntent) = targetSelection.Value;
         if (!shopPurchaseController.TryBuyCurrencyEntry(new LiveShopEntry
         {
             ItemId = itemDefinition.ItemId,
@@ -359,13 +419,16 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
         activeTarget = target;
         activeTargetIndex = targetIndex;
+        activeTargetOriginalAmount = purchaseIntent == ShoppingPurchaseIntent.Buy ? target.BuyAmount : purchaseIntent == ShoppingPurchaseIntent.Keep ? target.KeepAmount : 0;
+        activeTargetItemName = ShoppingItemNameResolver.ResolveItemName(itemDefinition.ItemId, itemDefinition.Name);
+        activePurchaseIntent = purchaseIntent;
         purchaseWasInProgress = true;
-        UpdateStatus($"Running automatic shopping | Buying {ShoppingItemNameResolver.ResolveItemName(itemDefinition.ItemId, itemDefinition.Name)} from {matchedPage.MenuLabel} / {matchedTab.TabLabel} | groups={completedGroupCount} purchases={completedPurchaseCount}");
+        UpdateStatus("Running automatic shopping");
     }
 
     private void EvaluateAndMaybeAutoStart()
     {
-        var evaluation = EvaluateAutoStart();
+        var evaluation = EvaluateAutoStart(allowDuringFarmSession: false);
         lock (gate)
         {
             triggerStatus = evaluation.Reason;
@@ -382,11 +445,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
     }
 
-    private AutoStartEvaluation EvaluateAutoStart()
+    private AutoStartEvaluation EvaluateAutoStart(bool allowDuringFarmSession)
     {
-        if (!configuration.EnableAutoCurrencyShopping)
+        if (!configuration.EnableManualCurrencyShopping)
         {
-            return new(false, "Automatic shopping disabled.");
+            return new(false, "Shopping disabled.");
         }
 
         if (DateTimeOffset.UtcNow < autoStartBlockedUntil)
@@ -399,7 +462,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return new(false, "Automatic shopping already running.");
         }
 
-        if (configuration.RunOnlyWhenIdle)
+        if (true)
         {
             if (condition[ConditionFlag.InCombat])
             {
@@ -411,15 +474,15 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return new(false, "Blocked: player is busy.");
             }
 
-            if (movementController.IsPathBusy || farmSessionController.IsRunning || criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
+            if (movementController.IsPathBusy
+                || criticalEngagementAutomationController.IsRunning
+                || fateAutomationController.IsRunning
+                || buffRotationController.IsRunning
+                || potFarmController.IsRunning
+                || treasureCofferFarmController.IsRunning)
             {
                 return new(false, "Blocked: conflicting automation is active.");
             }
-        }
-
-        if (configuration.RequireVendorNearby && !TryFindVendor(out var vendor))
-        {
-            return new(false, "Blocked: Expedition Antiquarian is not nearby.");
         }
 
         if (!HasActionableTargetsAboveThreshold())
@@ -437,10 +500,10 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return;
         }
 
-        if (activeTarget.Mode == CurrencyShopTargetMode.BuyAmount && activeTarget.TargetAmount > 0)
+        if (activePurchaseIntent == ShoppingPurchaseIntent.Buy && activeTarget.BuyAmount > 0)
         {
             var target = configuration.CurrencyShopTargets[activeTargetIndex.Value];
-            target.TargetAmount = Math.Max(0, target.TargetAmount - 1);
+            target.BuyAmount = Math.Max(0, target.BuyAmount - 1);
             configuration.Save();
         }
 
@@ -448,6 +511,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
         activeTarget = null;
         activeTargetIndex = null;
+        activeTargetOriginalAmount = 0;
+        activeTargetItemName = string.Empty;
+        activePurchaseIntent = ShoppingPurchaseIntent.None;
     }
 
     private bool EnsureDesiredShopContext(LiveShopSnapshot snapshot)
@@ -464,6 +530,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
         if (snapshot.IsSelectIconStringOpen)
         {
+            vendorMenuOpenPending = false;
+            vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+            vendorMenuOpenAttemptCount = 0;
             if (TrySelectMenuEntry(desiredGroup.Value.MenuIndex))
             {
                 nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
@@ -481,6 +550,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         {
             vendorDismountPending = false;
             vendorDismountStartedAt = DateTimeOffset.MinValue;
+            vendorTravelPending = false;
+            vendorRecoveryPending = false;
+            vendorMenuOpenPending = false;
+            vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+            vendorMenuOpenAttemptCount = 0;
             if (!pageMatcher.TryMatch(snapshot, out var match, out var matchReason)
                 || match == null)
             {
@@ -556,6 +630,104 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return true;
         }
 
+        if (vendorRecoveryPending)
+        {
+            if (movementController.IsPathBusy
+                || movementController.State is MovementState.UsingReturn or MovementState.Pathfinding or MovementState.UsingAethernet or MovementState.WaitingForArrival)
+            {
+                UpdateStatus("Running automatic shopping | Returning to base camp to locate vendor.");
+                return false;
+            }
+
+            if (movementController.State is MovementState.Failed or MovementState.TimedOut)
+            {
+                Stop($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                return false;
+            }
+
+            if (movementController.State is MovementState.Arrived or MovementState.Stopped or MovementState.Idle)
+            {
+                vendorRecoveryPending = false;
+                nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
+                UpdateStatus("Running automatic shopping | Base camp recovery complete; locating vendor.");
+                return false;
+            }
+        }
+
+        if (!TryFindVendor(out var vendor) || vendor == null)
+        {
+            if (!vendorRecoveryAttempted)
+            {
+                if (!movementController.RecoverToBaseCamp())
+                {
+                    Stop($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                    return false;
+                }
+
+                vendorRecoveryAttempted = true;
+                vendorRecoveryPending = true;
+                nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
+                UpdateStatus("Running automatic shopping | Returning to base camp to locate vendor.");
+                logger.Info("[ManualCurrencyShopping] op=vendor-recovery-start result=true");
+                return false;
+            }
+
+            Stop("Skipped shopping: vendor unavailable after base camp recovery.");
+            return false;
+        }
+
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
+        if (localPlayer == null)
+        {
+            Stop("Failed: player position is unavailable.");
+            return false;
+        }
+
+        var vendorDistance = Vector3.Distance(vendor.Position, localPlayer.Position);
+        if (vendorDistance > VendorInteractionRange)
+        {
+            if (vendorTravelPending)
+            {
+                if (movementController.IsPathBusy)
+                {
+                    UpdateStatus($"Running automatic shopping | Traveling to vendor ({vendorDistance:0.0}y remaining).");
+                    return false;
+                }
+
+                if (movementController.State is MovementState.Failed or MovementState.TimedOut)
+                {
+                    Stop($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                    return false;
+                }
+            }
+
+            if (!movementController.StartDirectMove("Approach Expedition Antiquarian", vendor.Position, VendorInteractionRange, shouldMountBeforeStep: true))
+            {
+                Stop($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                return false;
+            }
+
+            vendorTravelPending = true;
+            nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
+            UpdateStatus($"Running automatic shopping | Traveling to Expedition Antiquarian ({vendorDistance:0.0}y).");
+            logger.Info($"[ManualCurrencyShopping] op=vendor-travel-start distance={vendorDistance:0.0}");
+            return false;
+        }
+
+        if (vendorTravelPending)
+        {
+            vendorTravelPending = false;
+            if (movementController.IsPathBusy)
+            {
+                movementController.Stop("Reached currency shop vendor interaction range.");
+            }
+
+            nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
+            UpdateStatus("Running automatic shopping | Vendor interaction range reached.");
+            logger.Info($"[ManualCurrencyShopping] op=vendor-travel-arrived distance={vendorDistance:0.0}");
+            return false;
+        }
+
         if (condition[ConditionFlag.Mounted])
         {
             if (!vendorDismountPending)
@@ -593,10 +765,38 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return false;
         }
 
+        if (vendorMenuOpenPending)
+        {
+            if (DateTimeOffset.UtcNow - vendorMenuOpenStartedAt < VendorMenuOpenTimeout)
+            {
+                UpdateStatus($"Waiting for vendor menu to open (attempt {vendorMenuOpenAttemptCount}/{MaxVendorMenuOpenAttempts}).");
+                return false;
+            }
+
+            logger.Warning($"[ManualCurrencyShopping] op=vendor-menu-timeout attempt={vendorMenuOpenAttemptCount}");
+            vendorMenuOpenPending = false;
+            vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
+            nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
+
+            if (vendorMenuOpenAttemptCount < MaxVendorMenuOpenAttempts)
+            {
+                UpdateStatus($"Retrying vendor menu open (attempt {vendorMenuOpenAttemptCount + 1}/{MaxVendorMenuOpenAttempts}).");
+                logger.Info($"[ManualCurrencyShopping] op=vendor-menu-retry nextAttempt={vendorMenuOpenAttemptCount + 1}");
+                return false;
+            }
+
+            Stop($"Failed: vendor menu did not open after {MaxVendorMenuOpenAttempts} attempt(s).");
+            return false;
+        }
+
         if (TryOpenVendorMenu())
         {
+            vendorMenuOpenPending = true;
+            vendorMenuOpenStartedAt = DateTimeOffset.UtcNow;
+            vendorMenuOpenAttemptCount++;
             nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
-            UpdateStatus("Opening vendor menu.");
+            UpdateStatus($"Opening vendor menu (attempt {vendorMenuOpenAttemptCount}/{MaxVendorMenuOpenAttempts}).");
+            logger.Info($"[ManualCurrencyShopping] op=vendor-menu-wait-start attempt={vendorMenuOpenAttemptCount}");
             return false;
         }
 
@@ -604,13 +804,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         return false;
     }
 
-    private (CurrencyShopTarget Target, int TargetIndex, ShopCurrencyItemDefinition ItemDefinition)? SelectNextTarget(ShopCurrencyPageDefinition matchedPage, ShopCurrencyTabDefinition matchedTab, int availableCurrency)
+    private (CurrencyShopTarget Target, int TargetIndex, ShopCurrencyItemDefinition ItemDefinition, ShoppingPurchaseIntent PurchaseIntent)? SelectNextTarget(ShopCurrencyPageDefinition matchedPage, ShopCurrencyTabDefinition matchedTab, int availableCurrency)
     {
         var candidateTargets = configuration.CurrencyShopTargets
             .Select((target, index) => (Target: target, Index: index))
-            .Where(entry => entry.Target.Enabled && entry.Target.MenuIndex == matchedPage.MenuIndex && entry.Target.TabId == matchedTab.TabId)
+            .Where(entry => entry.Target.MenuIndex == matchedPage.MenuIndex && entry.Target.TabId == matchedTab.TabId)
             .OrderBy(entry => entry.Target.Priority)
-            .ThenBy(entry => GetModeOrder(entry.Target.Mode))
             .ToList();
 
         foreach (var candidate in candidateTargets)
@@ -622,20 +821,21 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             }
 
             var currentCount = (int)GetItemCount(candidate.Target.ItemId);
-            var shouldBuy = candidate.Target.Mode switch
+            // Evaluate each configured item deterministically: Keep first, then Buy, then Keep Buying.
+            if (candidate.Target.KeepAmount > 0 && currentCount < candidate.Target.KeepAmount)
             {
-                CurrencyShopTargetMode.Keep => currentCount < candidate.Target.TargetAmount,
-                CurrencyShopTargetMode.BuyAmount => candidate.Target.TargetAmount > 0,
-                CurrencyShopTargetMode.SpendExcess => true,
-                _ => false,
-            };
-
-            if (!shouldBuy)
-            {
-                continue;
+                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.Keep);
             }
 
-            return (candidate.Target, candidate.Index, itemDefinition);
+            if (candidate.Target.BuyAmount > 0)
+            {
+                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.Buy);
+            }
+
+            if (candidate.Target.KeepBuying)
+            {
+                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.KeepBuying);
+            }
         }
 
         return null;
@@ -808,15 +1008,6 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
     }
 
-    private static int GetModeOrder(CurrencyShopTargetMode mode)
-        => mode switch
-        {
-            CurrencyShopTargetMode.Keep => 0,
-            CurrencyShopTargetMode.BuyAmount => 1,
-            CurrencyShopTargetMode.SpendExcess => 2,
-            _ => 3,
-        };
-
     private static unsafe uint GetItemCount(uint itemId)
     {
         if (itemId == 0)
@@ -866,4 +1057,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private readonly record struct CurrencyShopGroup(int MenuIndex, string MenuLabel, int TabId, string TabLabel);
     private readonly record struct NavigationVerificationSnapshot(int DesiredMenuIndex, int DesiredTabId, int ReportedTabId, int? MatchedMenuIndex, int? MatchedTabId, string Reason);
     private readonly record struct AutoStartEvaluation(bool ShouldRun, string Reason);
+    private enum ShoppingPurchaseIntent
+    {
+        None,
+        Keep,
+        Buy,
+        KeepBuying,
+    }
 }

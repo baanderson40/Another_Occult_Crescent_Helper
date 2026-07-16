@@ -22,13 +22,6 @@ public enum StartingPotFateMode
     PleadingPots,
 }
 
-public enum CurrencyShopTargetMode
-{
-    Keep,
-    BuyAmount,
-    SpendExcess,
-}
-
 [Serializable]
 public sealed class CurrencyShopReserveSetting
 {
@@ -39,12 +32,12 @@ public sealed class CurrencyShopReserveSetting
 [Serializable]
 public sealed class CurrencyShopTarget
 {
-    public bool Enabled { get; set; } = true;
     public uint ItemId { get; set; }
     public int MenuIndex { get; set; }
     public int TabId { get; set; } = -1;
-    public CurrencyShopTargetMode Mode { get; set; }
-    public int TargetAmount { get; set; } = 1;
+    public int KeepAmount { get; set; } = 1;
+    public int BuyAmount { get; set; }
+    public bool KeepBuying { get; set; }
     public int Priority { get; set; }
 }
 
@@ -110,11 +103,8 @@ public class Configuration : IPluginConfiguration
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;
     public bool EnableManualCurrencyShopping { get; set; }
-    public bool EnableAutoCurrencyShopping { get; set; }
     public int SilverStartThreshold { get; set; }
     public int GoldStartThreshold { get; set; }
-    public bool RunOnlyWhenIdle { get; set; } = true;
-    public bool RequireVendorNearby { get; set; } = true;
     public List<CurrencyShopReserveSetting> CurrencyShopReserves { get; set; } = [];
     public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
 
@@ -297,16 +287,18 @@ public class Configuration : IPluginConfiguration
 
         foreach (var reserve in CurrencyShopReserves)
         {
-            reserve.ReserveAmount = Math.Max(0, reserve.ReserveAmount);
+            reserve.ReserveAmount = Math.Clamp(reserve.ReserveAmount, 0, 9999);
         }
 
-        SilverStartThreshold = Math.Max(0, SilverStartThreshold);
-        GoldStartThreshold = Math.Max(0, GoldStartThreshold);
+        SilverStartThreshold = Math.Clamp(SilverStartThreshold, 0, 9999);
+        GoldStartThreshold = Math.Clamp(GoldStartThreshold, 0, 9999);
 
         foreach (var target in CurrencyShopTargets)
         {
             target.TabId = Math.Max(-1, target.TabId);
-            target.TargetAmount = Math.Max(0, target.TargetAmount);
+
+            target.KeepAmount = Math.Max(0, target.KeepAmount);
+            target.BuyAmount = Math.Max(0, target.BuyAmount);
             target.Priority = Math.Max(0, target.Priority);
         }
     }

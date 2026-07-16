@@ -129,12 +129,12 @@ public sealed class Plugin : IDalamudPlugin
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
         ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
         ShopPurchaseController = new ShopPurchaseController(Framework, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
-        ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, FarmSessionController, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
+        ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -693,6 +693,17 @@ public sealed class Plugin : IDalamudPlugin
 
         Logger.Info("[Plugin] op=ui-action action=toggle-config-window");
         ConfigWindow.Toggle();
+    }
+
+    public void OpenShoppingUi()
+    {
+        if (isDisposing)
+        {
+            return;
+        }
+
+        Logger.Info("[Plugin] op=ui-action action=open-shopping-window");
+        ConfigWindow.OpenShoppingTab();
     }
 
     public void ToggleLogUi()

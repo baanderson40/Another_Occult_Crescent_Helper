@@ -3,6 +3,7 @@ using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Movement;
 using AOCCH.Scanning;
+using AOCCH.Shopping;
 using Dalamud.Plugin.Services;
 using System.Threading;
 
@@ -40,6 +41,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly PotFarmController potFarmController;
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly TreasureCofferFarmController treasureCofferFarmController;
+    private readonly ManualCurrencyShoppingController manualCurrencyShoppingController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -88,6 +90,7 @@ public sealed class FarmSessionController : IDisposable
         PotFarmController potFarmController,
         TreasureHintTracker treasureHintTracker,
         TreasureCofferFarmController treasureCofferFarmController,
+        ManualCurrencyShoppingController manualCurrencyShoppingController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -107,6 +110,7 @@ public sealed class FarmSessionController : IDisposable
         this.potFarmController = potFarmController;
         this.treasureHintTracker = treasureHintTracker;
         this.treasureCofferFarmController = treasureCofferFarmController;
+        this.manualCurrencyShoppingController = manualCurrencyShoppingController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -274,6 +278,11 @@ public sealed class FarmSessionController : IDisposable
             treasureCofferFarmController.Stop(reason);
         }
 
+        if (manualCurrencyShoppingController.IsRunning)
+        {
+            manualCurrencyShoppingController.Stop(reason);
+        }
+
         if (buffRotationController.IsRunning)
         {
             buffRotationController.Stop(reason);
@@ -439,6 +448,9 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case FarmSessionState.RunningVisibleCofferRoute:
                 TickRunningVisibleCofferRoute();
+                break;
+            case FarmSessionState.RunningCurrencyShopping:
+                TickRunningCurrencyShopping();
                 break;
             case FarmSessionState.ResumingInterruptedCe:
             case FarmSessionState.ResumingInterruptedFate:
@@ -680,6 +692,11 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryStartCurrencyShopping(now))
+        {
+            return;
+        }
+
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
@@ -852,6 +869,12 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryStartCurrencyShopping(now))
+        {
+            logger.ResetThrottle("farm-idle-waiting");
+            return;
+        }
+
         var startDecision = EvaluateEffectiveTargetStart(snapshot, potCycleSnapshot, now);
         if (startDecision?.AllowStart == true)
         {
@@ -917,6 +940,48 @@ public sealed class FarmSessionController : IDisposable
                 => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now),
             _ => null,
         };
+
+    private bool TryStartCurrencyShopping(DateTimeOffset now)
+    {
+        if (!manualCurrencyShoppingController.NeedsControlNow(now, allowDuringFarmSession: true, out var reason))
+        {
+            return false;
+        }
+
+        if (manualCurrencyShoppingController.IsRunning)
+        {
+            TransitionTo(FarmSessionState.RunningCurrencyShopping, manualCurrencyShoppingController.Status, "Currency Shopping");
+            return true;
+        }
+
+        if (!manualCurrencyShoppingController.Start())
+        {
+            logger.Warning($"{BuildLogTag()} op=shopping-start-blocked reason={reason}");
+            return false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=shopping-start reason={reason}");
+        TransitionTo(FarmSessionState.RunningCurrencyShopping, manualCurrencyShoppingController.Status, "Currency Shopping");
+        return true;
+    }
+
+    private void TickRunningCurrencyShopping()
+    {
+        if (manualCurrencyShoppingController.IsRunning)
+        {
+            logger.DebugThrottled("farm-running-shopping", WaitLogInterval, $"Farm session is still running currency shopping. status={manualCurrencyShoppingController.Status}");
+            return;
+        }
+
+        logger.ResetThrottle("farm-running-shopping");
+
+        if (manualCurrencyShoppingController.Status.StartsWith("Failed:", StringComparison.Ordinal))
+        {
+            logger.Warning($"{BuildLogTag()} op=shopping-warning reason={manualCurrencyShoppingController.Status}");
+        }
+
+        TransitionTo(FarmSessionState.SelectingTarget, manualCurrencyShoppingController.Status, "Selecting target");
+    }
 
     private void CaptureInterruptedActivity(FarmSessionState currentState)
     {
