@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 
 using AOCCH.Logging;
+using Dalamud.Game.Chat;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -14,25 +15,30 @@ public sealed class ShopPurchaseController : IDisposable
 {
     private static readonly TimeSpan PurchaseTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan ConfirmationRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly InventoryType[] NormalInventoryContainers = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
     private const int AddonIndex = 1;
     private const int SelectYesnoIndex = 1;
     private const int ShopExchangeItemDialogIndex = 1;
 
     private readonly IFramework framework;
+    private readonly IChatGui chatGui;
     private readonly IGameGui gameGui;
     private readonly AocchLogger logger;
     private readonly object gate = new();
 
     private PurchaseAttempt? activeAttempt;
     private string lastStatus = "Idle";
+    private PurchaseCompletionKind lastCompletionKind;
 
-    public ShopPurchaseController(IFramework framework, IGameGui gameGui, AocchLogger logger)
+    public ShopPurchaseController(IFramework framework, IChatGui chatGui, IGameGui gameGui, AocchLogger logger)
     {
         this.framework = framework;
+        this.chatGui = chatGui;
         this.gameGui = gameGui;
         this.logger = logger;
 
         framework.Update += OnFrameworkUpdate;
+        chatGui.LogMessage += OnLogMessage;
         logger.Info("[ShopPurchase] op=init");
     }
 
@@ -58,8 +64,20 @@ public sealed class ShopPurchaseController : IDisposable
         }
     }
 
+    public PurchaseCompletionKind LastCompletionKind
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastCompletionKind;
+            }
+        }
+    }
+
     public void Dispose()
     {
+        chatGui.LogMessage -= OnLogMessage;
         framework.Update -= OnFrameworkUpdate;
     }
 
@@ -67,7 +85,14 @@ public sealed class ShopPurchaseController : IDisposable
     {
         if (quantity <= 0)
         {
-            SetStatus("Failed: quantity must be greater than zero.");
+            SetImmediateOutcome("Failed: quantity must be greater than zero.", PurchaseCompletionKind.StopShopping);
+            return false;
+        }
+
+        if (!HasFreeInventorySpace())
+        {
+            SetImmediateOutcome("Failed: insufficient inventory space.", PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeCurrency itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason=inventory-full");
             return false;
         }
 
@@ -97,7 +122,14 @@ public sealed class ShopPurchaseController : IDisposable
     {
         if (quantity <= 0)
         {
-            SetStatus("Failed: quantity must be greater than zero.");
+            SetImmediateOutcome("Failed: quantity must be greater than zero.", PurchaseCompletionKind.StopShopping);
+            return false;
+        }
+
+        if (!HasFreeInventorySpace())
+        {
+            SetImmediateOutcome("Failed: insufficient inventory space.", PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeItem itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason=inventory-full");
             return false;
         }
 
@@ -142,7 +174,7 @@ public sealed class ShopPurchaseController : IDisposable
 
         if (DateTimeOffset.UtcNow >= attempt.DeadlineAt)
         {
-            CompleteAttempt($"Failed: timeout while {attempt.StateDescription}.", success: false);
+            CompleteAttempt($"Failed: timeout while {attempt.StateDescription}.", PurchaseCompletionKind.StopShopping);
             return;
         }
 
@@ -177,7 +209,7 @@ public sealed class ShopPurchaseController : IDisposable
     {
         if (VerifyAttemptSuccess(attempt, out var confirmationReason))
         {
-            CompleteAttempt($"Success: purchased {attempt.ItemName}. {confirmationReason}", success: true);
+            CompleteAttempt($"Success: purchased {attempt.ItemName}. {confirmationReason}", PurchaseCompletionKind.Success);
             return;
         }
 
@@ -186,7 +218,7 @@ public sealed class ShopPurchaseController : IDisposable
             && !TryGetConfirmationAddon(attempt.ConfirmationAddonName, out _)
             && TryGetAddon(attempt.AddonName, out _))
         {
-            CompleteAttempt($"Failed: exchange did not complete for {attempt.ItemName}. Likely insufficient required items.", success: false);
+            CompleteAttempt($"Skipped: insufficient required items for exchange. item={attempt.ItemName}", PurchaseCompletionKind.SkipTarget);
             return;
         }
 
@@ -225,6 +257,7 @@ public sealed class ShopPurchaseController : IDisposable
             if (activeAttempt != null)
             {
                 lastStatus = $"Failed: already purchasing {activeAttempt.ItemName}.";
+                lastCompletionKind = PurchaseCompletionKind.StopShopping;
                 return false;
             }
 
@@ -237,12 +270,13 @@ public sealed class ShopPurchaseController : IDisposable
             attempt.StateDescription = "dispatching purchase callback";
             activeAttempt = attempt;
             lastStatus = $"Dispatching purchase for {attempt.ItemName}.";
+            lastCompletionKind = PurchaseCompletionKind.None;
         }
 
         return true;
     }
 
-    private void CompleteAttempt(string status, bool success)
+    private void CompleteAttempt(string status, PurchaseCompletionKind completionKind, uint? logMessageId = null)
     {
         PurchaseAttempt? completedAttempt;
         lock (gate)
@@ -250,6 +284,7 @@ public sealed class ShopPurchaseController : IDisposable
             completedAttempt = activeAttempt;
             activeAttempt = null;
             lastStatus = status;
+            lastCompletionKind = completionKind;
         }
 
         if (completedAttempt == null)
@@ -257,13 +292,13 @@ public sealed class ShopPurchaseController : IDisposable
             return;
         }
 
-        if (success)
+        if (completionKind == PurchaseCompletionKind.Success)
         {
             logger.Info($"[ShopPurchase] op=complete-success itemId={completedAttempt.ItemId} itemName=\"{completedAttempt.ItemName}\" status=\"{status}\"");
         }
         else
         {
-            logger.Warning($"[ShopPurchase] op=complete-failed itemId={completedAttempt.ItemId} itemName=\"{completedAttempt.ItemName}\" status=\"{status}\"");
+            logger.Warning($"[ShopPurchase] op=complete-failed itemId={completedAttempt.ItemId} itemName=\"{completedAttempt.ItemName}\" addon={completedAttempt.AddonName} outcome={completionKind} logMessageId={logMessageId ?? 0} status=\"{status}\"");
         }
     }
 
@@ -273,6 +308,53 @@ public sealed class ShopPurchaseController : IDisposable
         {
             lastStatus = status;
         }
+    }
+
+    private void SetImmediateOutcome(string status, PurchaseCompletionKind completionKind)
+    {
+        lock (gate)
+        {
+            lastStatus = status;
+            lastCompletionKind = completionKind;
+        }
+    }
+
+    private void OnLogMessage(ILogMessage message)
+    {
+        if (!TryClassifyExchangeFailure(message.LogMessageId, out var failure))
+        {
+            return;
+        }
+
+        PurchaseAttempt? attempt;
+        lock (gate)
+        {
+            attempt = activeAttempt;
+        }
+
+        if (attempt == null)
+        {
+            return;
+        }
+
+        CompleteAttempt($"{failure.StatusPrefix} logMessageId={message.LogMessageId}", failure.Outcome, message.LogMessageId);
+    }
+
+    private static bool TryClassifyExchangeFailure(uint logMessageId, out ExchangeFailure failure)
+    {
+        failure = logMessageId switch
+        {
+            1939u => new ExchangeFailure(PurchaseCompletionKind.SkipTarget, "Skipped: cannot carry any more of this item."),
+            1940u or 3737u or 3974u or 3978u or 5283u => new ExchangeFailure(PurchaseCompletionKind.StopShopping, "Failed: insufficient inventory space."),
+            1941u or 1942u or 5282u => new ExchangeFailure(PurchaseCompletionKind.SkipTarget, "Skipped: insufficient required items for exchange."),
+            1943u or 3739u or 3740u or 3976u or 3977u or 3979u => new ExchangeFailure(PurchaseCompletionKind.SkipTarget, "Skipped: unique-item restriction blocked exchange."),
+            3736u or 3738u => new ExchangeFailure(PurchaseCompletionKind.SkipTarget, "Skipped: exchange blocked because a required item is equipped."),
+            3975u => new ExchangeFailure(PurchaseCompletionKind.SkipTarget, "Skipped: insufficient required currency for exchange."),
+            1947u or 1949u => new ExchangeFailure(PurchaseCompletionKind.StopShopping, "Failed: exchange was rejected by the game."),
+            _ => default,
+        };
+
+        return failure != default;
     }
 
     private bool VerifyAttemptSuccess(PurchaseAttempt attempt, out string confirmationReason)
@@ -395,6 +477,40 @@ public sealed class ShopPurchaseController : IDisposable
             : (uint)inventoryManager->GetInventoryItemCount(itemId, false);
     }
 
+    private static unsafe bool HasFreeInventorySpace()
+    {
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            return true;
+        }
+
+        var totalSlots = 0;
+        var nonEmptySlots = 0;
+        foreach (var containerType in NormalInventoryContainers)
+        {
+            var container = inventoryManager->GetInventoryContainer(containerType);
+            if (container == null || !container->IsLoaded || container->Size <= 0 || container->Items == null)
+            {
+                return true;
+            }
+
+            totalSlots += container->Size;
+            for (var i = 0; i < container->Size; i++)
+            {
+                var item = container->GetInventorySlot(i);
+                if (item == null || item->IsEmpty())
+                {
+                    continue;
+                }
+
+                nonEmptySlots++;
+            }
+        }
+
+        return totalSlots > nonEmptySlots;
+    }
+
     private sealed class PurchaseAttempt
     {
         public string AddonName { get; init; } = string.Empty;
@@ -427,4 +543,13 @@ public sealed class ShopPurchaseController : IDisposable
     }
 
     private readonly record struct ExpectedRequiredItem(uint ItemId, uint RequiredAmount);
+    private readonly record struct ExchangeFailure(PurchaseCompletionKind Outcome, string StatusPrefix);
+
+    public enum PurchaseCompletionKind
+    {
+        None,
+        Success,
+        SkipTarget,
+        StopShopping,
+    }
 }

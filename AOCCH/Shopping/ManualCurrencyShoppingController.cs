@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.ClientState.Conditions;
@@ -45,6 +46,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private readonly TreasureCofferFarmController treasureCofferFarmController;
     private readonly AocchLogger logger;
     private readonly object gate = new();
+    private readonly HashSet<int> skippedTargetIndices = [];
 
     private bool isRunning;
     private string status = "Idle";
@@ -271,6 +273,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
+            skippedTargetIndices.Clear();
         }
 
         logger.Info("[ManualCurrencyShopping] op=start");
@@ -319,6 +322,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
+            skippedTargetIndices.Clear();
         }
 
         autoStartBlockedUntil = DateTimeOffset.UtcNow + AutoStartCooldown;
@@ -378,15 +382,18 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         if (purchaseWasInProgress && !shopPurchaseController.IsBusy)
         {
             purchaseWasInProgress = false;
-            if (shopPurchaseController.LastStatus.StartsWith("Success:", StringComparison.Ordinal))
+            switch (shopPurchaseController.LastCompletionKind)
             {
-                completedAnyPurchases = true;
-                OnPurchaseSuccess();
-            }
-            else if (shopPurchaseController.LastStatus.StartsWith("Failed:", StringComparison.Ordinal))
-            {
-                StopFailed($"Purchase failed: {shopPurchaseController.LastStatus}");
-                return;
+                case ShopPurchaseController.PurchaseCompletionKind.Success:
+                    completedAnyPurchases = true;
+                    OnPurchaseSuccess();
+                    break;
+                case ShopPurchaseController.PurchaseCompletionKind.SkipTarget:
+                    OnPurchaseSkipped();
+                    break;
+                case ShopPurchaseController.PurchaseCompletionKind.StopShopping:
+                    StopFailed($"Shopping stopped: {shopPurchaseController.LastStatus}");
+                    return;
             }
         }
 
@@ -446,7 +453,15 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             RowIndex = itemDefinition.RowIndex,
         }, 1))
         {
-            StopFailed($"Failed to start purchase for {itemDefinition.Name}.");
+            if (shopPurchaseController.LastCompletionKind == ShopPurchaseController.PurchaseCompletionKind.StopShopping)
+            {
+                StopFailed($"Shopping stopped: {shopPurchaseController.LastStatus}");
+            }
+            else
+            {
+                StopFailed($"Failed to start purchase for {itemDefinition.Name}.");
+            }
+
             return;
         }
 
@@ -542,6 +557,21 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
         completedPurchaseCount++;
 
+        ClearActiveTargetState();
+    }
+
+    private void OnPurchaseSkipped()
+    {
+        if (activeTargetIndex != null)
+        {
+            skippedTargetIndices.Add(activeTargetIndex.Value);
+        }
+
+        ClearActiveTargetState();
+    }
+
+    private void ClearActiveTargetState()
+    {
         activeTarget = null;
         activeTargetIndex = null;
         activeTargetOriginalAmount = 0;
@@ -848,7 +878,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         foreach (var candidate in candidateTargets)
         {
             var itemDefinition = matchedTab.Items.FirstOrDefault(item => item.ItemId == candidate.Target.ItemId);
-            if (itemDefinition == null || itemDefinition.Cost > (uint)availableCurrency)
+            if (skippedTargetIndices.Contains(candidate.Index)
+                || itemDefinition == null
+                || itemDefinition.Cost > (uint)availableCurrency)
             {
                 continue;
             }
