@@ -53,6 +53,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private CurrencyShopTarget? activeTarget;
     private int? activeTargetIndex;
     private int activeTargetOriginalAmount;
+    private int activeTargetAttemptQuantity;
     private string activeTargetItemName = string.Empty;
     private ShoppingPurchaseIntent activePurchaseIntent;
     private bool purchaseWasInProgress;
@@ -252,6 +253,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             activeTarget = null;
             activeTargetIndex = null;
             activeTargetOriginalAmount = 0;
+            activeTargetAttemptQuantity = 0;
             activeTargetItemName = string.Empty;
             activePurchaseIntent = ShoppingPurchaseIntent.None;
             purchaseWasInProgress = false;
@@ -301,6 +303,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             activeTarget = null;
             activeTargetIndex = null;
             activeTargetOriginalAmount = 0;
+            activeTargetAttemptQuantity = 0;
             activeTargetItemName = string.Empty;
             activePurchaseIntent = ShoppingPurchaseIntent.None;
             purchaseWasInProgress = false;
@@ -408,7 +411,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         var currentCurrency = GetItemCount(matchedPage.CurrencyItemId);
         var availableCurrency = Math.Max(0, (int)currentCurrency - reserve);
 
-        var targetSelection = SelectNextTarget(matchedPage, matchedTab, availableCurrency);
+        var targetSelection = SelectNextTarget(snapshot, matchedPage, matchedTab, availableCurrency);
         if (targetSelection == null)
         {
             completedAnyPurchases = completedAnyPurchases || purchaseWasInProgress;
@@ -442,16 +445,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return;
         }
 
-        var (target, targetIndex, itemDefinition, purchaseIntent) = targetSelection.Value;
-        if (!shopPurchaseController.TryBuyCurrencyEntry(new LiveShopEntry
-        {
-            ItemId = itemDefinition.ItemId,
-            ItemName = ShoppingItemNameResolver.ResolveItemName(itemDefinition.ItemId, itemDefinition.Name),
-            CurrencyItemId = matchedPage.CurrencyItemId,
-            CurrencyName = matchedPage.CurrencyName,
-            Cost = itemDefinition.Cost,
-            RowIndex = itemDefinition.RowIndex,
-        }, 1))
+        var (target, targetIndex, liveShopEntry, purchaseIntent, attemptQuantity) = targetSelection.Value;
+        if (!shopPurchaseController.TryBuyCurrencyEntry(liveShopEntry, attemptQuantity))
         {
             if (shopPurchaseController.LastCompletionKind == ShopPurchaseController.PurchaseCompletionKind.StopShopping)
             {
@@ -459,7 +454,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             }
             else
             {
-                StopFailed($"Failed to start purchase for {itemDefinition.Name}.");
+                StopFailed($"Failed to start purchase for {liveShopEntry.ItemName}.");
             }
 
             return;
@@ -468,7 +463,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         activeTarget = target;
         activeTargetIndex = targetIndex;
         activeTargetOriginalAmount = purchaseIntent == ShoppingPurchaseIntent.Buy ? target.BuyAmount : purchaseIntent == ShoppingPurchaseIntent.Keep ? target.KeepAmount : 0;
-        activeTargetItemName = ShoppingItemNameResolver.ResolveItemName(itemDefinition.ItemId, itemDefinition.Name);
+        activeTargetAttemptQuantity = attemptQuantity;
+        activeTargetItemName = liveShopEntry.ItemName;
         activePurchaseIntent = purchaseIntent;
         purchaseWasInProgress = true;
         UpdateStatus("Running automatic shopping");
@@ -551,11 +547,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         if (activePurchaseIntent == ShoppingPurchaseIntent.Buy && activeTarget.BuyAmount > 0)
         {
             var target = configuration.CurrencyShopTargets[activeTargetIndex.Value];
-            target.BuyAmount = Math.Max(0, target.BuyAmount - 1);
+            target.BuyAmount = Math.Max(0, target.BuyAmount - Math.Max(1, activeTargetAttemptQuantity));
             configuration.Save();
         }
 
-        completedPurchaseCount++;
+        completedPurchaseCount += Math.Max(1, activeTargetAttemptQuantity);
 
         ClearActiveTargetState();
     }
@@ -575,6 +571,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         activeTarget = null;
         activeTargetIndex = null;
         activeTargetOriginalAmount = 0;
+        activeTargetAttemptQuantity = 0;
         activeTargetItemName = string.Empty;
         activePurchaseIntent = ShoppingPurchaseIntent.None;
     }
@@ -867,7 +864,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         return false;
     }
 
-    private (CurrencyShopTarget Target, int TargetIndex, ShopCurrencyItemDefinition ItemDefinition, ShoppingPurchaseIntent PurchaseIntent)? SelectNextTarget(ShopCurrencyPageDefinition matchedPage, ShopCurrencyTabDefinition matchedTab, int availableCurrency)
+    private (CurrencyShopTarget Target, int TargetIndex, LiveShopEntry ShopEntry, ShoppingPurchaseIntent PurchaseIntent, int AttemptQuantity)? SelectNextTarget(LiveShopSnapshot snapshot, ShopCurrencyPageDefinition matchedPage, ShopCurrencyTabDefinition matchedTab, int availableCurrency)
     {
         var candidateTargets = configuration.CurrencyShopTargets
             .Select((target, index) => (Target: target, Index: index))
@@ -878,9 +875,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         foreach (var candidate in candidateTargets)
         {
             var itemDefinition = matchedTab.Items.FirstOrDefault(item => item.ItemId == candidate.Target.ItemId);
+            var liveShopEntry = snapshot.ShopEntries.FirstOrDefault(entry => entry.ItemId == candidate.Target.ItemId);
             if (skippedTargetIndices.Contains(candidate.Index)
                 || itemDefinition == null
-                || itemDefinition.Cost > (uint)availableCurrency)
+                || liveShopEntry == null
+                || liveShopEntry.Cost > (uint)availableCurrency)
             {
                 continue;
             }
@@ -889,21 +888,84 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             // Evaluate each configured item deterministically: Keep first, then Buy, then Keep Buying.
             if (candidate.Target.KeepAmount > 0 && currentCount < candidate.Target.KeepAmount)
             {
-                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.Keep);
+                var attemptQuantity = CalculateAttemptQuantity(liveShopEntry, candidate.Target.KeepAmount - currentCount, availableCurrency);
+                if (attemptQuantity > 0)
+                {
+                    return (candidate.Target, candidate.Index, liveShopEntry, ShoppingPurchaseIntent.Keep, attemptQuantity);
+                }
             }
 
             if (candidate.Target.BuyAmount > 0)
             {
-                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.Buy);
+                var attemptQuantity = CalculateAttemptQuantity(liveShopEntry, candidate.Target.BuyAmount, availableCurrency);
+                if (attemptQuantity > 0)
+                {
+                    return (candidate.Target, candidate.Index, liveShopEntry, ShoppingPurchaseIntent.Buy, attemptQuantity);
+                }
             }
 
             if (candidate.Target.KeepBuying)
             {
-                return (candidate.Target, candidate.Index, itemDefinition, ShoppingPurchaseIntent.KeepBuying);
+                var attemptQuantity = CalculateAttemptQuantity(liveShopEntry, int.MaxValue, availableCurrency);
+                if (attemptQuantity > 0)
+                {
+                    return (candidate.Target, candidate.Index, liveShopEntry, ShoppingPurchaseIntent.KeepBuying, attemptQuantity);
+                }
             }
         }
 
         return null;
+    }
+
+    private static int CalculateAttemptQuantity(LiveShopEntry shopEntry, int desiredQuantity, int availableCurrency)
+    {
+        if (desiredQuantity <= 0 || shopEntry.Cost == 0 || availableCurrency < (int)shopEntry.Cost)
+        {
+            return 0;
+        }
+
+        var maxAffordable = availableCurrency / (int)shopEntry.Cost;
+        if (maxAffordable <= 0)
+        {
+            return 0;
+        }
+
+        var batchLimit = shopEntry.MaxStackSize == 999u
+            ? 99
+            : 1;
+
+        return Math.Max(1, Math.Min(Math.Min(desiredQuantity, maxAffordable), batchLimit));
+    }
+
+    private bool HasActionableTarget(ShopCurrencyPageDefinition page, ShopCurrencyTabDefinition tab, int availableCurrency)
+    {
+        if (availableCurrency <= 0)
+        {
+            return false;
+        }
+
+        var candidateTargets = configuration.CurrencyShopTargets
+            .Where(target => target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
+            .OrderBy(target => target.Priority);
+
+        foreach (var candidate in candidateTargets)
+        {
+            var itemDefinition = tab.Items.FirstOrDefault(item => item.ItemId == candidate.ItemId);
+            if (itemDefinition == null || itemDefinition.Cost > (uint)availableCurrency)
+            {
+                continue;
+            }
+
+            var currentCount = (int)GetItemCount(candidate.ItemId);
+            if ((candidate.KeepAmount > 0 && currentCount < candidate.KeepAmount)
+                || candidate.BuyAmount > 0
+                || candidate.KeepBuying)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool TrySelectNextActionableGroup(out CurrencyShopGroup? group, out string reason)
@@ -916,8 +978,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             foreach (var tab in page.Tabs.OrderBy(tab => tab.TabId))
             {
-                var targetSelection = SelectNextTarget(page, tab, availableCurrency);
-                if (targetSelection != null)
+                if (HasActionableTarget(page, tab, availableCurrency))
                 {
                     group = new CurrencyShopGroup(page.MenuIndex, page.MenuLabel, tab.TabId, tab.TabLabel);
                     reason = string.Empty;
@@ -948,7 +1009,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             foreach (var tab in page.Tabs)
             {
-                if (SelectNextTarget(page, tab, availableCurrency) != null)
+                if (HasActionableTarget(page, tab, availableCurrency))
                 {
                     return true;
                 }

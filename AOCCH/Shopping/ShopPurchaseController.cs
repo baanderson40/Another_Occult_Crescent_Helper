@@ -209,13 +209,12 @@ public sealed class ShopPurchaseController : IDisposable
             return;
         }
 
-        var callbackResult = FirePurchaseCallback(addon, attempt.RowIndex, attempt.Quantity);
+        FirePurchaseCallback(addon, attempt.RowIndex, attempt.Quantity);
 
         attempt.State = PurchaseState.PollingForOutcomeOrConfirmation;
         attempt.StateDescription = "polling for outcome or confirmation";
-        attempt.CallbackDispatchResult = callbackResult;
-        SetStatus($"Polling for purchase outcome or {attempt.ConfirmationAddonName} for {attempt.ItemName}. callbackResult={callbackResult}");
-        logger.Info($"[ShopPurchase] op=callback-fired addon={attempt.AddonName} itemId={attempt.ItemId} rowIndex={attempt.RowIndex} quantity={attempt.Quantity} callbackResult={callbackResult}");
+        SetStatus($"Polling for purchase outcome or {attempt.ConfirmationAddonName} for {attempt.ItemName}.");
+        logger.Debug($"[ShopPurchase] op=callback-fired addon={attempt.AddonName} itemId={attempt.ItemId} rowIndex={attempt.RowIndex} quantity={attempt.Quantity}");
     }
 
     private unsafe void TickPollingForOutcomeOrConfirmation(PurchaseAttempt attempt)
@@ -556,7 +555,6 @@ public sealed class ShopPurchaseController : IDisposable
         public DateTimeOffset NextConfirmationAttemptAt { get; set; } = DateTimeOffset.MinValue;
         public DateTimeOffset StartedAt { get; init; }
         public DateTimeOffset DeadlineAt { get; init; }
-        public bool CallbackDispatchResult { get; set; }
         public PurchaseState State { get; set; }
         public string StateDescription { get; set; } = string.Empty;
     }

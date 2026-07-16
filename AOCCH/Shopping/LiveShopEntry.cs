@@ -9,6 +9,6 @@ public sealed class LiveShopEntry
     public uint Cost { get; init; }
     public uint RowIndex { get; init; }
     public int? TabIndex { get; init; }
-    public uint? QuantityPerPurchase { get; init; }
+    public uint? MaxStackSize { get; init; }
     public bool IsVisible { get; init; } = true;
 }

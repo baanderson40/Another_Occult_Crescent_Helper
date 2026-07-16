@@ -21,6 +21,7 @@ public sealed class ShopInspectorController : IDisposable
     private const int ShopExchangeCurrencyCurrencyIconOffset = 87;
     private const int ShopExchangeCurrencyCostOffset = 456;
     private const int ShopExchangeCurrencyItemIdOffset = 1066;
+    private const int ShopExchangeCurrencyMaxStackSizeOffset = 1188;
     private const int ShopExchangeCurrencyRowIndexOffset = 1310;
     private const int ShopExchangeItemIndex = 1;
     private const int ShopExchangeItemNumEntriesOffset = 3;
@@ -214,7 +215,7 @@ public sealed class ShopInspectorController : IDisposable
 
         foreach (var shopEntry in currentSnapshot.ShopEntries)
         {
-            logger.Info($"[ShopInspector] op=snapshot-shop-entry menuIndex={menuIndex} selectedTabId={currentSnapshot.SelectedTabId} selectedTabLabel={FormatValue(tabLabel)} itemId={shopEntry.ItemId} itemName={FormatValue(shopEntry.ItemName)} currencyItemId={shopEntry.CurrencyItemId} currencyName={FormatValue(shopEntry.CurrencyName)} cost={shopEntry.Cost} rowIndex={shopEntry.RowIndex}");
+            logger.Info($"[ShopInspector] op=snapshot-shop-entry menuIndex={menuIndex} selectedTabId={currentSnapshot.SelectedTabId} selectedTabLabel={FormatValue(tabLabel)} itemId={shopEntry.ItemId} itemName={FormatValue(shopEntry.ItemName)} currencyItemId={shopEntry.CurrencyItemId} currencyName={FormatValue(shopEntry.CurrencyName)} cost={shopEntry.Cost} rowIndex={shopEntry.RowIndex} maxStackSize={FormatNullableUInt(shopEntry.MaxStackSize)}");
         }
 
         foreach (var itemExchangeEntry in currentSnapshot.ItemExchangeEntries)
@@ -243,7 +244,7 @@ public sealed class ShopInspectorController : IDisposable
         logger.Info($"[ShopInspector] op=currency-catalog-capture menuIndex={menuIndex} menuLabel={FormatValue(menuLabel)} currencyItemId={currentSnapshot.CurrencyItemId} currencyName={FormatValue(currentSnapshot.CurrencyName)} selectedTabId={currentSnapshot.SelectedTabId} selectedTabLabel={FormatValue(tabLabel)} entryCount={currentSnapshot.ShopEntries.Count}");
         foreach (var shopEntry in currentSnapshot.ShopEntries)
         {
-            logger.Info($"[ShopInspector] op=currency-catalog-item menuIndex={menuIndex} selectedTabId={currentSnapshot.SelectedTabId} itemId={shopEntry.ItemId} itemName={FormatValue(shopEntry.ItemName)} cost={shopEntry.Cost} rowIndex={shopEntry.RowIndex}");
+            logger.Info($"[ShopInspector] op=currency-catalog-item menuIndex={menuIndex} selectedTabId={currentSnapshot.SelectedTabId} itemId={shopEntry.ItemId} itemName={FormatValue(shopEntry.ItemName)} cost={shopEntry.Cost} rowIndex={shopEntry.RowIndex} maxStackSize={FormatNullableUInt(shopEntry.MaxStackSize)}");
         }
     }
 
@@ -509,6 +510,7 @@ public sealed class ShopInspectorController : IDisposable
                 CurrencyItemId = currencyItemId,
                 CurrencyName = currencyName,
                 Cost = addon->AtkValues[ShopExchangeCurrencyCostOffset + i].UInt,
+                MaxStackSize = addon->AtkValues[ShopExchangeCurrencyMaxStackSizeOffset + i].UInt,
                 RowIndex = addon->AtkValues[ShopExchangeCurrencyRowIndexOffset + i].UInt,
             });
         }
@@ -725,6 +727,9 @@ public sealed class ShopInspectorController : IDisposable
         => string.IsNullOrWhiteSpace(value)
             ? "\"\""
             : $"\"{value.Replace("\"", "'")}\"";
+
+    private static string FormatNullableUInt(uint? value)
+        => value?.ToString() ?? "null";
 
     private readonly record struct ShopExchangeCurrencyReadResult(
         bool IsOpen,
