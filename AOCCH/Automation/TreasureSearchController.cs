@@ -105,6 +105,7 @@ public sealed class TreasureSearchController : IDisposable
     private int refinementProbeBaselineRevision;
     private DateTimeOffset refinementMoveDeadlineAt = DateTimeOffset.MinValue;
     private int refinementStepIndex;
+    private bool refinementCandidateLocked;
     private bool mappedPointRetryUsed;
     private VisibleCofferMatch? activeVisibleCofferMatch;
     private TreasureCandidateKey? activeCandidateKey;
@@ -418,6 +419,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
@@ -799,6 +801,7 @@ public sealed class TreasureSearchController : IDisposable
             {
                 consumedHintRevision = Math.Max(consumedHintRevision, refinementLatestEvent.Revision);
                 refinementEvent = refinementLatestEvent;
+                refinementCandidateLocked |= IsImmediateTreasureDistance(refinementLatestEvent.DistanceBucket);
                 refinementProbeDeadlineAt = DateTimeOffset.MinValue;
             }
         }
@@ -846,6 +849,11 @@ public sealed class TreasureSearchController : IDisposable
                 {
                     return;
                 }
+            }
+
+            if (!EnsureRefinementProbeReady(activeCandidate))
+            {
+                return;
             }
 
             if (!TryStartRefinementProbe($"Refinement is probing candidate {activeCandidateKey?.Label} after local movement."))
@@ -1025,6 +1033,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
@@ -1344,6 +1353,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
             activeVisibleCofferMatch = null;
             activeCandidateUsesOverride = false;
@@ -1438,6 +1448,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
             activeVisibleCofferMatch = null;
             activeCandidateUsesOverride = usedOverride;
@@ -1486,6 +1497,7 @@ public sealed class TreasureSearchController : IDisposable
                     refinementProbeBaselineRevision = 0;
                     refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                     refinementStepIndex = 0;
+                    refinementCandidateLocked = false;
                     mappedPointRetryUsed = false;
                 }
 
@@ -1550,6 +1562,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
@@ -1604,6 +1617,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
             refinementStepIndex = 0;
+            refinementCandidateLocked = IsImmediateTreasureDistance(latestEvent.DistanceBucket);
             mappedPointRetryUsed = false;
             candidateProbeDeadlineAt = DateTimeOffset.MinValue;
             candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
@@ -1615,30 +1629,39 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TickRefinementMovement(TreasureCofferCandidateData activeCandidate)
     {
+        switch (dangerousTreasureTravelController.State)
+        {
+            case DangerousTreasureTravelState.Arrived:
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                var dangerousHandoffResult = TryApplyRefinementCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
+                refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+                return dangerousHandoffResult != CandidateHandoffResult.DangerousTransitionStarted;
+            case DangerousTreasureTravelState.CandidateSkipped:
+                var skipReason = dangerousTreasureTravelController.LastTransition;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+                AdvanceCandidate(skipReason);
+                return false;
+            case DangerousTreasureTravelState.Failed:
+                var failureReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+                AdvanceCandidate(failureReason);
+                return false;
+            case DangerousTreasureTravelState.Stopped:
+                var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+                Stop(stoppedReason);
+                return false;
+        }
+
         if (dangerousTreasureTravelController.IsRunning)
         {
-            switch (dangerousTreasureTravelController.State)
-            {
-                case DangerousTreasureTravelState.Arrived:
-                    dangerousTreasureTravelController.AcknowledgeTerminalState();
-                    var dangerousHandoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
-                    refinementMoveDeadlineAt = DateTimeOffset.MinValue;
-                    return dangerousHandoffResult != CandidateHandoffResult.DangerousTransitionStarted;
-                case DangerousTreasureTravelState.CandidateSkipped:
-                    var skipReason = dangerousTreasureTravelController.LastTransition;
-                    dangerousTreasureTravelController.AcknowledgeTerminalState();
-                    AdvanceCandidate(skipReason);
-                    return false;
-                case DangerousTreasureTravelState.Failed:
-                case DangerousTreasureTravelState.Stopped:
-                    var failureReason = dangerousTreasureTravelController.LastError.Length == 0
-                        ? dangerousTreasureTravelController.LastTransition
-                        : dangerousTreasureTravelController.LastError;
-                    dangerousTreasureTravelController.AcknowledgeTerminalState();
-                    AdvanceCandidate(failureReason);
-                    return false;
-            }
-
             logger.DebugThrottled(
                 "treasure-search-refine",
                 WaitLogInterval,
@@ -1657,7 +1680,7 @@ public sealed class TreasureSearchController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached local treasure refinement target.");
-                var handoffResult = TryApplyCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
+                var handoffResult = TryApplyRefinementCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 return handoffResult != CandidateHandoffResult.DangerousTransitionStarted;
             case MovementState.Failed:
@@ -1827,6 +1850,20 @@ public sealed class TreasureSearchController : IDisposable
 
         logger.Info($"{BuildLogTag()} op=handoff-dangerous fromCandidate={currentCandidate.Label} toCandidate={handoffCandidate.Label} context=handoff-source-as-previous-threshold reason={reason} action=start-dangerous-travel");
         return CandidateHandoffResult.DangerousTransitionStarted;
+    }
+
+    private CandidateHandoffResult TryApplyRefinementCandidateHandoff(Vector3 referencePosition, string reason)
+    {
+        if (refinementCandidateLocked)
+        {
+            logger.DebugThrottled(
+                "treasure-search-refine-lock",
+                WaitLogInterval,
+                $"Treasure refinement is locked to candidate {activeCandidateKey?.Label}; suppressing handoff after {reason}.");
+            return CandidateHandoffResult.None;
+        }
+
+        return TryApplyCandidateHandoff(referencePosition, reason);
     }
 
     private List<TreasureCofferCandidateData> BuildOrderedCandidates(TreasureCofferGroupData group, Vector3 originCenter)
@@ -2234,6 +2271,7 @@ public sealed class TreasureSearchController : IDisposable
             refinementProbeBaselineSessionId = 0;
             refinementProbeBaselineRevision = 0;
             refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+            refinementCandidateLocked = false;
             revealedCofferAcquireDeadlineAt = deadline;
             revealedCofferLatched = true;
         }
@@ -2347,6 +2385,53 @@ public sealed class TreasureSearchController : IDisposable
         return true;
     }
 
+    private bool EnsureRefinementProbeReady(TreasureCofferCandidateData activeCandidate)
+    {
+        if (!IsDangerousCandidate(activeCandidate))
+        {
+            return true;
+        }
+
+        if (!gameActionController.IsStealthed)
+        {
+            if (!gameActionController.CanUseHide())
+            {
+                logger.DebugThrottled(
+                    "treasure-search-refine-hide-ready",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Treasure refinement is waiting for Hide before probing dangerous candidate {activeCandidateKey?.Label}. currentClassJob={gameActionController.CurrentClassJobId}.");
+                return false;
+            }
+
+            if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"treasure refinement probe prep {activeCandidateKey?.Label}"))
+            {
+                logger.DebugThrottled(
+                    "treasure-search-refine-hide-request",
+                    TimeSpan.FromMilliseconds(250),
+                    $"Treasure refinement could not dispatch Hide yet for dangerous candidate {activeCandidateKey?.Label}; retrying.");
+                return false;
+            }
+
+            logger.Info($"{BuildLogTag()} op=refine-hide-request candidate={activeCandidateKey?.Label ?? "none"} action=wait-for-stealth");
+            return false;
+        }
+
+        if (!gameActionController.CanUseHide())
+        {
+            logger.DebugThrottled(
+                "treasure-search-refine-hide-recast",
+                TimeSpan.FromMilliseconds(250),
+                $"Treasure refinement is waiting for Hide to become reusable before probing dangerous candidate {activeCandidateKey?.Label}.");
+            return false;
+        }
+
+        logger.DebugThrottled(
+            "treasure-search-refine-hide-probe-ready",
+            TimeSpan.FromMilliseconds(250),
+            $"Treasure refinement probe is ready for dangerous candidate {activeCandidateKey?.Label}; Hide is active and reusable.");
+        return true;
+    }
+
     private void ContinueProbingAfterEvent(int revision)
     {
         lock (gate)
@@ -2374,6 +2459,7 @@ public sealed class TreasureSearchController : IDisposable
                 traversalOriginCenter = Vector3.Zero;
                 pendingCandidateAdvanceReason = string.Empty;
                 lastNavmeshRejectionSummary = string.Empty;
+                refinementCandidateLocked = false;
                 revealedCofferLatched = false;
             }
 
@@ -2429,6 +2515,9 @@ public sealed class TreasureSearchController : IDisposable
     private static bool IsLocalTreasureDistance(string distanceBucket)
         => string.Equals(distanceBucket, "close", StringComparison.Ordinal)
             || string.Equals(distanceBucket, "immediate", StringComparison.Ordinal);
+
+    private static bool IsImmediateTreasureDistance(string distanceBucket)
+        => string.Equals(distanceBucket, "immediate", StringComparison.Ordinal);
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
