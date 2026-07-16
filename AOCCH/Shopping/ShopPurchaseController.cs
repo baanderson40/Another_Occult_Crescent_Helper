@@ -13,7 +13,7 @@ namespace AOCCH.Shopping;
 
 public sealed class ShopPurchaseController : IDisposable
 {
-    private static readonly TimeSpan PurchaseTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan PurchaseTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan ConfirmationRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly InventoryType[] NormalInventoryContainers = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
     private const int AddonIndex = 1;
@@ -182,7 +182,12 @@ public sealed class ShopPurchaseController : IDisposable
 
         if (DateTimeOffset.UtcNow >= attempt.DeadlineAt)
         {
-            CompleteAttempt($"Failed: timeout while {attempt.StateDescription}.", PurchaseCompletionKind.StopShopping);
+            var timedOutWhilePolling = attempt.State == PurchaseState.PollingForOutcomeOrConfirmation;
+            var statusPrefix = timedOutWhilePolling ? "Skipped" : "Failed";
+            var completionKind = timedOutWhilePolling
+                ? PurchaseCompletionKind.SkipTarget
+                : PurchaseCompletionKind.StopShopping;
+            CompleteAttempt($"{statusPrefix}: timeout while {attempt.StateDescription}.", completionKind);
             return;
         }
 
