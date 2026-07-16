@@ -89,10 +89,14 @@ public sealed class ShopPurchaseController : IDisposable
             return false;
         }
 
-        if (!HasFreeInventorySpace())
+        var inventorySpaceState = GetInventorySpaceState(out var inventorySpaceReason);
+        if (inventorySpaceState != InventorySpaceState.HasSpace)
         {
-            SetImmediateOutcome("Failed: insufficient inventory space.", PurchaseCompletionKind.StopShopping);
-            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeCurrency itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason=inventory-full");
+            var status = inventorySpaceState == InventorySpaceState.NoSpace
+                ? "Failed: insufficient inventory space."
+                : "Failed: inventory state unavailable.";
+            SetImmediateOutcome(status, PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeCurrency itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason={inventorySpaceReason}");
             return false;
         }
 
@@ -126,10 +130,14 @@ public sealed class ShopPurchaseController : IDisposable
             return false;
         }
 
-        if (!HasFreeInventorySpace())
+        var inventorySpaceState = GetInventorySpaceState(out var inventorySpaceReason);
+        if (inventorySpaceState != InventorySpaceState.HasSpace)
         {
-            SetImmediateOutcome("Failed: insufficient inventory space.", PurchaseCompletionKind.StopShopping);
-            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeItem itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason=inventory-full");
+            var status = inventorySpaceState == InventorySpaceState.NoSpace
+                ? "Failed: insufficient inventory space."
+                : "Failed: inventory state unavailable.";
+            SetImmediateOutcome(status, PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=preflight-blocked addon=ShopExchangeItem itemId={entry.ItemId} itemName=\"{entry.ItemName}\" reason={inventorySpaceReason}");
             return false;
         }
 
@@ -477,12 +485,14 @@ public sealed class ShopPurchaseController : IDisposable
             : (uint)inventoryManager->GetInventoryItemCount(itemId, false);
     }
 
-    private static unsafe bool HasFreeInventorySpace()
+    private static unsafe InventorySpaceState GetInventorySpaceState(out string reason)
     {
+        reason = string.Empty;
         var inventoryManager = InventoryManager.Instance();
         if (inventoryManager == null)
         {
-            return true;
+            reason = "inventory-manager-unavailable";
+            return InventorySpaceState.Unknown;
         }
 
         var totalSlots = 0;
@@ -490,9 +500,16 @@ public sealed class ShopPurchaseController : IDisposable
         foreach (var containerType in NormalInventoryContainers)
         {
             var container = inventoryManager->GetInventoryContainer(containerType);
-            if (container == null || !container->IsLoaded || container->Size <= 0 || container->Items == null)
+            if (container == null)
             {
-                return true;
+                reason = $"container-unavailable:{containerType}";
+                return InventorySpaceState.Unknown;
+            }
+
+            if (!container->IsLoaded || container->Size <= 0 || container->Items == null)
+            {
+                reason = $"container-not-ready:{containerType}:loaded={container->IsLoaded}:size={container->Size}";
+                return InventorySpaceState.Unknown;
             }
 
             totalSlots += container->Size;
@@ -508,7 +525,10 @@ public sealed class ShopPurchaseController : IDisposable
             }
         }
 
-        return totalSlots > nonEmptySlots;
+        reason = totalSlots > nonEmptySlots ? "space-available" : "inventory-full";
+        return totalSlots > nonEmptySlots
+            ? InventorySpaceState.HasSpace
+            : InventorySpaceState.NoSpace;
     }
 
     private sealed class PurchaseAttempt
@@ -551,5 +571,12 @@ public sealed class ShopPurchaseController : IDisposable
         Success,
         SkipTarget,
         StopShopping,
+    }
+
+    private enum InventorySpaceState
+    {
+        HasSpace,
+        NoSpace,
+        Unknown,
     }
 }
