@@ -400,7 +400,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         if (shopPurchaseController.IsBusy)
         {
             purchaseWasInProgress = true;
-            UpdateStatus($"Running automatic shopping | Waiting for purchase completion on {matchedPage.MenuLabel} / {matchedTab.TabLabel} | groups={completedGroupCount} purchases={completedPurchaseCount}");
+            UpdateStatus("Running automatic shopping | Waiting for purchase completion");
             return;
         }
 
@@ -423,21 +423,21 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 lastNavigationVerificationSnapshot = null;
                 lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
                 completedGroupCount++;
-                UpdateStatus($"Running automatic shopping | Navigating to {nextActionableGroup.Value.MenuLabel} / {nextActionableGroup.Value.TabLabel} | groups={completedGroupCount} purchases={completedPurchaseCount}");
+                UpdateStatus("Running automatic shopping | Navigating to next shopping group");
                 return;
             }
 
             if (availableCurrency <= 0)
             {
                 StopCompleted(completedAnyPurchases
-                    ? $"Completed automatic shopping run. groups={completedGroupCount + 1} purchases={completedPurchaseCount}. Remaining targets are blocked by reserve settings."
-                    : $"Currency reserve prevents further purchases on {matchedPage.MenuLabel} / {matchedTab.TabLabel}.");
+                    ? $"Completed automatic shopping run. purchases={completedPurchaseCount}. Remaining targets are blocked by reserve settings."
+                    : "Currency reserve prevents further purchases.");
             }
             else
             {
                 StopCompleted(completedAnyPurchases
-                    ? $"Completed automatic shopping run. groups={completedGroupCount + 1} purchases={completedPurchaseCount}."
-                    : $"No shopping targets remain for {matchedPage.MenuLabel} / {matchedTab.TabLabel}.");
+                    ? $"Completed automatic shopping run. purchases={completedPurchaseCount}."
+                    : "No shopping targets remain.");
             }
             return;
         }
@@ -603,7 +603,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 desiredGroupStableLogged = false;
                 lastNavigationVerificationSnapshot = null;
                 lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
-                UpdateStatus($"Running automatic shopping | Opening {desiredGroup.Value.MenuLabel} | groups={completedGroupCount} purchases={completedPurchaseCount}");
+                UpdateStatus("Running automatic shopping | Opening vendor category");
             }
 
             return false;
@@ -650,7 +650,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                     nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
                     lastNavigationVerificationSnapshot = null;
                     lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
-                    UpdateStatus($"Running automatic shopping | Returning to vendor menu for {desiredGroup.Value.MenuLabel} | groups={completedGroupCount} purchases={completedPurchaseCount}");
+                    UpdateStatus("Running automatic shopping | Returning to vendor menu");
                 }
 
                 return false;
@@ -665,7 +665,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                     nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
                     lastNavigationVerificationSnapshot = null;
                     lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
-                    UpdateStatus($"Running automatic shopping | Switching to {desiredGroup.Value.TabLabel} tab | groups={completedGroupCount} purchases={completedPurchaseCount}");
+                    UpdateStatus("Running automatic shopping | Switching vendor tab");
                 }
 
                 return false;
@@ -675,7 +675,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             {
                 matchedDesiredGroupAt = DateTimeOffset.UtcNow;
                 desiredGroupStableLogged = false;
-                UpdateStatus($"Running automatic shopping | Matched {desiredGroup.Value.MenuLabel} / {desiredGroup.Value.TabLabel}; waiting for settle | groups={completedGroupCount} purchases={completedPurchaseCount}");
+                UpdateStatus("Running automatic shopping | Waiting for vendor tab settle");
                 return false;
             }
 
