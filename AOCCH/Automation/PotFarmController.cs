@@ -24,6 +24,7 @@ public sealed class PotFarmController : IDisposable
     private static readonly TimeSpan TreasureCenterSettleDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LeaveTransitionTimeout = TimeSpan.FromSeconds(15);
     private const int MaximumTreasureElixirAttempts = 3;
+    private const int RequiredTreasureInventoryFreeSlots = 3;
     private const int MinimumPotApproachDismountDistance = 5;
     private const int MaximumPotApproachDismountDistance = 50;
     private const int PotWaitPointCandidateCount = 10;
@@ -256,6 +257,12 @@ public sealed class PotFarmController : IDisposable
 
         if (scannerSnapshot.ActivePotFate != null)
         {
+            if (!TryVerifyPotFateInventory(out reason))
+            {
+                controlReason = PotControlReason.None;
+                return false;
+            }
+
             controlReason = PotControlReason.ActivePotFate;
             reason = $"Active pot FATE detected: {scannerSnapshot.ActivePotFate.Name} ({scannerSnapshot.ActivePotFate.Id}).";
             return true;
@@ -293,6 +300,12 @@ public sealed class PotFarmController : IDisposable
             var departureAt = GetDepartureAt(potCycleSnapshot);
             if (departureAt != DateTimeOffset.MinValue && now >= departureAt)
             {
+                if (!TryVerifyPotControlInventory(out reason))
+                {
+                    controlReason = PotControlReason.None;
+                    return false;
+                }
+
                 controlReason = PotControlReason.PredictedDepartureWindow;
                 reason = $"Predicted pot departure window opened for {potCycleSnapshot.PredictedNextPotFateName}.";
                 return true;
@@ -301,6 +314,12 @@ public sealed class PotFarmController : IDisposable
 
         if (!potCycleSnapshot.HasKnownAnchor && configuration.StartingPotFate != StartingPotFateMode.Auto)
         {
+            if (!TryVerifyPotControlInventory(out reason))
+            {
+                controlReason = PotControlReason.None;
+                return false;
+            }
+
             controlReason = PotControlReason.BootstrapStaging;
             reason = "No pot anchor is known yet; bootstrap staging is required.";
             return true;
@@ -498,10 +517,18 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
+        if (ShouldReleasePotControlForInventory(currentState, out var inventoryReleaseReason))
+        {
+            ReleasePotControlForInventory(inventoryReleaseReason);
+            return;
+        }
+
         if (currentState != PotFarmState.RunningPotFate && scannerSnapshot.ActivePotFate != null)
         {
-            StartActivePotFate(scannerSnapshot.ActivePotFate);
-            return;
+            if (StartActivePotFate(scannerSnapshot.ActivePotFate))
+            {
+                return;
+            }
         }
 
         if (currentState is not PotFarmState.RunningPotFate
@@ -796,8 +823,10 @@ public sealed class PotFarmController : IDisposable
         var scannerSnapshot = scanner.Snapshot;
         if (scannerSnapshot.ActivePotFate != null)
         {
-            StartActivePotFate(scannerSnapshot.ActivePotFate);
-            return;
+            if (StartActivePotFate(scannerSnapshot.ActivePotFate))
+            {
+                return;
+            }
         }
 
         if (!scannerSnapshot.HasTreasureBuff)
@@ -1173,8 +1202,17 @@ public sealed class PotFarmController : IDisposable
         return true;
     }
 
-    private void StartActivePotFate(ActivePotFate activePotFate)
+    private bool StartActivePotFate(ActivePotFate activePotFate)
     {
+        if (!TryVerifyPotFateInventory(out var inventoryBlockReason))
+        {
+            logger.DebugThrottled(
+                $"pot-fate-inventory-{activePotFate.Id}",
+                WaitLogInterval,
+                $"{BuildLogTag()} op=pot-fate-skip pot=\"{activePotFate.Name}\" ({activePotFate.Id}) reason={inventoryBlockReason}");
+            return false;
+        }
+
         var startedFromSpawnWait = State == PotFarmState.WaitingAtSpawn;
         Vector3? initialDestinationOverride = null;
         float? initialArrivalToleranceOverride = null;
@@ -1212,7 +1250,7 @@ public sealed class PotFarmController : IDisposable
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to start pot FATE execution for {activePotFate.Name}."
                 : fateAutomationController.LastError);
-            return;
+            return false;
         }
 
         lock (gate)
@@ -1229,6 +1267,70 @@ public sealed class PotFarmController : IDisposable
         logger.ResetThrottle("pot-traveling-spawn");
         logger.ResetThrottle("pot-wait-spawn");
         TransitionTo(PotFarmState.RunningPotFate, $"Running pot FATE {activePotFate.Name} ({activePotFate.Id}).");
+        return true;
+    }
+
+    private bool TryVerifyPotControlInventory(out string reason)
+    {
+        reason = string.Empty;
+        if (!InventorySpaceVerifier.TryGetFreeNormalInventorySlots(out var freeSlots, out var inventoryError))
+        {
+            reason = inventoryError.Length == 0
+                ? $"Pot control is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} verified free slots for treasure rewards."
+                : $"Pot control is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} verified free slots for treasure rewards. verification={inventoryError}.";
+            return false;
+        }
+
+        if (freeSlots >= RequiredTreasureInventoryFreeSlots)
+        {
+            return true;
+        }
+
+        reason = $"Pot control is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} free slots for treasure rewards. freeSlots={freeSlots}.";
+        return false;
+    }
+
+    private bool TryVerifyPotFateInventory(out string reason)
+    {
+        reason = string.Empty;
+        if (!InventorySpaceVerifier.TryGetFreeNormalInventorySlots(out var freeSlots, out var inventoryError))
+        {
+            reason = inventoryError.Length == 0
+                ? $"Pot FATE admission is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} verified free slots for treasure rewards."
+                : $"Pot FATE admission is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} verified free slots for treasure rewards. verification={inventoryError}.";
+            return false;
+        }
+
+        if (freeSlots >= RequiredTreasureInventoryFreeSlots)
+        {
+            return true;
+        }
+
+        reason = $"Pot FATE admission is skipped until inventory has at least {RequiredTreasureInventoryFreeSlots} free slots for treasure rewards. freeSlots={freeSlots}.";
+        return false;
+    }
+
+    private static bool IsPreTreasurePotControlState(PotFarmState state)
+        => state is PotFarmState.Bootstrapping
+            or PotFarmState.WaitingForPredictedWindow
+            or PotFarmState.TravelingToSpawn
+            or PotFarmState.WaitingAtSpawn;
+
+    private bool ShouldReleasePotControlForInventory(PotFarmState currentState, out string reason)
+    {
+        reason = string.Empty;
+        return IsPreTreasurePotControlState(currentState) && !TryVerifyPotControlInventory(out reason);
+    }
+
+    private void ReleasePotControlForInventory(string reason)
+    {
+        if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
+        {
+            movementController.Stop(reason);
+        }
+
+        logger.Info($"{BuildLogTag()} op=inventory-release state={State} reason={reason}");
+        TransitionTo(PotFarmState.Completed, reason, result: PotFarmRunResult.None);
     }
 
     private bool BeginTreasureCenterApproach()

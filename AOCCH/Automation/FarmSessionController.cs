@@ -14,6 +14,7 @@ public sealed class FarmSessionController : IDisposable
     private static int nextRunSequence;
     private static readonly TimeSpan CofferSurveyWaitTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan SupportJobSwitchTimeout = TimeSpan.FromSeconds(5);
+    private const int RequiredAutomaticCofferInventoryFreeSlots = 3;
     private enum InterruptedActivityKind
     {
         None,
@@ -1246,6 +1247,12 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        if (!TryVerifyAutomaticTreasureCofferInventory(out var inventoryReason))
+        {
+            SetAutomaticTreasureCofferStatus(inventoryReason);
+            return false;
+        }
+
         if (TryBeginAutomaticTreasureCofferRestoreRetry(context))
         {
             return true;
@@ -1271,6 +1278,26 @@ public sealed class FarmSessionController : IDisposable
         }
 
         return BeginAutomaticTreasureCofferSurvey(context, surveySnapshot.Revision);
+    }
+
+    private bool TryVerifyAutomaticTreasureCofferInventory(out string reason)
+    {
+        reason = string.Empty;
+        if (!InventorySpaceVerifier.TryGetFreeNormalInventorySlots(out var freeSlots, out var inventoryError))
+        {
+            reason = inventoryError.Length == 0
+                ? $"Automatic overworld coffer mode is skipped until inventory has at least {RequiredAutomaticCofferInventoryFreeSlots} verified free slots."
+                : $"Automatic overworld coffer mode is skipped until inventory has at least {RequiredAutomaticCofferInventoryFreeSlots} verified free slots. verification={inventoryError}.";
+            return false;
+        }
+
+        if (freeSlots >= RequiredAutomaticCofferInventoryFreeSlots)
+        {
+            return true;
+        }
+
+        reason = $"Automatic overworld coffer mode is skipped until inventory has at least {RequiredAutomaticCofferInventoryFreeSlots} free slots. freeSlots={freeSlots}.";
+        return false;
     }
 
     private bool TryBeginAutomaticTreasureCofferRestoreRetry(string context)

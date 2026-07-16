@@ -19,6 +19,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferAcquisitionDistance = 60f;
     private const float VisibleCofferApproachScanTriggerDistance = 40f;
+    private const int RequiredInventoryFreeSlots = 3;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
@@ -465,6 +466,11 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
+        if (!TryVerifyInventorySpaceForActiveSpot("before routing to the next overworld coffer candidate"))
+        {
+            return false;
+        }
+
         var playerPosition = objectTable.LocalPlayer?.Position;
         var destination = ActiveResolvedPosition;
         var arrivalDistance = GetArrivalDistance(spot);
@@ -851,6 +857,16 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
+        if (!TryVerifyInventorySpaceForActiveSpot("before opening the matched overworld coffer"))
+        {
+            lock (gate)
+            {
+                pendingInteractionMatch = null;
+            }
+
+            return;
+        }
+
         logger.Info($"{BuildLogTag()} op=coffer-handoff-start spot={DescribeActiveSpot()} candidate={pendingMatch.CandidateKey.Label} flow={pendingMatch.Flow}");
         if (!cofferInteractionController.Start(pendingMatch))
         {
@@ -986,6 +1002,29 @@ public sealed class TreasureCofferFarmController : IDisposable
     {
         var configured = spot?.ArrivalDistance ?? configuration.ArrivalDistance;
         return Math.Clamp(configured, 5f, 50f);
+    }
+
+    private bool TryVerifyInventorySpaceForActiveSpot(string context)
+    {
+        if (!InventorySpaceVerifier.TryGetFreeNormalInventorySlots(out var freeSlots, out var inventoryError))
+        {
+            var reason = inventoryError.Length == 0
+                ? $"Automatic overworld coffer route stopped {context} because inventory space could not be verified for {DescribeActiveSpot()}."
+                : $"Automatic overworld coffer route stopped {context} because inventory space could not be verified for {DescribeActiveSpot()}. verification={inventoryError}.";
+            logger.Warning($"{BuildLogTag()} op=inventory-space-unverified spot={DescribeActiveSpot()} requiredFreeSlots={RequiredInventoryFreeSlots} context=\"{context}\" verification={FormatValue(inventoryError)}");
+            TransitionTo(TreasureCofferFarmState.Stopped, reason, error: reason, result: TreasureCofferFarmResult.Stopped);
+            return false;
+        }
+
+        if (freeSlots >= RequiredInventoryFreeSlots)
+        {
+            return true;
+        }
+
+        var stopReason = $"Automatic overworld coffer route stopped {context} because inventory only has {freeSlots} free slot(s) and requires at least {RequiredInventoryFreeSlots} for {DescribeActiveSpot()}.";
+        logger.Warning($"{BuildLogTag()} op=inventory-space-insufficient spot={DescribeActiveSpot()} requiredFreeSlots={RequiredInventoryFreeSlots} freeSlots={freeSlots} context=\"{context}\"");
+        TransitionTo(TreasureCofferFarmState.Stopped, stopReason, error: stopReason, result: TreasureCofferFarmResult.Stopped);
+        return false;
     }
 
     private void SetFailure(string reason)
