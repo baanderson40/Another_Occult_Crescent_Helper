@@ -65,6 +65,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private DateTimeOffset lastNavigationVerificationLogAt = DateTimeOffset.MinValue;
     private DateTimeOffset autoStartBlockedUntil = DateTimeOffset.MinValue;
     private string triggerStatus = "Automatic shopping disabled.";
+    private ShoppingStopKind lastStopKind;
     private bool vendorDismountPending;
     private DateTimeOffset vendorDismountStartedAt = DateTimeOffset.MinValue;
     private bool vendorMenuOpenPending;
@@ -173,6 +174,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         {
             lock (gate)
             {
+                if (!isRunning)
+                {
+                    return triggerStatus;
+                }
+
                 if (activeTarget == null || activeTargetIndex == null || string.IsNullOrEmpty(activeTargetItemName))
                 {
                     return status;
@@ -196,6 +202,17 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             lock (gate)
             {
                 return triggerStatus;
+            }
+        }
+    }
+
+    public ShoppingStopKind LastStopKind
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastStopKind;
             }
         }
     }
@@ -234,10 +251,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             activeTargetIndex = null;
             activeTargetOriginalAmount = 0;
             activeTargetItemName = string.Empty;
+            activePurchaseIntent = ShoppingPurchaseIntent.None;
             purchaseWasInProgress = false;
             completedAnyPurchases = false;
             completedGroupCount = 0;
             completedPurchaseCount = 0;
+            lastStopKind = ShoppingStopKind.None;
             desiredGroup = null;
             nextNavigationAttemptAt = DateTimeOffset.MinValue;
             matchedDesiredGroupAt = DateTimeOffset.MinValue;
@@ -259,6 +278,18 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     }
 
     public void Stop(string reason)
+        => Stop(ShoppingStopKind.Failed, reason);
+
+    public void StopCompleted(string reason)
+        => Stop(ShoppingStopKind.Completed, reason);
+
+    public void StopSkipped(string reason)
+        => Stop(ShoppingStopKind.Skipped, reason);
+
+    public void StopFailed(string reason)
+        => Stop(ShoppingStopKind.Failed, reason);
+
+    private void Stop(ShoppingStopKind stopKind, string reason)
     {
         lock (gate)
         {
@@ -268,10 +299,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             activeTargetIndex = null;
             activeTargetOriginalAmount = 0;
             activeTargetItemName = string.Empty;
+            activePurchaseIntent = ShoppingPurchaseIntent.None;
             purchaseWasInProgress = false;
             completedAnyPurchases = false;
             completedGroupCount = 0;
             completedPurchaseCount = 0;
+            lastStopKind = stopKind;
             desiredGroup = null;
             nextNavigationAttemptAt = DateTimeOffset.MinValue;
             matchedDesiredGroupAt = DateTimeOffset.MinValue;
@@ -297,7 +330,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     {
         if (!IsRunning)
         {
-            EvaluateAndMaybeAutoStart();
+            RefreshTriggerStatus(allowDuringFarmSession: false);
             return;
         }
 
@@ -306,7 +339,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         CurrencyShopGroup? nextGroup = null;
         if (desiredGroup == null && !TrySelectNextActionableGroup(out nextGroup, out var nextGroupReason))
         {
-            Stop(nextGroupReason);
+            StopCompleted(nextGroupReason);
             return;
         }
 
@@ -319,7 +352,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
         if (!pageMatcher.TryMatch(snapshot, out var match, out var matchReason) || match == null)
         {
-            Stop($"Failed: {matchReason}");
+            StopFailed($"Failed: {matchReason}");
             return;
         }
 
@@ -330,7 +363,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         {
             if (purchaseWasInProgress || shopPurchaseController.IsBusy)
             {
-                Stop($"Shopping stopped because the page/tab changed away from the active target group {desiredGroup.Value.MenuLabel} / {desiredGroup.Value.TabLabel}.");
+                StopFailed($"Shopping stopped because the page/tab changed away from the active target group {desiredGroup.Value.MenuLabel} / {desiredGroup.Value.TabLabel}.");
                 return;
             }
 
@@ -352,7 +385,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             }
             else if (shopPurchaseController.LastStatus.StartsWith("Failed:", StringComparison.Ordinal))
             {
-                Stop($"Purchase failed: {shopPurchaseController.LastStatus}");
+                StopFailed($"Purchase failed: {shopPurchaseController.LastStatus}");
                 return;
             }
         }
@@ -389,13 +422,13 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             if (availableCurrency <= 0)
             {
-                Stop(completedAnyPurchases
+                StopCompleted(completedAnyPurchases
                     ? $"Completed automatic shopping run. groups={completedGroupCount + 1} purchases={completedPurchaseCount}. Remaining targets are blocked by reserve settings."
                     : $"Currency reserve prevents further purchases on {matchedPage.MenuLabel} / {matchedTab.TabLabel}.");
             }
             else
             {
-                Stop(completedAnyPurchases
+                StopCompleted(completedAnyPurchases
                     ? $"Completed automatic shopping run. groups={completedGroupCount + 1} purchases={completedPurchaseCount}."
                     : $"No shopping targets remain for {matchedPage.MenuLabel} / {matchedTab.TabLabel}.");
             }
@@ -413,7 +446,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             RowIndex = itemDefinition.RowIndex,
         }, 1))
         {
-            Stop($"Failed to start purchase for {itemDefinition.Name}.");
+            StopFailed($"Failed to start purchase for {itemDefinition.Name}.");
             return;
         }
 
@@ -426,22 +459,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         UpdateStatus("Running automatic shopping");
     }
 
-    private void EvaluateAndMaybeAutoStart()
+    private void RefreshTriggerStatus(bool allowDuringFarmSession)
     {
-        var evaluation = EvaluateAutoStart(allowDuringFarmSession: false);
+        var evaluation = EvaluateAutoStart(allowDuringFarmSession);
         lock (gate)
         {
             triggerStatus = evaluation.Reason;
-        }
-
-        if (!evaluation.ShouldRun)
-        {
-            return;
-        }
-
-        if (Start())
-        {
-            logger.Info($"[ManualCurrencyShopping] op=auto-start reason=\"{evaluation.Reason.Replace("\"", "'")}\"");
         }
     }
 
@@ -460,6 +483,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         if (IsRunning)
         {
             return new(false, "Automatic shopping already running.");
+        }
+
+        if (configuration.ScannerOnlyMode)
+        {
+            return new(false, "Blocked: scanner-only mode is enabled.");
         }
 
         if (true)
@@ -482,6 +510,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 || treasureCofferFarmController.IsRunning)
             {
                 return new(false, "Blocked: conflicting automation is active.");
+            }
+
+            if (!allowDuringFarmSession)
+            {
+                return new(false, "Waiting for a farm session idle window to start shopping.");
             }
         }
 
@@ -641,7 +674,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             if (movementController.State is MovementState.Failed or MovementState.TimedOut)
             {
-                Stop($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                StopFailed($"Failed to recover to base camp for shopping: {movementController.LastError}");
                 return false;
             }
 
@@ -660,7 +693,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             {
                 if (!movementController.RecoverToBaseCamp())
                 {
-                    Stop($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                    StopFailed($"Failed to recover to base camp for shopping: {movementController.LastError}");
                     return false;
                 }
 
@@ -672,14 +705,14 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return false;
             }
 
-            Stop("Skipped shopping: vendor unavailable after base camp recovery.");
+            StopSkipped("Skipped shopping: vendor unavailable after base camp recovery.");
             return false;
         }
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null)
         {
-            Stop("Failed: player position is unavailable.");
+            StopFailed("Failed: player position is unavailable.");
             return false;
         }
 
@@ -696,14 +729,14 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
                 if (movementController.State is MovementState.Failed or MovementState.TimedOut)
                 {
-                    Stop($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                    StopFailed($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
                     return false;
                 }
             }
 
             if (!movementController.StartDirectMove("Approach Expedition Antiquarian", vendor.Position, VendorInteractionRange, shouldMountBeforeStep: true))
             {
-                Stop($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                StopFailed($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
                 return false;
             }
 
@@ -734,7 +767,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             {
                 if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, "currency shop vendor interaction"))
                 {
-                    Stop("Failed: could not dismount before vendor interaction.");
+                    StopFailed("Failed: could not dismount before vendor interaction.");
                     return false;
                 }
 
@@ -748,7 +781,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             if (DateTimeOffset.UtcNow - vendorDismountStartedAt >= VendorDismountTimeout)
             {
-                Stop("Failed: could not dismount before vendor interaction.");
+                StopFailed("Failed: could not dismount before vendor interaction.");
                 return false;
             }
 
@@ -785,7 +818,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return false;
             }
 
-            Stop($"Failed: vendor menu did not open after {MaxVendorMenuOpenAttempts} attempt(s).");
+            StopFailed($"Failed: vendor menu did not open after {MaxVendorMenuOpenAttempts} attempt(s).");
             return false;
         }
 
@@ -800,7 +833,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return false;
         }
 
-        Stop("Failed: neither the vendor menu nor the currency shop is open, and the vendor menu could not be reopened.");
+        StopFailed("Failed: neither the vendor menu nor the currency shop is open, and the vendor menu could not be reopened.");
         return false;
     }
 
@@ -1052,6 +1085,14 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
 
         logger.Info($"[ManualCurrencyShopping] op=navigation-verify desiredMenuIndex={snapshot.DesiredMenuIndex} desiredTabId={snapshot.DesiredTabId} reportedTabId={snapshot.ReportedTabId} matchedMenuIndex={snapshot.MatchedMenuIndex} matchedTabId={snapshot.MatchedTabId}");
+    }
+
+    public enum ShoppingStopKind
+    {
+        None,
+        Completed,
+        Skipped,
+        Failed,
     }
 
     private readonly record struct CurrencyShopGroup(int MenuIndex, string MenuLabel, int TabId, string TabLabel);

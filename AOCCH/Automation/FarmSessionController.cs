@@ -975,9 +975,17 @@ public sealed class FarmSessionController : IDisposable
 
         logger.ResetThrottle("farm-running-shopping");
 
-        if (manualCurrencyShoppingController.Status.StartsWith("Failed:", StringComparison.Ordinal))
+        switch (manualCurrencyShoppingController.LastStopKind)
         {
-            logger.Warning($"{BuildLogTag()} op=shopping-warning reason={manualCurrencyShoppingController.Status}");
+            case ManualCurrencyShoppingController.ShoppingStopKind.Failed:
+                logger.Warning($"{BuildLogTag()} op=shopping-warning reason={manualCurrencyShoppingController.Status}");
+                break;
+            case ManualCurrencyShoppingController.ShoppingStopKind.Skipped:
+                logger.Info($"{BuildLogTag()} op=shopping-skipped reason={manualCurrencyShoppingController.Status}");
+                break;
+            case ManualCurrencyShoppingController.ShoppingStopKind.Completed:
+                logger.Info($"{BuildLogTag()} op=shopping-complete reason={manualCurrencyShoppingController.Status}");
+                break;
         }
 
         TransitionTo(FarmSessionState.SelectingTarget, manualCurrencyShoppingController.Status, "Selecting target");

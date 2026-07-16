@@ -486,7 +486,6 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.TextWrapped($"Shopping: {plugin.ManualCurrencyShoppingController.CurrentStatusSummary}");
-        ImGui.TextWrapped($"Trigger: {plugin.ManualCurrencyShoppingController.TriggerStatus}");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Currency");
@@ -696,28 +695,10 @@ public class ConfigWindow : Window, IDisposable
         }
     }
 
-    private CurrencyShopReserveSetting GetOrCreateReserve(uint currencyItemId)
-    {
-        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == currencyItemId);
-        if (reserve != null)
-        {
-            return reserve;
-        }
-
-        reserve = new CurrencyShopReserveSetting
-        {
-            CurrencyItemId = currencyItemId,
-            ReserveAmount = 0,
-        };
-        configuration.CurrencyShopReserves.Add(reserve);
-        configuration.Save();
-        return reserve;
-    }
-
     private void DrawCurrencySettingsRow(uint currencyItemId, string label, int threshold, Action<int> applyThreshold)
     {
-        var reserve = GetOrCreateReserve(currencyItemId);
-        var reserveAmount = reserve.ReserveAmount;
+        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == currencyItemId);
+        var reserveAmount = reserve?.ReserveAmount ?? 0;
 
         ImGui.TableNextRow();
         ImGui.TableSetColumnIndex(0);
@@ -727,7 +708,18 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(90f);
         if (ImGui.InputInt($"##reserve_{currencyItemId}", ref reserveAmount))
         {
-            reserve.ReserveAmount = Math.Clamp(reserveAmount, 0, 9999);
+            var clampedReserveAmount = Math.Clamp(reserveAmount, 0, 9999);
+            reserve ??= new CurrencyShopReserveSetting
+            {
+                CurrencyItemId = currencyItemId,
+                ReserveAmount = 0,
+            };
+            if (!configuration.CurrencyShopReserves.Contains(reserve))
+            {
+                configuration.CurrencyShopReserves.Add(reserve);
+            }
+
+            reserve.ReserveAmount = clampedReserveAmount;
             logger.Info($"[Config] op=setting-change key=CurrencyReserve currencyItemId={currencyItemId} new={reserve.ReserveAmount}");
             configuration.Save();
         }
