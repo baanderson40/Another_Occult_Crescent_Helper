@@ -124,7 +124,7 @@
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E1", "label": "E1", "position": { "x": 803.661, "y": 96.0, "z": -354.181 }, "aggroLevel": 4 },
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E2", "label": "E2", "position": { "x": 684.422, "y": 96.101, "z": -165.481 }, "aggroLevel": 4 },
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E3", "label": "E3", "position": { "x": 878.113, "y": 108.29, "z": -91.106 }, "aggroLevel": 5 },
-        { "fateId": 1976, "groupKey": "east", "candidateKey": "E4", "label": "E4", "position": { "x": 885.93, "y": 120.0, "z": -23.25 }, "aggroLevel": 20 }
+        { "fateId": 1976, "groupKey": "east", "candidateKey": "E4", "label": "E4", "position": { "x": 885.93, "y": 120.0, "z": -23.25 }, "aggroLevel": 5 }
       ]
     },
     {
