@@ -892,6 +892,11 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (startDecision is { AllowStart: false } && !string.Equals(LastTransition, startDecision.Reason, StringComparison.Ordinal))
+        {
+            TransitionTo(FarmSessionState.IdleWaiting, startDecision.Reason, "Idle waiting");
+        }
+
         if (now - lastIdleScanAt >= IdleRescanInterval)
         {
             lock (gate)

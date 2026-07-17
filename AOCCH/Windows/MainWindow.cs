@@ -68,7 +68,7 @@ public sealed class MainWindow : Window, IDisposable
         var statusTextScale = configuration.MainWindowStatusTextScalePercent / 100f;
 
         ImGui.SetWindowFontScale(statusTextScale);
-        ImGui.TextWrapped($"Farm: {GetFarmSummary(snapshot, treasureSnapshot, cofferSurveySnapshot, automaticCofferStatus)}");
+        ImGui.TextWrapped($"Farm: {GetFarmSummary(snapshot, potCycleSnapshot, treasureSnapshot, cofferSurveySnapshot, automaticCofferStatus)}");
         var potSummary = GetPotSummary(snapshot, potCycleSnapshot);
         if (potSummary != null)
         {
@@ -259,6 +259,7 @@ public sealed class MainWindow : Window, IDisposable
 
     private string GetFarmSummary(
         ScannerSnapshot snapshot,
+        PotCycleSnapshot potCycleSnapshot,
         TreasureHintSnapshot treasureSnapshot,
         TreasureCofferSurveySnapshot cofferSurveySnapshot,
         TreasureCofferAutomaticModeStatus automaticCofferStatus)
@@ -280,7 +281,7 @@ public sealed class MainWindow : Window, IDisposable
             return baseActivity;
         }
 
-        var pendingPotDepartureSummary = GetPendingPotDepartureSummary(baseActivity);
+        var pendingPotDepartureSummary = GetPendingPotDepartureSummary(baseActivity, potCycleSnapshot);
         if (pendingPotDepartureSummary != null)
         {
             return pendingPotDepartureSummary;
@@ -382,7 +383,7 @@ public sealed class MainWindow : Window, IDisposable
         return IsIdleLikeFarmActivity(activity) ? null : transition;
     }
 
-    private string? GetPendingPotDepartureSummary(string activity)
+    private string? GetPendingPotDepartureSummary(string activity, PotCycleSnapshot potCycleSnapshot)
     {
         if (!IsIdleLikeFarmActivity(activity))
         {
@@ -397,7 +398,18 @@ public sealed class MainWindow : Window, IDisposable
             return null;
         }
 
-        return "Waiting to depart for pots";
+        if (!potCycleSnapshot.HasPredictedNextPot)
+        {
+            return "Waiting to depart for pots";
+        }
+
+        var departureAt = potCycleSnapshot.PredictedNextSpawnAt
+            - TimeSpan.FromMinutes(Math.Max(0, configuration.SpawnLeadMinutes));
+        var timeUntilDeparture = departureAt - DateTimeOffset.UtcNow;
+        var countdown = timeUntilDeparture > TimeSpan.Zero
+            ? timeUntilDeparture.ToString(@"mm\:ss", CultureInfo.InvariantCulture)
+            : "00:00";
+        return $"Waiting to depart for pots | {countdown}";
     }
 
     private string? GetIdleAutoCofferSummary(TreasureCofferSurveySnapshot cofferSurveySnapshot, TreasureCofferAutomaticModeStatus automaticCofferStatus)
