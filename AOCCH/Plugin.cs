@@ -120,7 +120,7 @@ public sealed class Plugin : IDalamudPlugin
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, MovementController, GameActionController, Configuration, Logger);
-        AutorotationController = new AutorotationController(BossMod, Configuration, Logger);
+        AutorotationController = new AutorotationController(BossMod, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
@@ -885,6 +885,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         AutorotationController.ReleaseOwnership(reason);
+        AutorotationController.DeleteManagedPreset(reason);
 
         FarmSessionController.ResetInstanceState(reason);
         PotFarmController.ResetInstanceState(reason);

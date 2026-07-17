@@ -53,8 +53,6 @@ public class ConfigWindow : Window, IDisposable
         OccultCrescentNameResolver nameResolver,
         AocchLogger logger) : base("AOCCH Configuration###AOCCHConfig")
     {
-        Flags = ImGuiWindowFlags.NoCollapse;
-
         Size = new Vector2(620, 360);
         SizeCondition = ImGuiCond.FirstUseEver;
 
@@ -421,12 +419,18 @@ public class ConfigWindow : Window, IDisposable
         var presetWidth = ImGui.CalcTextSize(autorotationPresetName).X + 24f;
         presetWidth = Math.Clamp(presetWidth, SettingsTextInputMinWidth, SettingsTextInputMaxWidth);
         ImGui.SetNextItemWidth(presetWidth);
-        if (ImGui.InputText("Autorotation Preset Name", ref autorotationPresetName, 120))
+        if (ImGui.InputText("Autorotation Override Preset Name", ref autorotationPresetName, 120))
         {
             logger.InfoThrottled("setting-autorotation-preset-name", SettingTextLogInterval, $"Setting changed: AutorotationPresetName: '{configuration.AutorotationPresetName}' -> '{autorotationPresetName}'.");
             configuration.AutorotationPresetName = autorotationPresetName;
             configuration.Save();
         }
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
+
+        DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
+        DrawTargetRangeSetting("Ranged Target Range", configuration.RangedTargetRange, value => configuration.RangedTargetRange = value, nameof(configuration.RangedTargetRange));
 
         var useReturn = configuration.UseReturn;
         if (ImGui.Checkbox("Use Return", ref useReturn))
@@ -473,6 +477,19 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
+    }
+
+    private void DrawTargetRangeSetting(string label, decimal currentValue, Action<decimal> setter, string key)
+    {
+        var value = (float)currentValue;
+        ImGui.SetNextItemWidth(SettingsNumericInputWidth);
+        if (ImGui.InputFloat(label, ref value, 0f, 0f, "%.1f"))
+        {
+            var nextValue = Math.Clamp((decimal)Math.Round(value, 1), 1.1m, 30m);
+            logger.Info($"[Config] op=setting-change key={key} old={currentValue} new={nextValue}");
+            setter(nextValue);
+            configuration.Save();
+        }
     }
 
     private void DrawShoppingTab()

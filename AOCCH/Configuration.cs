@@ -53,9 +53,11 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
 
-    public string AutorotationPresetName { get; set; } = "Occult";
+    public string AutorotationPresetName { get; set; } = string.Empty;
+    public decimal MeleeTargetRange { get; set; } = 3;
+    public decimal RangedTargetRange { get; set; } = 25;
     public bool EnableCriticalEngagementFarming { get; set; } = true;
     public bool EnableFateFarming { get; set; } = true;
     public bool PrioritizeCe { get; set; } = true;
@@ -153,6 +155,8 @@ public class Configuration : IPluginConfiguration
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
+        MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
+        RangedTargetRange = ClampTargetRange(RangedTargetRange);
         ClampCurrencyShopSettings();
         Plugin.PluginInterface.SavePluginConfig(this);
         logger?.Debug("Configuration saved.");
@@ -163,9 +167,11 @@ public class Configuration : IPluginConfiguration
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
+        MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
+        RangedTargetRange = ClampTargetRange(RangedTargetRange);
         ClampCurrencyShopSettings();
 
-        if (Version >= 2)
+        if (Version >= 3)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -222,12 +228,21 @@ public class Configuration : IPluginConfiguration
             logger?.Info($"[Configuration] op=migration-copy source=NinjaGearsetNumber value={NinjaGearsetNumber} target=VisibleCofferNinjaGearsetNumber");
         }
 
+        if (Version < 3 && string.Equals(AutorotationPresetName?.Trim(), "Occult", StringComparison.OrdinalIgnoreCase))
+        {
+            AutorotationPresetName = string.Empty;
+            logger?.Info("[Configuration] op=migration-clear legacy autorotation default=Occult");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 2;
-        logger?.Info("[Configuration] op=migration-complete version=2");
+        Version = 3;
+        logger?.Info("[Configuration] op=migration-complete version=3");
         return true;
     }
+
+    private static decimal ClampTargetRange(decimal value)
+        => Math.Clamp(Math.Round(value, 1), 1.1m, 30m);
 
     private void SetLinkedNinjaGearsetNumbers(int value, bool updateVisibleCofferGearset)
     {

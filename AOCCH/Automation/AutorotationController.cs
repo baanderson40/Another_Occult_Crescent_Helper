@@ -1,6 +1,12 @@
 using System;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using AOCCH.IPC;
 using AOCCH.Logging;
+using AOCCH.Movement;
 
 namespace AOCCH.Automation;
 
@@ -9,6 +15,8 @@ public sealed class AutorotationController : IDisposable
     private readonly BossModIpc bossMod;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
+    private readonly GameActionController gameActionController;
+    private readonly AutorotationRoleResolver roleResolver;
     private readonly object gate = new();
 
     private bool bossModAvailable;
@@ -19,12 +27,18 @@ public sealed class AutorotationController : IDisposable
     private string lastKnownActivePreset = string.Empty;
     private string lastError = string.Empty;
     private string lastStatus = "Idle";
+    private bool managedPresetCreated;
+    private string selectedSource = "None";
+    private string selectedRole = "Unknown";
+    private decimal selectedRange;
 
-    public AutorotationController(BossModIpc bossMod, Configuration configuration, AocchLogger logger)
+    public AutorotationController(BossModIpc bossMod, Configuration configuration, GameActionController gameActionController, AocchLogger logger)
     {
         this.bossMod = bossMod;
         this.configuration = configuration;
         this.logger = logger;
+        this.gameActionController = gameActionController;
+        roleResolver = new AutorotationRoleResolver(logger);
     }
 
     public bool BossModAvailable
@@ -107,93 +121,116 @@ public sealed class AutorotationController : IDisposable
     public string ConfiguredPreset
         => (configuration.AutorotationPresetName ?? string.Empty).Trim();
 
+    public string ManagedPreset => "AOCCH";
+
+    public string SelectedSource
+    {
+        get { lock (gate) return selectedSource; }
+    }
+
+    public string SelectedRole
+    {
+        get { lock (gate) return selectedRole; }
+    }
+
+    public decimal SelectedRange
+    {
+        get { lock (gate) return selectedRange; }
+    }
+
     public bool RefreshBossModAvailability()
         => ProbeAvailability();
 
     public void Dispose()
     {
         ReleaseOwnership("Plugin disposal");
+        DeleteManagedPreset("Plugin disposal");
     }
 
     public bool ValidateConfiguredPreset()
     {
-        var preset = ConfiguredPreset;
-        if (preset.Length == 0)
-        {
-            SetStatus("Autorotation disabled; no preset configured.");
-            return false;
-        }
-
         if (!ProbeAvailability())
         {
             SetError("BossMod IPC is unavailable.", warning: true);
             return false;
         }
-
-        var activePreset = bossMod.GetActivePreset();
-        SetLastKnownActivePreset(activePreset);
-        if (activePreset.Length != 0)
-        {
-            SetStatus($"Skipped destructive autorotation validation because BossMod already has active preset '{activePreset}'.");
-            logger.Info($"{BuildLogTag()} op=validate-skip activePreset=\"{activePreset}\" reason=already-active");
-            return true;
-        }
-
-        if (!bossMod.SetActivePreset(preset))
-        {
-            SetError($"Failed to activate BossMod preset '{preset}' during validation.", warning: true);
-            return false;
-        }
-
-        activePreset = bossMod.GetActivePreset();
-        SetLastKnownActivePreset(activePreset);
-        if (!string.Equals(activePreset, preset, StringComparison.Ordinal))
-        {
-            SetError($"BossMod reported active preset '{activePreset}' instead of '{preset}' during validation.", warning: true);
-            return false;
-        }
-
-        if (!bossMod.ClearActivePreset())
-        {
-            SetError($"Failed to clear BossMod preset '{preset}' after validation.", warning: true);
-            return false;
-        }
-
-        activePreset = bossMod.GetActivePreset();
-        SetLastKnownActivePreset(activePreset);
-        if (activePreset.Length != 0)
-        {
-            SetError($"BossMod still reported active preset '{activePreset}' after validation clear.", warning: true);
-            return false;
-        }
-
-        SetStatus($"Validated BossMod preset '{preset}'.");
-        logger.Info($"{BuildLogTag()} op=validate preset=\"{preset}\" result=success");
+        SetStatus("BossMod IPC is available; autorotation will be selected when combat begins.");
         return true;
     }
 
     public bool ApplyForCombat(string context)
     {
-        var preset = ConfiguredPreset;
-        if (preset.Length == 0)
-        {
-            SetStatus($"Autorotation disabled for {context}; no preset configured.");
-            return false;
-        }
-
         if (!ProbeAvailability())
         {
             SetError($"BossMod IPC unavailable while entering {context}; continuing without autorotation.", warning: true);
             return false;
         }
 
+        var preset = ConfiguredPreset;
+        if (preset.Length != 0 && bossMod.GetPreset(preset).Length != 0)
+        {
+            SetStatus($"Using autorotation override '{preset}' for {context}.");
+            if (ApplyPreset(preset, context, "Override"))
+            {
+                return true;
+            }
+
+            logger.Warning($"{BuildLogTag()} op=override-fallback preset=\"{preset}\" reason=activation-failed");
+        }
+
+        if (preset.Length != 0)
+        {
+            logger.Warning($"{BuildLogTag()} op=override-fallback preset=\"{preset}\" reason=missing-or-invalid");
+        }
+
+        if (!CreateManagedPreset())
+        {
+            SetError($"Failed to create managed AOCCH autorotation for {context}.", warning: true);
+            return false;
+        }
+
+        return ApplyPreset(ManagedPreset, context, "Managed");
+    }
+
+    public void DeleteManagedPreset(string reason)
+    {
+        bool shouldDelete;
+        lock (gate)
+        {
+            shouldDelete = managedPresetCreated;
+        }
+
+        if (!shouldDelete || !ProbeAvailability())
+        {
+            return;
+        }
+
+        if (string.Equals(bossMod.GetActivePreset(), ManagedPreset, StringComparison.Ordinal))
+        {
+            if (!bossMod.ClearActivePreset())
+            {
+                logger.Warning($"{BuildLogTag()} op=managed-delete reason=\"{reason}\" result=active-clear-failed");
+                return;
+            }
+        }
+
+        if (bossMod.DeletePreset(ManagedPreset))
+        {
+            lock (gate) managedPresetCreated = false;
+            logger.Info($"{BuildLogTag()} op=managed-delete reason=\"{reason}\" result=success");
+        }
+        else
+        {
+            logger.Warning($"{BuildLogTag()} op=managed-delete reason=\"{reason}\" result=failed");
+        }
+    }
+
+    private bool ApplyPreset(string preset, string context, string source)
+    {
         var activePreset = bossMod.GetActivePreset();
         SetLastKnownActivePreset(activePreset);
 
-        lock (gate)
-        {
-            initialPreset = activePreset;
-        }
+        lock (gate) initialPreset = activePreset;
 
         logger.Info(activePreset.Length == 0
             ? $"{BuildLogTag()} op=capture context=\"{context}\" activePreset=empty"
@@ -208,7 +245,8 @@ public sealed class AutorotationController : IDisposable
                 ownedPreset = string.Empty;
             }
 
-            SetStatus($"BossMod preset '{preset}' was already active before {context}; leaving ownership unchanged.");
+            lock (gate) selectedSource = source;
+            SetStatus($"BossMod {source.ToLowerInvariant()} preset '{preset}' was already active before {context}; leaving ownership unchanged.");
             return true;
         }
 
@@ -233,9 +271,64 @@ public sealed class AutorotationController : IDisposable
             ownedPreset = preset;
         }
 
-        SetStatus($"Applied BossMod preset '{preset}' for {context}.");
+        lock (gate) selectedSource = source;
+        SetStatus($"Applied BossMod {source.ToLowerInvariant()} preset '{preset}' for {context}.");
         logger.Info($"{BuildLogTag()} op=apply context=\"{context}\" preset=\"{preset}\" ownership=true");
         return true;
+    }
+
+    private bool CreateManagedPreset()
+    {
+        var assemblyDirectory = Plugin.PluginInterface.AssemblyLocation.DirectoryName;
+        if (string.IsNullOrWhiteSpace(assemblyDirectory))
+        {
+            SetError("Could not resolve plugin directory for managed autorotation.", warning: true);
+            return false;
+        }
+
+        var path = Path.Combine(assemblyDirectory, "Data", "AocchAutorotation.json");
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(path))?.AsObject() ?? throw new JsonException("Preset root is not an object.");
+            root["Name"] = ManagedPreset;
+            var modules = root["Modules"]?.AsObject() ?? throw new JsonException("Preset has no Modules object.");
+            var stayClose = modules["BossMod.Autorotation.MiscAI.StayCloseToTarget"]?.AsArray() ?? throw new JsonException("Preset has no StayCloseToTarget module.");
+            var role = roleResolver.Resolve(gameActionController.CurrentClassJobId);
+            var range = role == AutorotationJobType.Melee ? configuration.MeleeTargetRange : configuration.RangedTargetRange;
+            if (role == AutorotationJobType.Unknown)
+            {
+                logger.Warning($"{BuildLogTag()} op=role-unknown classJob={gameActionController.CurrentClassJobId}; using ranged target range.");
+            }
+
+            var rangeSetting = stayClose
+                .Select(node => node?.AsObject())
+                .FirstOrDefault(setting => string.Equals(setting?["Track"]?.GetValue<string>(), "range", StringComparison.Ordinal));
+            if (rangeSetting == null)
+            {
+                throw new JsonException("Preset has no StayCloseToTarget range setting.");
+            }
+
+            rangeSetting["Option"] = range.ToString("0.##", CultureInfo.InvariantCulture);
+            var serialized = root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+            if (!bossMod.CreatePreset(serialized, overwrite: true))
+            {
+                return false;
+            }
+
+            lock (gate)
+            {
+                managedPresetCreated = true;
+                selectedRole = role.ToString();
+                selectedRange = range;
+            }
+            logger.Info($"{BuildLogTag()} op=managed-create role={role} range={range.ToString(CultureInfo.InvariantCulture)}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SetError($"Failed to prepare managed autorotation: {ex.Message}", warning: true);
+            return false;
+        }
     }
 
     public void ReleaseOwnership(string reason)
@@ -300,6 +393,9 @@ public sealed class AutorotationController : IDisposable
             lastKnownActivePreset = string.Empty;
             lastError = string.Empty;
             lastStatus = "Idle";
+            selectedSource = "None";
+            selectedRole = "Unknown";
+            selectedRange = 0;
         }
 
         logger.Info($"[Autorotation] op=reset reason={reason}");

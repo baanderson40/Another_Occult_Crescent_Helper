@@ -10,6 +10,9 @@ public sealed class BossModIpc
 
     private readonly AocchLogger logger;
     private readonly ICallGateSubscriber<string> getActivePreset;
+    private readonly ICallGateSubscriber<string, string> getPreset;
+    private readonly ICallGateSubscriber<string, bool, bool> createPreset;
+    private readonly ICallGateSubscriber<string, bool> deletePreset;
     private readonly ICallGateSubscriber<string, bool> setActivePreset;
     private readonly ICallGateSubscriber<bool> clearActivePreset;
 
@@ -19,6 +22,9 @@ public sealed class BossModIpc
     {
         this.logger = logger;
         getActivePreset = Plugin.PluginInterface.GetIpcSubscriber<string>("BossMod.Presets.GetActive");
+        getPreset = Plugin.PluginInterface.GetIpcSubscriber<string, string>("BossMod.Presets.Get");
+        createPreset = Plugin.PluginInterface.GetIpcSubscriber<string, bool, bool>("BossMod.Presets.Create");
+        deletePreset = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("BossMod.Presets.Delete");
         setActivePreset = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("BossMod.Presets.SetActive");
         clearActivePreset = Plugin.PluginInterface.GetIpcSubscriber<bool>("BossMod.Presets.ClearActive");
     }
@@ -47,6 +53,15 @@ public sealed class BossModIpc
 
     public bool ClearActivePreset()
         => Invoke("BossMod.Presets.ClearActive", clearActivePreset.InvokeFunc, false, logAvailability: true);
+
+    public string GetPreset(string presetName)
+        => Invoke($"BossMod.Presets.Get({presetName})", () => getPreset.InvokeFunc(presetName), string.Empty, logAvailability: true) ?? string.Empty;
+
+    public bool CreatePreset(string serializedPreset, bool overwrite)
+        => Invoke("BossMod.Presets.Create", () => createPreset.InvokeFunc(serializedPreset, overwrite), false, logAvailability: true);
+
+    public bool DeletePreset(string presetName)
+        => Invoke($"BossMod.Presets.Delete({presetName})", () => deletePreset.InvokeFunc(presetName), false, logAvailability: true);
 
     private T Invoke<T>(string operation, Func<T> action, T fallback, bool logAvailability)
     {

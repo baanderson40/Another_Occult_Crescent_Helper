@@ -679,7 +679,11 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Autorotation");
         ImGui.TextUnformatted($"BossMod: {(autorotationController.BossModAvailable ? "Available" : "Unavailable")}");
-        ImGui.TextWrapped($"Configured Preset: {FormatPreset(autorotationController.ConfiguredPreset)}");
+        ImGui.TextWrapped($"Override Preset: {FormatPreset(autorotationController.ConfiguredPreset)}");
+        ImGui.TextWrapped($"Managed Preset: {FormatPreset(autorotationController.ManagedPreset)}");
+        ImGui.TextWrapped($"Selected Source: {autorotationController.SelectedSource}");
+        ImGui.TextWrapped($"Selected Role: {autorotationController.SelectedRole}");
+        ImGui.TextWrapped($"Selected Range: {autorotationController.SelectedRange:0.0#}");
         ImGui.TextWrapped($"Active Preset: {FormatPreset(autorotationController.LastKnownActivePreset)}");
         ImGui.TextWrapped($"Owned Preset: {FormatPreset(autorotationController.OwnedPreset)}");
         ImGui.TextUnformatted($"Owns Active Preset: {(autorotationController.HasOwnership ? "Yes" : "No")}");

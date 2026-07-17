@@ -299,6 +299,7 @@ public sealed class FarmSessionController : IDisposable
 
         movementController.Stop(reason);
         autorotationController.ReleaseOwnership(reason);
+        autorotationController.DeleteManagedPreset(reason);
         TransitionTo(FarmSessionState.Stopped, reason, "Stopped", clearError: false);
         logger.Info($"{BuildLogTag()} op=stop state={State} reason={reason}");
     }
@@ -501,7 +502,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (autorotationController.ConfiguredPreset.Length > 0 && !autorotationController.ValidateConfiguredPreset())
+        if (!autorotationController.ValidateConfiguredPreset())
         {
             SetFailure(autorotationController.LastError.Length == 0
                 ? "BossMod preset validation failed."
@@ -1792,6 +1793,7 @@ public sealed class FarmSessionController : IDisposable
 
         movementController.Stop(reason);
         autorotationController.ReleaseOwnership(reason);
+        autorotationController.DeleteManagedPreset(reason);
 
         lock (gate)
         {
