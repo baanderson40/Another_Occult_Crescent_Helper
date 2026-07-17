@@ -441,6 +441,18 @@ public sealed class OccultCrescentScanner : IDisposable
 
         visibleCoffers.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
 
+        if (visibleCoffers.Count > 0)
+        {
+            var summary = string.Join(
+                " | ",
+                visibleCoffers.Take(8).Select(coffer =>
+                    $"{coffer.Name}({coffer.GameObjectId:X}) baseId={coffer.DataId} dist={coffer.DistanceToPlayer:0.0}y pos=<{coffer.Position.X:0.0},{coffer.Position.Y:0.0},{coffer.Position.Z:0.0}> targetable={coffer.IsTargetable}"));
+            logger.DebugThrottled(
+                "visible-coffer-scan-results",
+                VisibleCofferDiagnosticLogInterval,
+                $"[Scanner] op=visible-coffer-scan count={visibleCoffers.Count} entries={summary}");
+        }
+
         if (visibleCoffers.Count == 0 && nearbyTreasureObjects.Count > 0)
         {
             logger.DebugThrottled(
