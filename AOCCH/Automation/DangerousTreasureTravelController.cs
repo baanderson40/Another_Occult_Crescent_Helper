@@ -106,6 +106,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private DateTimeOffset restoreRequestedAt = DateTimeOffset.MinValue;
     private DateTimeOffset restoreAttemptAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset restoreAttemptStartedAt = DateTimeOffset.MinValue;
+    private string callerName = string.Empty;
 
     public DangerousTreasureTravelController(
         IFramework framework,
@@ -279,6 +280,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             restoreRequestedAt = DateTimeOffset.MinValue;
             restoreAttemptAvailableAt = DateTimeOffset.MinValue;
             restoreAttemptStartedAt = DateTimeOffset.MinValue;
+            callerName = string.Empty;
         }
 
         logger.Info($"[DangerousTravel] op=reset reason={reason}");
@@ -413,6 +415,9 @@ public sealed class DangerousTreasureTravelController : IDisposable
     }
 
     public bool Start(TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance, DangerousTreasureTravelOptions options)
+        => Start("unspecified", previousCandidate, candidate, destination, finalArrivalTolerance, options);
+
+    public bool Start(string caller, TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance, DangerousTreasureTravelOptions options)
     {
         if (IsRunning)
         {
@@ -457,9 +462,10 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeWalkingPhase = DangerousTreasureWalkingPhase.None;
             pendingHiddenMoveDestination = Vector3.Zero;
             pendingHiddenMoveArrivalTolerance = 0f;
+            callerName = caller;
         }
 
-        logger.Info($"{BuildLogTag()} op=start candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} arrivalTolerance={finalArrivalTolerance:0.0}");
+        logger.Info($"{BuildLogTag()} op=start caller={FormatValue(caller)} candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} arrivalTolerance={finalArrivalTolerance:0.0}");
         movementController.SetLogOwner(currentRunId);
         TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous candidate {candidate.Label}.");
         return true;
@@ -618,6 +624,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     public void AcknowledgeTerminalState()
     {
+        logger.Info($"{BuildLogTag()} op=terminal-ack caller={FormatValue(callerName)} state={State} result={LastResult} candidate={activeCandidateLabel}");
         lock (gate)
         {
             if (state is DangerousTreasureTravelState.Arrived
@@ -1112,7 +1119,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             }
         }
 
-        logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} candidate={activeCandidateLabel} previousCandidate={(previousCandidateLabel.Length == 0 ? "none" : previousCandidateLabel)} gearset={activeGearsetNumber} walkingPhase={activeWalkingPhase} pendingHiddenMove={pendingHiddenMovePhase} result={LastResult} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=transition caller={FormatValue(callerName)} from={previousState} to={nextState} candidate={activeCandidateLabel} previousCandidate={(previousCandidateLabel.Length == 0 ? "none" : previousCandidateLabel)} gearset={activeGearsetNumber} walkingPhase={activeWalkingPhase} pendingHiddenMove={pendingHiddenMovePhase} result={LastResult} reason={reason}");
     }
 
     private string BuildLogTag()
@@ -1370,4 +1377,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         => value.HasValue
             ? $"<{value.Value.X:0.000}, {value.Value.Y:0.000}, {value.Value.Z:0.000}>"
             : "none";
+
+    private static string FormatValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "none" : value;
 }

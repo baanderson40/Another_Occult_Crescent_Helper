@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Numerics;
+using System.Threading;
 using AOCCH.Data;
 using AOCCH.IPC;
 using AOCCH.Logging;
@@ -13,6 +14,7 @@ namespace AOCCH.Movement;
 
 public sealed class MovementController : IDisposable
 {
+    private static int nextMovementOperationSequence;
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ActivePathStallTimeout = TimeSpan.FromSeconds(45);
@@ -82,6 +84,7 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
     private string logOwner = string.Empty;
+    private string currentMovementOperationId = string.Empty;
     private MovementState state = MovementState.Idle;
     private bool stopVerificationPending;
 
@@ -224,6 +227,7 @@ public sealed class MovementController : IDisposable
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
+            currentMovementOperationId = string.Empty;
             state = MovementState.Idle;
         }
 
@@ -250,7 +254,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
+        logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -278,7 +282,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
+        logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -303,7 +307,7 @@ public sealed class MovementController : IDisposable
         }
 
         InitializePlannedRoute(route);
-        logger.Info($"{BuildLogTag()} op=planned routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
+        logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
 
@@ -322,6 +326,7 @@ public sealed class MovementController : IDisposable
             }
 
             currentStepIndex = 0;
+            currentMovementOperationId = NextMovementOperationId();
             routeStartedAt = DateTimeOffset.UtcNow;
             stepStartedAt = DateTimeOffset.MinValue;
             lastProgressAt = DateTimeOffset.UtcNow;
@@ -342,7 +347,7 @@ public sealed class MovementController : IDisposable
                 : MovementState.Pathfinding;
         }
 
-        logger.Info($"{BuildLogTag()} op=start routeType={plannedRoute!.RouteType} target=\"{plannedRoute.TargetDescription}\" steps={plannedRoute.Steps.Count}");
+        logger.Info($"{BuildLogTag()} op=start movementOperation={DescribeMovementOperation()} routeType={plannedRoute!.RouteType} target=\"{plannedRoute.TargetDescription}\" steps={plannedRoute.Steps.Count}");
         return true;
     }
 
@@ -368,6 +373,7 @@ public sealed class MovementController : IDisposable
         {
             plannedRoute = route;
             currentStepIndex = 0;
+            currentMovementOperationId = NextMovementOperationId();
             routeStartedAt = DateTimeOffset.UtcNow;
             stepStartedAt = DateTimeOffset.MinValue;
             lastProgressAt = DateTimeOffset.UtcNow;
@@ -388,7 +394,7 @@ public sealed class MovementController : IDisposable
                 : MovementState.Pathfinding;
         }
 
-        logger.Info($"{BuildLogTag()} op=start routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count} reason=RecoverToBaseCamp");
+        logger.Info($"{BuildLogTag()} op=start movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count} reason=RecoverToBaseCamp");
         return true;
     }
 
@@ -427,6 +433,7 @@ public sealed class MovementController : IDisposable
                 ],
             };
             currentStepIndex = 0;
+            currentMovementOperationId = NextMovementOperationId();
             routeStartedAt = DateTimeOffset.UtcNow;
             stepStartedAt = DateTimeOffset.MinValue;
             lastProgressAt = DateTimeOffset.UtcNow;
@@ -445,7 +452,7 @@ public sealed class MovementController : IDisposable
             state = MovementState.Pathfinding;
         }
 
-        logger.Info($"{BuildLogTag()} op=start-direct target=\"{description}\" requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)} arrivalTolerance={arrivalTolerance:0.0}");
+        logger.Info($"{BuildLogTag()} op=start-direct movementOperation={DescribeMovementOperation()} target=\"{description}\" requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)} arrivalTolerance={arrivalTolerance:0.0}");
         return true;
     }
 
@@ -477,9 +484,12 @@ public sealed class MovementController : IDisposable
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = reason;
+            currentMovementOperationId = string.IsNullOrWhiteSpace(currentMovementOperationId)
+                ? NextMovementOperationId()
+                : currentMovementOperationId;
         }
 
-        logger.Info($"{BuildLogTag()} op=stop state={State} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=stop movementOperation={DescribeMovementOperation()} state={State} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
     }
 
     public void Dispose()
@@ -1146,7 +1156,7 @@ public sealed class MovementController : IDisposable
             {
                 state = MovementState.Arrived;
                 lifestreamOwned = false;
-                logger.Info($"{BuildLogTag()} op=complete state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
+                logger.Info($"{BuildLogTag()} op=complete movementOperation={DescribeMovementOperation()} state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
                 return;
             }
 
@@ -1176,7 +1186,7 @@ public sealed class MovementController : IDisposable
             lastError = string.Empty;
         }
 
-        logger.Info($"{BuildLogTag()} op=complete state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
+        logger.Info($"{BuildLogTag()} op=complete movementOperation={DescribeMovementOperation()} state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
     }
 
     private void SetFailure(MovementState failureState, string reason, bool stopMovement = false)
@@ -1207,7 +1217,7 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
         }
 
-        logger.Warning($"{BuildLogTag()} op=failure state={failureState} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
+        logger.Warning($"{BuildLogTag()} op=failure movementOperation={DescribeMovementOperation()} state={failureState} route={GetRouteSummary()} step={GetStepSummary()} reason={reason}");
     }
 
     private void SetState(MovementState nextState)
@@ -1239,12 +1249,19 @@ public sealed class MovementController : IDisposable
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
+            currentMovementOperationId = string.Empty;
             state = MovementState.Idle;
         }
     }
 
     private string BuildLogTag()
         => logOwner.Length == 0 ? "[Movement]" : $"[Movement owner={logOwner}]";
+
+    private static string NextMovementOperationId()
+        => $"move-{Interlocked.Increment(ref nextMovementOperationSequence)}";
+
+    private string DescribeMovementOperation()
+        => string.IsNullOrWhiteSpace(currentMovementOperationId) ? "none" : currentMovementOperationId;
 
     private string GetRouteSummary()
         => plannedRoute == null ? "none" : $"{plannedRoute.RouteType}:\"{plannedRoute.TargetDescription}\"";

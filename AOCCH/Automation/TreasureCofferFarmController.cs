@@ -539,7 +539,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             configuration.VisibleCofferNinjaGearsetNumber,
             configuration.VisibleCofferHideThresholdDistance,
             configuration.VisibleTreasureCofferMaximumAggroLevel);
-        if (!dangerousTreasureTravelController.Start(null, dangerousSpot, destination, arrivalDistance, dangerousOptions))
+        if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, dangerousSpot, destination, arrivalDistance, dangerousOptions))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {

@@ -992,6 +992,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         logger.ResetThrottle("pot-treasure-search");
+        logger.Info($"{BuildLogTag()} op=treasure-search-result result={treasureSearchController.LastResult} treasureSearchState={treasureSearchController.State} candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "none"} transition={treasureSearchController.LastTransition} error={FormatOptionalValue(treasureSearchController.LastError)}");
         switch (treasureSearchController.LastResult)
         {
             case TreasureSearchRunResult.ReadyForInteraction:
@@ -1043,6 +1044,7 @@ public sealed class PotFarmController : IDisposable
                     }
                 }
 
+                logger.Info($"{BuildLogTag()} op=coffer-interaction-start flow={activeMatch.Flow} candidate={activeMatch.CandidateKey.Label} objectId={activeMatch.Coffer.GameObjectId:X} baseId={activeMatch.Coffer.DataId}");
                 TransitionTo(PotFarmState.RunningCofferInteraction, cofferInteractionController.LastTransition);
                 return;
             case TreasureSearchRunResult.CandidatesExhausted:
@@ -1075,6 +1077,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         logger.ResetThrottle("pot-coffer-interaction");
+        logger.Info($"{BuildLogTag()} op=coffer-interaction-result result={cofferInteractionController.LastResult} state={cofferInteractionController.State} candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "none"} transition={cofferInteractionController.LastTransition} error={FormatOptionalValue(cofferInteractionController.LastError)}");
         switch (cofferInteractionController.LastResult)
         {
             case CofferInteractionResult.Opened:

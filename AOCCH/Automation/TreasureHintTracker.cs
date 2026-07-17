@@ -356,11 +356,13 @@ public sealed class TreasureHintTracker : IDisposable
         {
             if (snapshot.SessionState != TreasureSessionState.Active)
             {
+                logger.Info($"[TreasureHintTracker] op=event-rejected reason=no-active-session kind={parsedEvent.Kind} text=\"{SanitizeLogText(parsedEvent.RawText)}\"");
                 return;
             }
 
             if (snapshot.IsPostBuffGraceActive && parsedEvent.Kind is not TreasureHintKind.CofferReveal and not TreasureHintKind.CofferMessage)
             {
+                logger.Info($"[TreasureHintTracker session={snapshot.SessionId}] op=event-rejected reason=post-buff-grace kind={parsedEvent.Kind} text=\"{SanitizeLogText(parsedEvent.RawText)}\" postBuffGraceDeadline={snapshot.PostBuffGraceDeadlineAt:O}");
                 return;
             }
 
@@ -414,6 +416,8 @@ public sealed class TreasureHintTracker : IDisposable
 
             snapshot = updatedSnapshot;
         }
+
+        logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=event-accepted revision={updatedSnapshot.Revision} kind={updatedSnapshot.LastEvent?.Kind} direction={updatedSnapshot.LastEvent?.Direction ?? TreasureDirection.Unknown} distance={FormatValue(updatedSnapshot.LastEvent?.DistanceBucket ?? string.Empty)} acceptedDuringPostBuffGrace={acceptedDuringPostBuffGrace} text=\"{SanitizeLogText(updatedSnapshot.LastEvent?.RawText ?? string.Empty)}\"");
 
         if (parsedEvent.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage)
         {
@@ -514,6 +518,7 @@ public sealed class TreasureHintTracker : IDisposable
                     RawText = $"LogMessageId={message.LogMessageId}",
                     NormalizedText = $"logmessage:{message.LogMessageId}",
                 };
+                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
                 return true;
             case TreasureElixirPromptLogMessageId:
                 parsedEvent = new TreasureHintEvent
@@ -522,6 +527,7 @@ public sealed class TreasureHintTracker : IDisposable
                     RawText = $"LogMessageId={message.LogMessageId}",
                     NormalizedText = $"logmessage:{message.LogMessageId}",
                 };
+                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
                 return true;
             case TreasureBonusOfferLogMessageId:
                 parsedEvent = new TreasureHintEvent
@@ -530,6 +536,7 @@ public sealed class TreasureHintTracker : IDisposable
                     RawText = $"LogMessageId={message.LogMessageId}",
                     NormalizedText = $"logmessage:{message.LogMessageId}",
                 };
+                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
                 return true;
             case TreasureHintImmediateLogMessageId:
             case TreasureHintCloseLogMessageId:
@@ -556,6 +563,7 @@ public sealed class TreasureHintTracker : IDisposable
                     DistanceBucket = MapDistanceBucket(message.LogMessageId),
                     DistanceText = MapDistanceBucket(message.LogMessageId),
                 };
+                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} direction={parsedEvent.Direction} distance={parsedEvent.DistanceBucket} summary={BuildDebugLogMessageSummary(message)}");
                 return true;
             default:
                 return false;
