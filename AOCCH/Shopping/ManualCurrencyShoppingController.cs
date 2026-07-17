@@ -249,7 +249,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             }
 
             isRunning = true;
-            status = "Starting manual current-page shopping.";
+            status = "Starting automatic current-page shopping.";
             activeTarget = null;
             activeTargetIndex = null;
             activeTargetOriginalAmount = 0;
