@@ -14,6 +14,7 @@ public sealed class FarmSessionController : IDisposable
     private static int nextRunSequence;
     private static readonly TimeSpan CofferSurveyWaitTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan SupportJobSwitchTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CofferSurveyActionRetryInterval = TimeSpan.FromMilliseconds(250);
     private const int RequiredAutomaticCofferInventoryFreeSlots = 3;
     private enum InterruptedActivityKind
     {
@@ -72,6 +73,7 @@ public sealed class FarmSessionController : IDisposable
     private byte automaticTreasureCofferOriginalSupportJob;
     private int requiredFreshCofferSurveyRevision;
     private DateTimeOffset automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset automaticTreasureCofferNextSurveyActionAttemptAt = DateTimeOffset.MinValue;
     private string automaticTreasureCofferStatus = "Idle";
 
     public FarmSessionController(
@@ -1391,11 +1393,13 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
             requiredFreshCofferSurveyRevision = Math.Max(requiredFreshCofferSurveyRevision, currentSurveyRevision + 1);
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+            automaticTreasureCofferNextSurveyActionAttemptAt = DateTimeOffset.MinValue;
         }
 
         if (currentJob == GameActionController.FreelancerSupportJobId)
         {
-            return BeginAutomaticTreasureCofferSurveyWait();
+            TransitionTo(FarmSessionState.SwitchingToFreelancerForCofferSurvey, $"Waiting for Occult Treasuresight after {context}.", "Waiting for coffer survey action");
+            return true;
         }
 
         if (!gameActionController.TryChangeSupportJob(GameActionController.FreelancerSupportJobId, $"automatic coffer survey after {context}"))
@@ -1412,7 +1416,6 @@ public sealed class FarmSessionController : IDisposable
     {
         if (!gameActionController.TryExecuteAction(GameActionController.OccultTreasuresightActionId, "automatic coffer survey"))
         {
-            SetAutomaticTreasureCofferStatus("Automatic coffer survey could not use Occult Treasuresight; will retry next recovery.");
             return false;
         }
 
@@ -1427,20 +1430,37 @@ public sealed class FarmSessionController : IDisposable
 
     private void TickSwitchingToFreelancerForCofferSurvey()
     {
-        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == GameActionController.FreelancerSupportJobId)
+        var now = DateTimeOffset.UtcNow;
+        // Use the game log as confirmation even when ActionManager reports a failed dispatch.
+        if (treasureHintTracker.TryGetLatestCofferSurveySince(requiredFreshCofferSurveyRevision - 1, out var surveySnapshot) && surveySnapshot != null)
         {
-            if (BeginAutomaticTreasureCofferSurveyWait())
-            {
-                return;
-            }
-
-            ContinueAfterAutomaticTreasureCofferSkip("Automatic coffer survey could not start after switching to Freelancer.");
+            ApplyAutomaticTreasureCofferSurveyResult(surveySnapshot);
             return;
         }
 
-        if (DateTimeOffset.UtcNow - stateEnteredAt >= SupportJobSwitchTimeout)
+        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == GameActionController.FreelancerSupportJobId)
         {
-            ContinueAfterAutomaticTreasureCofferSkip("Switching to Freelancer for automatic coffer survey timed out; retrying on the next recovery.");
+            if (!gameActionController.CanUseAction(GameActionController.OccultTreasuresightActionId))
+            {
+                logger.DebugThrottled("auto-coffer-survey-action-ready", WaitLogInterval,
+                    $"{BuildLogTag()} op=auto-coffer-survey-wait reason=action-unavailable actionId={GameActionController.OccultTreasuresightActionId}");
+            }
+            else if (now >= automaticTreasureCofferNextSurveyActionAttemptAt)
+            {
+                automaticTreasureCofferNextSurveyActionAttemptAt = now + CofferSurveyActionRetryInterval;
+                if (BeginAutomaticTreasureCofferSurveyWait())
+                {
+                    return;
+                }
+
+                logger.DebugThrottled("auto-coffer-survey-action-dispatch", WaitLogInterval,
+                    $"{BuildLogTag()} op=auto-coffer-survey-wait reason=dispatch-failed actionId={GameActionController.OccultTreasuresightActionId}");
+            }
+        }
+
+        if (now - stateEnteredAt >= SupportJobSwitchTimeout)
+        {
+            ContinueAfterAutomaticTreasureCofferSkip("Switching to Freelancer or waiting for Occult Treasuresight for automatic coffer survey timed out; retrying on the next recovery.");
         }
     }
 

@@ -21,6 +21,7 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
 
     private static readonly TimeSpan SupportJobSwitchTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan SurveyWaitTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SurveyActionRetryInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -38,6 +39,7 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
     private int requiredSurveyRevision;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private DateTimeOffset surveyDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset nextSurveyActionAttemptAt = DateTimeOffset.MinValue;
 
     public AutomaticTreasureCofferDebugController(
         IFramework framework,
@@ -137,13 +139,15 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
             originalSupportJob = currentJob;
             requiredSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision + 1;
             surveyDeadlineAt = DateTimeOffset.MinValue;
+            nextSurveyActionAttemptAt = DateTimeOffset.MinValue;
         }
 
         logger.Info($"[AutoCofferDebug] op=start originalSupportJob={currentJob} freelancerLevel={freelancerLevel} thresholds=silver:{configuration.AutomaticTreasureCofferSilverThreshold} bronze:{configuration.AutomaticTreasureCofferBronzeThreshold}");
 
         if (currentJob == GameActionController.FreelancerSupportJobId)
         {
-            return BeginSurveyWait();
+            TransitionTo(DebugState.SwitchingToFreelancer, "Waiting for Occult Treasuresight for automatic coffer debug survey.");
+            return true;
         }
 
         if (!gameActionController.TryChangeSupportJob(GameActionController.FreelancerSupportJobId, "automatic coffer debug survey"))
@@ -195,15 +199,39 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
 
     private void TickSwitchingToFreelancer()
     {
-        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == GameActionController.FreelancerSupportJobId)
+        var now = DateTimeOffset.UtcNow;
+        // Use the game log as confirmation even when ActionManager reports a failed dispatch.
+        if (treasureHintTracker.TryGetLatestCofferSurveySince(requiredSurveyRevision - 1, out var surveySnapshot) && surveySnapshot != null)
         {
-            BeginSurveyWait();
+            var wouldStartRoute = SurveyMeetsAutomaticTreasureCofferThresholds(surveySnapshot);
+            logger.Info($"[AutoCofferDebug] op=survey-result silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount} revision={surveySnapshot.Revision} thresholdsMet={wouldStartRoute} summary={treasureHintTracker.GetDebugLogMessageCaptureSummary()}");
+            CompleteAndRestore($"Automatic coffer debug survey captured silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount}. thresholdsMet={wouldStartRoute}; route-not-started-by-debug.");
             return;
         }
 
-        if (DateTimeOffset.UtcNow - stateEnteredAt >= SupportJobSwitchTimeout)
+        if (gameActionController.TryGetCurrentSupportJob(out var currentJob) && currentJob == GameActionController.FreelancerSupportJobId)
         {
-            SetFailure("Automatic coffer debug survey timed out switching to Freelancer.");
+            if (!gameActionController.CanUseAction(GameActionController.OccultTreasuresightActionId))
+            {
+                logger.DebugThrottled("auto-coffer-debug-survey-action-ready", TimeSpan.FromSeconds(10),
+                    $"[AutoCofferDebug] op=survey-wait reason=action-unavailable actionId={GameActionController.OccultTreasuresightActionId}");
+            }
+            else if (now >= nextSurveyActionAttemptAt)
+            {
+                nextSurveyActionAttemptAt = now + SurveyActionRetryInterval;
+                if (BeginSurveyWait())
+                {
+                    return;
+                }
+
+                logger.DebugThrottled("auto-coffer-debug-survey-action-dispatch", TimeSpan.FromSeconds(10),
+                    $"[AutoCofferDebug] op=survey-wait reason=dispatch-failed actionId={GameActionController.OccultTreasuresightActionId}");
+            }
+        }
+
+        if (now - stateEnteredAt >= SupportJobSwitchTimeout)
+        {
+            FailAndRestore("Automatic coffer debug survey timed out switching to Freelancer or waiting for Occult Treasuresight.");
         }
     }
 
@@ -211,7 +239,7 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
     {
         if (!gameActionController.TryExecuteAction(GameActionController.OccultTreasuresightActionId, "automatic coffer debug survey"))
         {
-            return FailAndRestore("Automatic coffer debug survey could not use Occult Treasuresight.");
+            return false;
         }
 
         treasureHintTracker.ArmDebugLogMessageCapture("automatic coffer debug survey", SurveyWaitTimeout);
