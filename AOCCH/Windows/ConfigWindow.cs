@@ -415,6 +415,8 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawSettingsTab()
     {
+        ImGui.TextUnformatted("Combat");
+
         var autorotationPresetName = configuration.AutorotationPresetName;
         var presetWidth = ImGui.CalcTextSize(autorotationPresetName).X + 24f;
         presetWidth = Math.Clamp(presetWidth, SettingsTextInputMinWidth, SettingsTextInputMaxWidth);
@@ -432,19 +434,25 @@ public class ConfigWindow : Window, IDisposable
         DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
         DrawTargetRangeSetting("Ranged Target Range", configuration.RangedTargetRange, value => configuration.RangedTargetRange = value, nameof(configuration.RangedTargetRange));
 
-        var useReturn = configuration.UseReturn;
-        if (ImGui.Checkbox("Use Return", ref useReturn))
-        {
-            logger.Info($"[Config] op=setting-change key=UseReturn old={configuration.UseReturn} new={useReturn}");
-            configuration.UseReturn = useReturn;
-            configuration.Save();
-        }
+        ImGui.Separator();
+        ImGui.TextUnformatted("Automation");
 
         var enableBuffRotation = configuration.EnableBuffRotation;
         if (ImGui.Checkbox("Enable Buff Rotation", ref enableBuffRotation))
         {
             logger.Info($"[Config] op=setting-change key=EnableBuffRotation old={configuration.EnableBuffRotation} new={enableBuffRotation}");
             configuration.EnableBuffRotation = enableBuffRotation;
+            configuration.Save();
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Movement");
+
+        var useReturn = configuration.UseReturn;
+        if (ImGui.Checkbox("Use Return", ref useReturn))
+        {
+            logger.Info($"[Config] op=setting-change key=UseReturn old={configuration.UseReturn} new={useReturn}");
+            configuration.UseReturn = useReturn;
             configuration.Save();
         }
 
@@ -458,6 +466,9 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
+        ImGui.Separator();
+        ImGui.TextUnformatted("Interface");
+
         var mainWindowStatusTextScalePercent = configuration.MainWindowStatusTextScalePercent;
         ImGui.SetNextItemWidth(160f);
         if (ImGui.SliderInt("Main Window Status Text Size", ref mainWindowStatusTextScalePercent, 85, 150, "%d%%"))
@@ -467,16 +478,6 @@ public class ConfigWindow : Window, IDisposable
             configuration.MainWindowStatusTextScalePercent = nextValue;
             configuration.Save();
         }
-
-        var scannerOnlyMode = configuration.ScannerOnlyMode;
-        if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
-        {
-            logger.Info($"[Config] op=setting-change key=ScannerOnlyMode old={configuration.ScannerOnlyMode} new={scannerOnlyMode}");
-            configuration.ScannerOnlyMode = scannerOnlyMode;
-            configuration.Save();
-        }
-
-        ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
     }
 
     private void DrawTargetRangeSetting(string label, decimal currentValue, Action<decimal> setter, string key)

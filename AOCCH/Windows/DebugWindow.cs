@@ -1124,8 +1124,17 @@ public sealed class DebugWindow : Window, IDisposable
     {
         var bossModRequired = autorotationController.ConfiguredPreset.Length > 0;
         var bossModAvailable = autorotationController.RefreshBossModAvailability();
+        var scannerOnlyMode = configuration.ScannerOnlyMode;
 
         ImGui.TextUnformatted("Safety");
+        if (ImGui.Checkbox("Scanner-Only Mode", ref scannerOnlyMode))
+        {
+            plugin.Logger.Info($"[DebugWindow] op=setting-change key=ScannerOnlyMode old={configuration.ScannerOnlyMode} new={scannerOnlyMode}");
+            configuration.ScannerOnlyMode = scannerOnlyMode;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
         ImGui.TextUnformatted($"Scanner-Only Mode: {(configuration.ScannerOnlyMode ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
         ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
