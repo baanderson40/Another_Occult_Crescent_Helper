@@ -205,6 +205,14 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         lock (gate)
         {
             pendingStop = false;
@@ -1244,6 +1252,13 @@ public sealed class FarmSessionController : IDisposable
         if (!configuration.EnableAutomaticTreasureCofferRoute)
         {
             SetAutomaticTreasureCofferStatus("Automatic overworld coffer mode is disabled.");
+            return false;
+        }
+
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            SetAutomaticTreasureCofferStatus(dependencyReport.FailureSummary);
             return false;
         }
 

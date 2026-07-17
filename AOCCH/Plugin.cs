@@ -44,6 +44,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
+    internal static Plugin? Current { get; private set; }
 
     private const string CommandName = "/aocch";
 
@@ -58,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     public VNavmeshIpc VNavmesh { get; init; }
     public LifestreamIpc Lifestream { get; init; }
     public BossModIpc BossMod { get; init; }
+    public NormalAutomationDependencyChecker DependencyChecker { get; init; }
     public RoutePlanner RoutePlanner { get; init; }
     public GameActionController GameActionController { get; init; }
     public MovementController MovementController { get; init; }
@@ -88,11 +90,13 @@ public sealed class Plugin : IDalamudPlugin
     private LogWindow LogWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private DebugWindow DebugWindow { get; init; }
+    private DependencyWindow DependencyWindow { get; init; }
     private bool isDisposing;
     private bool wasInSouthHorn;
 
     public Plugin()
     {
+        Current = this;
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Logger = new AocchLogger(Log);
         Configuration.SetLogger(Logger);
@@ -111,6 +115,7 @@ public sealed class Plugin : IDalamudPlugin
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
+        DependencyChecker = new NormalAutomationDependencyChecker(VNavmesh, Lifestream, BossMod);
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
@@ -138,13 +143,15 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
-        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
+        MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
         DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController, TreasureCofferFarmController);
+        DependencyWindow = new DependencyWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(DebugWindow);
+        WindowSystem.AddWindow(DependencyWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -186,6 +193,7 @@ public sealed class Plugin : IDalamudPlugin
         LogWindow.IsOpen = false;
         MainWindow.IsOpen = false;
         DebugWindow.IsOpen = false;
+        DependencyWindow.IsOpen = false;
 
         WindowSystem.RemoveAllWindows();
 
@@ -193,6 +201,7 @@ public sealed class Plugin : IDalamudPlugin
         LogWindow.Dispose();
         MainWindow.Dispose();
         DebugWindow.Dispose();
+        DependencyWindow.Dispose();
         AutomaticTreasureCofferDebugController.Dispose();
         ManualCurrencyShoppingController.Dispose();
         ShopInspectorController.Dispose();
@@ -215,6 +224,39 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.RemoveHandler(CommandName);
         Logger.Info("[Plugin] op=cleanup-finish");
+        Current = null;
+    }
+
+    public AutomationDependencyReport GetNormalAutomationDependencyReport()
+        => DependencyChecker.Evaluate();
+
+    public bool TryOpenDependencyWindow()
+    {
+        var report = GetNormalAutomationDependencyReport();
+        if (report.IsReady)
+        {
+            return false;
+        }
+
+        DependencyWindow.IsOpen = true;
+        return true;
+    }
+
+    public void OpenDependencyUi()
+        => DependencyWindow.IsOpen = true;
+
+    private bool TryBlockNormalStart(string entryPoint)
+    {
+        var report = GetNormalAutomationDependencyReport();
+        if (report.IsReady)
+        {
+            return false;
+        }
+
+        Logger.Warning($"[Plugin] op=start-blocked entry={entryPoint} dependencies={string.Join(',', report.Statuses.Where(status => !status.IsUsable).Select(status => status.Key))}");
+        ChatGui.Print($"Automation cannot start: {report.FailureSummary}");
+        DependencyWindow.IsOpen = true;
+        return true;
     }
 
     private void OnCommand(string command, string args)
@@ -252,6 +294,11 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "start":
                 Logger.Info("[Plugin] op=slash-command-action action=start-farm-session");
+                if (TryBlockNormalStart("slash-farm"))
+                {
+                    break;
+                }
+
                 FarmSessionController.Start();
                 break;
             case "stop":
@@ -267,7 +314,17 @@ public sealed class Plugin : IDalamudPlugin
                 }
 
                 Logger.Info("[Plugin] op=slash-command-action action=start-visible-coffer-farm");
-                TreasureCofferFarmController.Start();
+                if (TryBlockNormalStart("slash-coffer-farm"))
+                {
+                    break;
+                }
+
+                if (!TreasureCofferFarmController.Start())
+                {
+                    ChatGui.Print(TreasureCofferFarmController.LastError.Length == 0
+                        ? TreasureCofferFarmController.LastTransition
+                        : TreasureCofferFarmController.LastError);
+                }
                 break;
             case "coffer-stop":
                 Logger.Info("[Plugin] op=slash-command-action action=stop-visible-coffer-farm");

@@ -349,6 +349,14 @@ public sealed class PotFarmController : IDisposable
             return false;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         lock (gate)
         {
             currentRunId = $"Pot#{Interlocked.Increment(ref nextRunSequence)}";
@@ -1338,6 +1346,14 @@ public sealed class PotFarmController : IDisposable
 
     private bool BeginTreasureCenterApproach()
     {
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         if (!hasCurrentPotCenter)
         {
             SetFailure($"Treasure hunt could not start after {CurrentPotName} because the completed pot center was not captured at FATE start.");

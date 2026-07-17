@@ -16,7 +16,6 @@ public sealed class MainWindow : Window, IDisposable
     private readonly Configuration configuration;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
-    private readonly AutorotationController autorotationController;
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
@@ -28,7 +27,6 @@ public sealed class MainWindow : Window, IDisposable
         Configuration configuration,
         OccultCrescentScanner scanner,
         MovementController movementController,
-        AutorotationController autorotationController,
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
@@ -40,7 +38,6 @@ public sealed class MainWindow : Window, IDisposable
         this.configuration = configuration;
         this.scanner = scanner;
         this.movementController = movementController;
-        this.autorotationController = autorotationController;
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
@@ -85,6 +82,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SetWindowFontScale(1f);
 
         var farmStartBlocker = GetFarmStartBlocker();
+        var farmDependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
         if (farmSessionController.IsRunning)
         {
             if (DrawIconButton(FontAwesomeIcon.Stop, "farm-toggle", "Stop Farm"))
@@ -93,7 +91,7 @@ public sealed class MainWindow : Window, IDisposable
                 farmSessionController.Stop("Manual farm session stop requested.");
             }
         }
-        else if (DrawIconButton(FontAwesomeIcon.Play, "farm-toggle", "Start Farm", farmStartBlocker == null, farmStartBlocker))
+        else if (DrawIconButton(FontAwesomeIcon.Play, "farm-toggle", "Start Farm", farmStartBlocker == null, farmStartBlocker, disabledClick: farmDependencyBlocked ? plugin.OpenDependencyUi : null))
         {
             plugin.Logger.Info("[MainWindow] op=ui-action action=start-farm");
             farmSessionController.Start();
@@ -102,6 +100,7 @@ public sealed class MainWindow : Window, IDisposable
         if (!configuration.EnableAutomaticTreasureCofferRoute)
         {
             var cofferStartBlocker = GetVisibleCofferStartBlocker();
+            var cofferDependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
             ImGui.SameLine();
             if (treasureCofferFarmController.IsRunning)
             {
@@ -111,7 +110,7 @@ public sealed class MainWindow : Window, IDisposable
                     treasureCofferFarmController.Stop("Manual overworld coffer route stop requested.");
                 }
             }
-            else if (DrawIconButton(FontAwesomeIcon.StepForward, "coffer-toggle", "Start Coffer Route", cofferStartBlocker == null, cofferStartBlocker))
+            else if (DrawIconButton(FontAwesomeIcon.StepForward, "coffer-toggle", "Start Coffer Route", cofferStartBlocker == null, cofferStartBlocker, disabledClick: cofferDependencyBlocked ? plugin.OpenDependencyUi : null))
             {
                 plugin.Logger.Info("[MainWindow] op=ui-action action=start-coffer-route");
                 treasureCofferFarmController.Start();
@@ -154,17 +153,43 @@ public sealed class MainWindow : Window, IDisposable
     private string? GetPanicStopBlocker()
         => scanner.Snapshot.IsInSouthHorn ? null : "Panic Stop requires South Horn.";
 
-    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null)
+    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null, Action? disabledClick = null)
     {
         const float IconScale = 0.85f;
         var buttonSize = new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight());
         var clicked = false;
-        ImGui.BeginDisabled(!enabled);
+        if (!enabled && disabledClick == null)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (!enabled && disabledClick != null)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetColorU32(ImGuiCol.TextDisabled));
+            ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.FrameBg));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ImGui.GetColorU32(ImGuiCol.FrameBg));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, ImGui.GetColorU32(ImGuiCol.FrameBg));
+        }
+
         if (ImGui.Button($"##{id}", buttonSize))
         {
             clicked = true;
         }
-        ImGui.EndDisabled();
+
+        if (!enabled && disabledClick == null)
+        {
+            ImGui.EndDisabled();
+        }
+
+        if (!enabled && disabledClick != null)
+        {
+            ImGui.PopStyleColor(4);
+        }
+
+        if (!enabled && disabledClick != null && clicked)
+        {
+            disabledClick();
+        }
 
         var rectMin = ImGui.GetItemRectMin();
         var rectMax = ImGui.GetItemRectMax();
@@ -213,29 +238,20 @@ public sealed class MainWindow : Window, IDisposable
             return "Farm session start requires South Horn.";
         }
 
+        var dependencyReport = plugin.GetNormalAutomationDependencyReport();
+        if (!dependencyReport.IsReady)
+        {
+            return dependencyReport.FailureSummary;
+        }
+
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || plugin.PotFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
             return "Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.";
         }
 
-        if (!movementController.IsVNavmeshReady)
-        {
-            return "Farm session start requires vnavmesh IPC.";
-        }
-
-        if (!movementController.IsLifestreamAvailable)
-        {
-            return "Farm session start requires Lifestream IPC.";
-        }
-
         if (configuration.UseReturn && !movementController.CanUseReturnAction)
         {
             return "Farm session start requires the Return general action when Use Return is enabled.";
-        }
-
-        if (autorotationController.ConfiguredPreset.Length > 0 && !autorotationController.RefreshBossModAvailability())
-        {
-            return "Farm session start requires BossMod IPC when an autorotation preset is configured.";
         }
 
         return null;
@@ -489,16 +505,7 @@ public sealed class MainWindow : Window, IDisposable
             return "Overworld coffer route start requires South Horn.";
         }
 
-        if (!movementController.IsVNavmeshReady)
-        {
-            return "Overworld coffer route start requires vnavmesh IPC.";
-        }
-
-        if (!movementController.IsLifestreamAvailable)
-        {
-            return "Overworld coffer route start requires Lifestream IPC.";
-        }
-
-        return null;
+        var dependencyReport = plugin.GetNormalAutomationDependencyReport();
+        return dependencyReport.IsReady ? null : dependencyReport.FailureSummary;
     }
 }

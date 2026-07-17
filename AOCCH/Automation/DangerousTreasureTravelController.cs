@@ -424,6 +424,14 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return true;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         if (options.GearsetNumber <= 0)
         {
             SkipCandidate($"Dangerous treasure candidate {candidate.Label} requires a configured Ninja gearset number.");

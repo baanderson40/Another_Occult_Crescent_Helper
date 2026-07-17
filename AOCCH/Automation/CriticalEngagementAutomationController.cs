@@ -192,6 +192,14 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return false;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         lock (gate)
         {
             currentRunId = $"CE#{Interlocked.Increment(ref nextRunSequence)}";

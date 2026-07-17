@@ -319,6 +319,14 @@ public sealed class TreasureSearchController : IDisposable
             return true;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         var hintSnapshot = treasureHintTracker.Snapshot;
         logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
         if (!hintSnapshot.HasActiveSession || !hintSnapshot.HasInitialHint)

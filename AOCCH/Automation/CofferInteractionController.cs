@@ -489,6 +489,7 @@ public sealed class CofferInteractionController : IDisposable
 
         if (!gameActionController.TryInteractWithObject(liveObject, "coffer interaction"))
         {
+            logger.Warning($"{BuildLogTag()} op=interaction-action-failed candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} baseId={liveObject.BaseId} distance={distance:0.0}y attempt={interactionAttemptCount + 1} maxAttempts={MaxInteractionAttempts}");
             if (interactionAttemptCount + 1 >= MaxInteractionAttempts)
             {
                 TransitionTo(CofferInteractionState.TimedOut, $"Coffer interaction failed after {MaxInteractionAttempts} attempts.", error: "Coffer interaction failed repeatedly.", result: CofferInteractionResult.TimedOut);
@@ -549,6 +550,10 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var stillVisible = IsStillVisibleForConfirmation(active);
+        logger.DebugThrottled(
+            $"coffer-confirmation-state-{currentRunId}",
+            TimeSpan.FromMilliseconds(500),
+            $"{BuildLogTag()} op=confirmation-observation candidate={DescribeActiveCandidate()} objectId={active.Coffer.GameObjectId:X} flow={active.Flow} attempt={interactionAttemptCount} flags={lastObservedTreasureFlags} visible={stillVisible} missingConfirmations={missingConfirmationCount} deadline={ConfirmationDeadlineAt:O} inventoryBaseline={preInteractionInventorySnapshotValid}");
         if (!stillVisible)
         {
             lock (gate)

@@ -637,18 +637,18 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         var otherAutomationRunning = fateAutomationController.IsRunning || farmSessionController.IsRunning;
+        var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && !otherAutomationRunning
-            && !configuration.ScannerOnlyMode;
+            && !configuration.ScannerOnlyMode
+            && !dependencyBlocked;
 
-        ImGui.BeginDisabled(!canStart);
-        if (ImGui.Button("Start CE Automation"))
+        if (DrawDependencyAwareStartButton("Start CE Automation", canStart, dependencyBlocked))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=start-ce-automation");
             criticalEngagementAutomationController.Start();
         }
-        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop CE Automation"))
@@ -664,6 +664,10 @@ public sealed class DebugWindow : Window, IDisposable
         else if (configuration.ScannerOnlyMode)
         {
             ImGui.TextUnformatted("Scanner-only mode blocks CE automation starts.");
+        }
+        else if (dependencyBlocked)
+        {
+            ImGui.TextWrapped(plugin.GetNormalAutomationDependencyReport().FailureSummary);
         }
         else if (!canStart)
         {
@@ -713,18 +717,18 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || farmSessionController.IsRunning;
+        var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
         var canStart = snapshot.IsInSouthHorn
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.Fate
             && !otherAutomationRunning
-            && !configuration.ScannerOnlyMode;
+            && !configuration.ScannerOnlyMode
+            && !dependencyBlocked;
 
-        ImGui.BeginDisabled(!canStart);
-        if (ImGui.Button("Start FATE Automation"))
+        if (DrawDependencyAwareStartButton("Start FATE Automation", canStart, dependencyBlocked))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=start-fate-automation");
             fateAutomationController.Start();
         }
-        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop FATE Automation"))
@@ -740,6 +744,10 @@ public sealed class DebugWindow : Window, IDisposable
         else if (configuration.ScannerOnlyMode)
         {
             ImGui.TextUnformatted("Scanner-only mode blocks FATE automation starts.");
+        }
+        else if (dependencyBlocked)
+        {
+            ImGui.TextWrapped(plugin.GetNormalAutomationDependencyReport().FailureSummary);
         }
         else if (!canStart)
         {
@@ -844,13 +852,12 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         var farmStartBlocker = GetFarmStartBlocker();
-        ImGui.BeginDisabled(farmStartBlocker != null);
-        if (ImGui.Button("Start Farm"))
+        var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
+        if (DrawDependencyAwareStartButton("Start Farm", farmStartBlocker == null, dependencyBlocked))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=start-farm");
             farmSessionController.Start();
         }
-        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Stop Farm"))
@@ -1020,6 +1027,12 @@ public sealed class DebugWindow : Window, IDisposable
             : $"{lastMatched.Name} ({lastMatched.DataId}) | pos={FormatVector3(lastMatched.Position)} | object={lastMatched.GameObjectId:X}";
         ImGui.TextWrapped($"Last Matched Coffer: {FormatValue(lastMatchedText)}");
 
+        ImGui.TextUnformatted($"Visible Coffers In Scanner: {scanner.Snapshot.VisibleCoffers.Count}");
+        foreach (var visibleCoffer in scanner.Snapshot.VisibleCoffers.Take(8))
+        {
+            ImGui.TextWrapped($"{visibleCoffer.Name} ({visibleCoffer.GameObjectId:X}) baseId={visibleCoffer.DataId} distance={visibleCoffer.DistanceToPlayer:0.0}y targetable={visibleCoffer.IsTargetable} pos={FormatVector3(visibleCoffer.Position)}");
+        }
+
         if (!string.IsNullOrEmpty(treasureCofferFarmController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {treasureCofferFarmController.LastError}");
@@ -1137,6 +1150,42 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Farm Start: {FormatValue(GetFarmStartBlocker() ?? "Ready for full farm test")}");
     }
 
+    private bool DrawDependencyAwareStartButton(string label, bool enabled, bool dependencyBlocked)
+    {
+        var clicked = false;
+        if (!enabled && !dependencyBlocked)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (dependencyBlocked)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetColorU32(ImGuiCol.TextDisabled));
+            ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.FrameBg));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ImGui.GetColorU32(ImGuiCol.FrameBg));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, ImGui.GetColorU32(ImGuiCol.FrameBg));
+        }
+
+        clicked = ImGui.Button(label);
+
+        if (dependencyBlocked)
+        {
+            ImGui.PopStyleColor(4);
+        }
+
+        if (!enabled && !dependencyBlocked)
+        {
+            ImGui.EndDisabled();
+        }
+
+        if (dependencyBlocked && clicked)
+        {
+            plugin.OpenDependencyUi();
+        }
+
+        return enabled && clicked;
+    }
+
     private string? GetFarmStartBlocker()
     {
         if (configuration.ScannerOnlyMode)
@@ -1154,24 +1203,15 @@ public sealed class DebugWindow : Window, IDisposable
             return "Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.";
         }
 
-        if (!movementController.IsVNavmeshReady)
+        var dependencyReport = plugin.GetNormalAutomationDependencyReport();
+        if (!dependencyReport.IsReady)
         {
-            return "Farm session start requires vnavmesh IPC.";
-        }
-
-        if (!movementController.IsLifestreamAvailable)
-        {
-            return "Farm session start requires Lifestream IPC.";
+            return dependencyReport.FailureSummary;
         }
 
         if (configuration.UseReturn && !movementController.CanUseReturnAction)
         {
             return "Farm session start requires the Return general action when Use Return is enabled.";
-        }
-
-        if (autorotationController.ConfiguredPreset.Length > 0 && !autorotationController.RefreshBossModAvailability())
-        {
-            return "Farm session start requires BossMod IPC when an autorotation preset is configured.";
         }
 
         return null;

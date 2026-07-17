@@ -228,6 +228,14 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
+        var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
+        if (dependencyReport is { IsReady: false })
+        {
+            Plugin.Current?.TryOpenDependencyWindow();
+            SetFailure(dependencyReport.FailureSummary);
+            return false;
+        }
+
         if (data.VisibleCofferFarmRoute.Count == 0 || data.VisibleCofferFarmSpots.Count == 0)
         {
             SetFailure("Overworld coffer route data is missing route or spot entries.");
@@ -252,6 +260,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         movementController.SetLogOwner(currentRunId);
+        logger.Info($"{BuildLogTag()} op=start territorySouthHorn={scanner.Snapshot.IsInSouthHorn} routeEntries={data.VisibleCofferFarmRoute.Count} spotEntries={data.VisibleCofferFarmSpots.Count} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} inventoryRequiredFreeSlots={RequiredInventoryFreeSlots} startedByFarmSession={startedByFarmSession}");
         TransitionTo(TreasureCofferFarmState.Starting, startedByFarmSession
             ? $"Starting automatic overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries."
             : $"Starting overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries.");
@@ -444,6 +453,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                 activePreviousThresholdSpot = GetPreviousThresholdSpot(nextIndex);
                 activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
             }
+
+            logger.Info($"{BuildLogTag()} op=route-entry-selected index={nextIndex} spot={spot.Area}:{spot.Label} canonicalPosition={FormatVector(spot.Position.ToVector3())} resolvedPosition={FormatVector(resolvedPosition)} usesOverride={usesOverride} aggroLevel={spot.AggroLevel} requiresHidden={activeSpotRequiresHiddenTravel} routeOnly={spot.RouteOnly} previousThreshold={DescribeSpot(activePreviousThresholdSpot)}");
 
             if (BeginTravelToActiveSpot())
             {
@@ -774,6 +785,10 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (!ShouldRunVisibleCofferScan(requireApproachThreshold, out var remainingDistanceToSpot))
         {
+            logger.DebugThrottled(
+                $"visible-coffer-scan-skip-{CurrentRouteIndex}",
+                TimeSpan.FromSeconds(2),
+                $"{BuildLogTag()} op=coffer-scan-skipped spot={DescribeActiveSpot()} source={acquisitionSource} approachScan={requireApproachThreshold} remainingToSpot={remainingDistanceToSpot:0.0}y trigger={VisibleCofferApproachScanTriggerDistance:0.0}y playerPos={FormatVector(objectTable.LocalPlayer?.Position)}");
             return false;
         }
 
@@ -856,6 +871,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                 $"Overworld coffer route is waiting for vnavmesh to settle before interacting at {DescribeActiveSpot()}. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
             return;
         }
+
+        logger.Debug($"{BuildLogTag()} op=coffer-handoff-ready spot={DescribeActiveSpot()} movementState={movementController.State} pathBusy={movementController.IsPathBusy} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} coffer={pendingMatch.Coffer.GameObjectId:X}");
 
         if (!TryVerifyInventorySpaceForActiveSpot("before opening the matched overworld coffer"))
         {
@@ -948,6 +965,10 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (best == null)
         {
+            logger.DebugThrottled(
+                $"visible-coffer-no-match-{CurrentRouteIndex}",
+                TimeSpan.FromSeconds(2),
+                $"{BuildLogTag()} op=coffer-scan-no-match spot={spot.Area}:{spot.Label} source={acquisitionSource} visibleCount={scanner.Snapshot.VisibleCoffers.Count} resolvedPosition={FormatVector(resolvedPosition)} remainingToSpot={remainingDistanceToSpot:0.0}y acquisitionRadius={scanRadius:0.0}y");
             matchedCoffer = null;
             matchDistance = float.MaxValue;
             return false;
