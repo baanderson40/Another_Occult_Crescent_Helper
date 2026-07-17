@@ -488,6 +488,18 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
+        if (IsPotTreasureState(currentState)
+            && deathRecoveryController.State is not DeathRecoveryState.Idle
+            and not DeathRecoveryState.Recovered
+            and not DeathRecoveryState.Stopped
+            and not DeathRecoveryState.Failed)
+        {
+            const string reason = "Player died during pot treasure recovery; abandoning treasure attempt and releasing to the home point.";
+            Stop(reason);
+            deathRecoveryController.RequestImmediateRelease(reason);
+            return;
+        }
+
         if (currentState == PotFarmState.RunningPotFate
             && !fateAutomationController.IsRunning
             && deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed)
@@ -1326,6 +1338,13 @@ public sealed class PotFarmController : IDisposable
             or PotFarmState.WaitingForPredictedWindow
             or PotFarmState.TravelingToSpawn
             or PotFarmState.WaitingAtSpawn;
+
+    private static bool IsPotTreasureState(PotFarmState state)
+        => state is PotFarmState.WaitingForTreasureBuff
+            or PotFarmState.MovingNearTreasureCenter
+            or PotFarmState.TreasurePending
+            or PotFarmState.RunningTreasureSearch
+            or PotFarmState.RunningCofferInteraction;
 
     private bool ShouldReleasePotControlForInventory(PotFarmState currentState, out string reason)
     {

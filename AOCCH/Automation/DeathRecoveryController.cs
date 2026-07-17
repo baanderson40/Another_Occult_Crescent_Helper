@@ -155,6 +155,30 @@ public sealed class DeathRecoveryController : IDisposable
         logger.Info($"[DeathRecovery] op=reset reason={reason}");
     }
 
+    public void RequestImmediateRelease(string reason)
+    {
+        DeathRecoveryState currentState;
+        lock (gate)
+        {
+            currentState = state;
+            if (currentState is DeathRecoveryState.Idle
+                or DeathRecoveryState.Releasing
+                or DeathRecoveryState.Recovered
+                or DeathRecoveryState.Failed
+                or DeathRecoveryState.Stopped)
+            {
+                return;
+            }
+
+            raiseDetected = false;
+            raiseDetectedAt = DateTimeOffset.MinValue;
+            actionStartedAt = DateTimeOffset.MinValue;
+        }
+
+        logger.Info($"{BuildLogTag()} op=immediate-release-request state={currentState} reason={reason}");
+        TransitionTo(DeathRecoveryState.Releasing, reason);
+    }
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;

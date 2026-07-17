@@ -383,7 +383,9 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (deathRecoveryController.State != DeathRecoveryState.Idle)
         {
-            Stop($"Overworld coffer route interrupted because death recovery became active. state={deathRecoveryController.State}");
+            var reason = $"Overworld coffer route interrupted because death recovery became active. state={deathRecoveryController.State}";
+            Stop(reason);
+            deathRecoveryController.RequestImmediateRelease(reason);
             return;
         }
 
