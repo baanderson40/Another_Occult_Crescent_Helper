@@ -55,7 +55,9 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan GearsetDismountRequestInterval = TimeSpan.FromSeconds(5);
     private const float ThresholdArrivalTolerance = 3.5f;
     private const float PreviousThresholdExtraDistance = 6f;
 
@@ -77,6 +79,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private string previousCandidateLabel = string.Empty;
     private Vector3 finalDestination;
     private float arrivalTolerance;
+    private DateTimeOffset runStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private bool ninjaGearsetEquippedByController;
     private bool gearsetAttemptInFlight;
@@ -85,10 +88,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private uint activeGearsetTargetClassJobId;
     private string activeGearsetName = string.Empty;
     private DateTimeOffset gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
     private int activeHideThresholdDistance;
     private int activeMaximumAggroLevel;
     private bool hideRetryUsed;
     private DateTimeOffset lastHideActivatedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hideReadyDeadline = DateTimeOffset.MinValue;
+    private DateTimeOffset hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
     private TreasureCofferCandidateData? previousCandidate;
     private TreasureCofferCandidateData? currentCandidate;
     private DangerousTreasureWalkingPhase pendingHiddenMovePhase;
@@ -251,6 +257,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             previousCandidateLabel = string.Empty;
             finalDestination = Vector3.Zero;
             arrivalTolerance = 0f;
+            runStartedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
             ninjaGearsetEquippedByController = false;
             gearsetAttemptInFlight = false;
@@ -259,10 +266,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeGearsetTargetClassJobId = 0;
             activeGearsetName = string.Empty;
             gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
+            lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
             activeHideThresholdDistance = 0;
             activeMaximumAggroLevel = 0;
             hideRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
+            hideReadyDeadline = DateTimeOffset.MinValue;
+            hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
             previousCandidate = null;
             currentCandidate = null;
             pendingHiddenMovePhase = DangerousTreasureWalkingPhase.None;
@@ -452,6 +462,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             previousCandidateLabel = previousCandidate?.Label ?? string.Empty;
             finalDestination = destination;
             arrivalTolerance = finalArrivalTolerance;
+            runStartedAt = DateTimeOffset.UtcNow;
             lastError = string.Empty;
             lastResult = DangerousTreasureTravelResult.None;
             gearsetAttemptInFlight = false;
@@ -460,10 +471,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeGearsetTargetClassJobId = 0;
             activeGearsetName = string.Empty;
             gearsetAttemptAvailableAt = DateTimeOffset.UtcNow + GearsetPostElixirDelay;
+            lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
             activeHideThresholdDistance = options.HideThresholdDistance;
             activeMaximumAggroLevel = options.MaximumAggroLevel;
             hideRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
+            hideReadyDeadline = DateTimeOffset.MinValue;
+            hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
             this.previousCandidate = previousCandidate;
             currentCandidate = candidate;
             pendingHiddenMovePhase = DangerousTreasureWalkingPhase.None;
@@ -473,7 +487,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             callerName = caller;
         }
 
-        logger.Info($"{BuildLogTag()} op=start caller={FormatValue(caller)} candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} arrivalTolerance={finalArrivalTolerance:0.0}");
+        logger.Info($"{BuildLogTag()} op=start caller={FormatValue(caller)} candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} playerPos={FormatVector(playerPosition)} candidatePos={FormatVector(candidate.Position.ToVector3())} previousCandidatePos={FormatVector(previousCandidate?.Position.ToVector3())} destination={FormatVector(destination)} arrivalTolerance={finalArrivalTolerance:0.0} gearset={options.GearsetNumber} candidateAggro={candidate.AggroLevel} maxAggro={options.MaximumAggroLevel} candidateHideThreshold={(candidate.HideThresholdDistance?.ToString() ?? "none")} configuredHideThreshold={options.HideThresholdDistance}");
         movementController.SetLogOwner(currentRunId);
         TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous candidate {candidate.Label}.");
         return true;
@@ -731,7 +745,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         {
             logger.DebugThrottled(
                 "dangerous-treasure-travel-gearset-delay",
-                TimeSpan.FromMilliseconds(250),
+                WaitLogInterval,
                 $"Dangerous treasure travel is waiting {Math.Max(0, (gearsetAttemptAvailableAt - now).TotalSeconds):0.0}s before the first Ninja gearset attempt on {activeCandidateLabel} to respect the post-elixir lock window.");
             return;
         }
@@ -744,6 +758,12 @@ public sealed class DangerousTreasureTravelController : IDisposable
                 return;
             }
 
+            if (now - lastGearsetDismountRequestAt < GearsetDismountRequestInterval)
+            {
+                return;
+            }
+
+            lastGearsetDismountRequestAt = now;
             if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"dangerous treasure gearset prep for {activeCandidateLabel}"))
             {
                 logger.DebugThrottled(
@@ -850,7 +870,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.DebugThrottled(
             "dangerous-treasure-travel",
             WaitLogInterval,
-            $"Dangerous treasure travel is moving to the hide threshold for {activeCandidateLabel}. MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+            $"Dangerous treasure travel is moving to the hide threshold for {activeCandidateLabel}. playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y movementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]}.");
     }
 
     private void TickDismounting()
@@ -864,6 +884,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
         if (!condition[ConditionFlag.Mounted])
         {
             logger.ResetThrottle("dangerous-treasure-travel");
+            hideReadyDeadline = DateTimeOffset.UtcNow + HideReadyTimeout;
+            hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
             TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Dismounted at dangerous threshold for {activeCandidateLabel}; waiting for Hide.");
             return;
         }
@@ -891,6 +913,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     private void TickWaitingForHideReady()
     {
+        var now = DateTimeOffset.UtcNow;
         if (condition[ConditionFlag.InCombat])
         {
             ContinueDangerousApproach($"Combat started while waiting for Hide on dangerous candidate {activeCandidateLabel}.");
@@ -909,23 +932,32 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return;
         }
 
-        if (DateTimeOffset.UtcNow - stateEnteredAt < HideStateSettleDelay)
+        if (now - stateEnteredAt < HideStateSettleDelay)
         {
             logger.DebugThrottled(
                 "dangerous-treasure-travel-hide-ready",
                 TimeSpan.FromMilliseconds(250),
-                $"Dangerous treasure travel is settling after dismount/job change before checking Hide readiness on {activeCandidateLabel}. elapsed={(DateTimeOffset.UtcNow - stateEnteredAt).TotalSeconds:0.00}s required={HideStateSettleDelay.TotalSeconds:0.00}s.");
+                $"Dangerous treasure travel is settling after dismount/job change before checking Hide readiness on {activeCandidateLabel}. elapsed={(now - stateEnteredAt).TotalSeconds:0.00}s required={HideStateSettleDelay.TotalSeconds:0.00}s.");
             return;
         }
 
-        if (gameActionController.CanUseHide())
+        if (now < hideDispatchRetryAvailableAt)
+        {
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-hide-retry-delay",
+                WaitLogInterval,
+                $"Dangerous treasure travel is waiting for the next Hide dispatch retry on {activeCandidateLabel}. retryAvailableIn={Math.Max(0, (hideDispatchRetryAvailableAt - now).TotalSeconds):0.00}s deadlineIn={Math.Max(0, (hideReadyDeadline - now).TotalSeconds):0.0}s changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return;
+        }
+
+        if (gameActionController.IsPlayerInChangeableState() && gameActionController.CanUseHide())
         {
             logger.ResetThrottle("dangerous-treasure-travel-hide-ready");
             TransitionTo(DangerousTreasureTravelState.UsingHide, $"Hide ready for dangerous candidate {activeCandidateLabel}; attempting stealth.");
             return;
         }
 
-        if (DateTimeOffset.UtcNow - stateEnteredAt >= HideReadyTimeout)
+        if (hideReadyDeadline != DateTimeOffset.MinValue && now >= hideReadyDeadline)
         {
             SkipCandidate($"Hide did not become ready for dangerous treasure candidate {activeCandidateLabel} within {HideReadyTimeout.TotalSeconds:0.0}s.");
             return;
@@ -934,7 +966,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.DebugThrottled(
             "dangerous-treasure-travel-hide-ready",
             WaitLogInterval,
-            $"Dangerous treasure travel is waiting for Hide to become ready on {activeCandidateLabel}. currentClassJob={gameActionController.CurrentClassJobId} canUseHide={gameActionController.CanUseHide()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} retryUsed={hideRetryUsed}.");
+            $"Dangerous treasure travel is waiting for Hide to become ready on {activeCandidateLabel}. deadlineIn={Math.Max(0, (hideReadyDeadline - now).TotalSeconds):0.0}s currentClassJob={gameActionController.CurrentClassJobId} canUseHide={gameActionController.CanUseHide()} changeable={gameActionController.IsPlayerInChangeableState()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\" stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} retryUsed={hideRetryUsed} pendingPhase={pendingHiddenMovePhase} pendingDestination={FormatVector(pendingHiddenMoveDestination)}.");
     }
 
     private void TickUsingHide()
@@ -945,20 +977,25 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return;
         }
 
+        if (!gameActionController.IsPlayerInChangeableState() || !gameActionController.CanUseHide())
+        {
+            hideDispatchRetryAvailableAt = DateTimeOffset.UtcNow + HideDispatchRetryDelay;
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-hide-dispatch-rejected",
+                TimeSpan.FromSeconds(1),
+                $"Dangerous treasure travel is deferring Hide dispatch because readiness changed on {activeCandidateLabel}. canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\" retryAt={hideDispatchRetryAvailableAt:O}");
+            TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Hide was no longer ready for dangerous treasure candidate {activeCandidateLabel}; retrying after a short delay.");
+            return;
+        }
+
         if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"dangerous treasure travel for {activeCandidateLabel}"))
         {
-            if (!hideRetryUsed)
-            {
-                lock (gate)
-                {
-                    hideRetryUsed = true;
-                }
-
-                TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Hide action was unavailable for dangerous treasure candidate {activeCandidateLabel}; waiting for one final ready-state retry.");
-                return;
-            }
-
-            SkipCandidate($"Failed to use Hide for dangerous treasure candidate {activeCandidateLabel} after two ready-state attempts.");
+            hideDispatchRetryAvailableAt = DateTimeOffset.UtcNow + HideDispatchRetryDelay;
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-hide-dispatch-rejected",
+                TimeSpan.FromSeconds(1),
+                $"Dangerous treasure travel received an ambiguous Hide dispatch result on {activeCandidateLabel}. actionId={GameActionController.HideActionId} canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\" retryAt={hideDispatchRetryAvailableAt:O}");
+            TransitionTo(DangerousTreasureTravelState.WaitingForHideReady, $"Hide action dispatch was rejected for dangerous treasure candidate {activeCandidateLabel}; retrying after a short delay.");
             return;
         }
 
@@ -1010,7 +1047,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.DebugThrottled(
             "dangerous-treasure-travel",
             WaitLogInterval,
-            $"Dangerous treasure travel is waiting for Hide to apply on {activeCandidateLabel}. stealthed={gameActionController.IsStealthed} canUseHide={gameActionController.CanUseHide()} lastHideActivatedAt={(lastHideActivatedAt == DateTimeOffset.MinValue ? "none" : lastHideActivatedAt.ToString("O"))}.");
+            $"Dangerous treasure travel is waiting for Hide to apply on {activeCandidateLabel}. elapsed={(DateTimeOffset.UtcNow - stateEnteredAt).TotalSeconds:0.0}s timeout={HideVerifyTimeout.TotalSeconds:0.0}s stealthed={gameActionController.IsStealthed} canUseHide={gameActionController.CanUseHide()} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]} pendingPhase={pendingHiddenMovePhase} pendingDestination={FormatVector(pendingHiddenMoveDestination)} lastHideActivatedAt={(lastHideActivatedAt == DateTimeOffset.MinValue ? "none" : lastHideActivatedAt.ToString("O"))}.");
     }
 
     private void TickWalkingToCandidate()
@@ -1041,7 +1078,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.DebugThrottled(
             "dangerous-treasure-travel",
             WaitLogInterval,
-            $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} MovementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]}.");
+            $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y tolerance={arrivalTolerance:0.0} MovementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]}.");
     }
 
     private void SkipCandidate(string reason)
@@ -1112,6 +1149,11 @@ public sealed class DangerousTreasureTravelController : IDisposable
             state = nextState;
             lastTransition = reason;
             stateEnteredAt = DateTimeOffset.UtcNow;
+            if (nextState == DangerousTreasureTravelState.EquippingNinjaGearset && previousState != nextState)
+            {
+                lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
+            }
+
             if (error != null)
             {
                 lastError = error;
@@ -1128,6 +1170,11 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=transition caller={FormatValue(callerName)} from={previousState} to={nextState} candidate={activeCandidateLabel} previousCandidate={(previousCandidateLabel.Length == 0 ? "none" : previousCandidateLabel)} gearset={activeGearsetNumber} walkingPhase={activeWalkingPhase} pendingHiddenMove={pendingHiddenMovePhase} result={LastResult} reason={reason}");
+        if (result.HasValue)
+        {
+            var now = DateTimeOffset.UtcNow;
+            logger.Info($"{BuildLogTag()} op=terminal caller={FormatValue(callerName)} state={nextState} result={result.Value} candidate={activeCandidateLabel} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} candidatePos={FormatVector(currentCandidate?.Position.ToVector3())} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y runElapsed={(runStartedAt == DateTimeOffset.MinValue ? 0 : (now - runStartedAt).TotalSeconds):0.0}s walkingPhase={activeWalkingPhase} pendingPhase={pendingHiddenMovePhase} movementState={movementController.State} pathBusy={movementController.IsPathBusy} movementError={FormatValue(movementController.LastError)} currentClassJob={gameActionController.CurrentClassJobId} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]} gearsetAttempts={gearsetAttemptCount} hideRetryUsed={hideRetryUsed} reason={reason}");
+        }
     }
 
     private string BuildLogTag()
@@ -1143,6 +1190,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
 
         activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+        logger.Info($"{BuildLogTag()} op=approach-evaluate candidate={activeCandidateLabel} previousCandidate={FormatValue(previousCandidateLabel)} playerPos={FormatVector(playerPosition)} destination={FormatVector(finalDestination)} previousThresholdActive={IsWithinHideThreshold(previousCandidate, playerPosition.Value)} currentThresholdActive={IsWithinHideThreshold(currentCandidate, playerPosition.Value)} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]} reason={reason}");
         if (TryBeginPreviousThresholdClear(playerPosition.Value, reason))
         {
             return true;
@@ -1162,6 +1210,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         if (condition[ConditionFlag.InCombat])
         {
+            logger.Info($"{BuildLogTag()} op=approach-decision candidate={activeCandidateLabel} branch=combat-bypass phase=FinalApproach destination={FormatVector(finalDestination)} arrivalTolerance={arrivalTolerance:0.0}");
             return StartWalkingPhase(
                 DangerousTreasureWalkingPhase.FinalApproach,
                 finalDestination,
@@ -1173,6 +1222,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         if (gameActionController.IsStealthed)
         {
+            logger.Info($"{BuildLogTag()} op=approach-decision candidate={activeCandidateLabel} branch=reuse-active-hide phase=FinalApproach destination={FormatVector(finalDestination)} arrivalTolerance={arrivalTolerance:0.0}");
             return StartWalkingPhase(
                 DangerousTreasureWalkingPhase.FinalApproach,
                 finalDestination,
@@ -1185,6 +1235,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         pendingHiddenMovePhase = DangerousTreasureWalkingPhase.FinalApproach;
         pendingHiddenMoveDestination = finalDestination;
         pendingHiddenMoveArrivalTolerance = arrivalTolerance;
+        logger.Info($"{BuildLogTag()} op=approach-decision candidate={activeCandidateLabel} branch=prepare-hide phase=FinalApproach destination={FormatVector(finalDestination)} arrivalTolerance={arrivalTolerance:0.0}");
         TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Preparing Hide before the final approach to dangerous candidate {activeCandidateLabel}.");
         return true;
     }
@@ -1195,6 +1246,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
         {
             return false;
         }
+
+        logger.Info($"{BuildLogTag()} op=threshold-decision kind=previous-clear candidate={activeCandidateLabel} previousCandidate={FormatValue(previousCandidateLabel)} playerPos={FormatVector(playerPosition)} previousPos={FormatVector(previousCandidate?.Position.ToVector3())} previousThreshold={GetHideThresholdDistance(previousCandidate):0.0} destination={FormatVector(finalDestination)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]} reason={reason}");
 
         if (condition[ConditionFlag.InCombat])
         {
@@ -1270,6 +1323,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         var thresholdPoint = GetThresholdApproachPoint(currentCandidate, playerPosition, 0f);
         if (!thresholdPoint.HasValue)
         {
+            logger.Info($"{BuildLogTag()} op=threshold-decision kind=direct-hide candidate={activeCandidateLabel} reason=no-threshold-point playerPos={FormatVector(playerPosition)} candidatePos={FormatVector(currentCandidate.Position.ToVector3())} destination={FormatVector(finalDestination)}");
             return false;
         }
 
@@ -1279,6 +1333,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
             SkipCandidate($"Dangerous treasure candidate {activeCandidateLabel} has no reliable vnavmesh hide-threshold point near <{thresholdPoint.Value.X:0.000}, {thresholdPoint.Value.Y:0.000}, {thresholdPoint.Value.Z:0.000}>.");
             return true;
         }
+
+        logger.Info($"{BuildLogTag()} op=threshold-decision kind=current-approach candidate={activeCandidateLabel} playerPos={FormatVector(playerPosition)} candidatePos={FormatVector(currentCandidate.Position.ToVector3())} threshold={GetHideThresholdDistance(currentCandidate):0.0} rawThreshold={FormatVector(thresholdPoint)} resolvedThreshold={FormatVector(resolvedThresholdPoint)} destination={FormatVector(finalDestination)}");
 
         if (CalculateFlatDistance(playerPosition, resolvedThresholdPoint.Value) <= ThresholdArrivalTolerance)
         {
@@ -1310,6 +1366,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         string reason)
     {
         movementController.SetLogOwner(currentRunId);
+        logger.Info($"{BuildLogTag()} op=hidden-move-start candidate={activeCandidateLabel} phase={phase} destination={FormatVector(destination)} arrivalTolerance={destinationArrivalTolerance:0.0} allowMount={allowMount} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} reason={reason}");
         if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount))
         {
             SkipCandidate(movementController.LastError.Length == 0

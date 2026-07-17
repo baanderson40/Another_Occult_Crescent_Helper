@@ -687,7 +687,8 @@
         "z": -235.004
       },
       "aggroLevel": 24,
-      "hideThresholdDistance": 400
+      "hideThresholdDistance": 400,
+      "skipDuringAshkin": true
     },
     {
       "area": "Crystallized Caverns",
@@ -698,7 +699,8 @@
         "z": -354.788
       },
       "aggroLevel": 25,
-      "hideThresholdDistance": 425
+      "hideThresholdDistance": 425,
+      "skipDuringAshkin": true
     },
     {
       "area": "Crystallized Caverns",
@@ -709,7 +711,8 @@
         "z": -310.567
       },
       "aggroLevel": 25,
-      "hideThresholdDistance": 400
+      "hideThresholdDistance": 400,
+      "skipDuringAshkin": true
     },
     {
       "area": "Crystallized Caverns",
@@ -720,7 +723,8 @@
         "z": -93.156
       },
       "aggroLevel": 24,
-      "hideThresholdDistance": 400
+      "hideThresholdDistance": 400,
+      "skipDuringAshkin": true
     },
     {
       "area": "Crystallized Caverns",
@@ -731,7 +735,41 @@
         "z": -79.057
       },
       "aggroLevel": 24,
-      "hideThresholdDistance": 400
+      "hideThresholdDistance": 400,
+      "skipDuringAshkin": true
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9_RehidePoint",
+      "position": {
+        "x": -819.415,
+        "y": 64.798,
+        "z": 45.804
+      },
+      "aggroLevel": 24,
+      "forceUnhidden": true,
+      "routeOnly": true,
+      "hideOnArrival": true,
+      "skipDuringAshkin": true,
+      "arrivalDistance": 3.0,
+      "note": "rehide_before_crystallized_caverns_9"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9_UnhidePoint",
+      "position": {
+        "x": -806.728,
+        "y": 66.344,
+        "z": 65.36
+      },
+      "aggroLevel": 13,
+      "forceUnhidden": true,
+      "routeOnly": true,
+      "disableExitHideThreshold": true,
+      "mountOnArrival": true,
+      "skipDuringAshkin": true,
+      "arrivalDistance": 3.0,
+      "note": "unhide_before_crystallized_caverns_4"
     },
     {
       "area": "Crystallized Caverns",
@@ -989,7 +1027,8 @@
       },
       "aggroLevel": 28,
       "forceUnhidden": true,
-      "specialBranch": "ascent7",
+      "skipDuringAshkin": true,
+      "skipDuringUnsafeWeather": true,
       "note": "spell_aggro_unhidden"
     },
     {
@@ -1007,7 +1046,8 @@
       "mountOnArrival": true,
       "recheckAscentSafetyOnArrival": true,
       "arrivalDistance": 3.0,
-      "specialBranch": "ascent7",
+      "skipDuringAshkin": true,
+      "skipDuringUnsafeWeather": true,
       "note": "drop_hide_before_ascent_7"
     },
     {
@@ -1022,7 +1062,8 @@
       "forceUnhidden": true,
       "routeOnly": true,
       "arrivalDistance": 3.0,
-      "specialBranch": "ascent7",
+      "skipDuringAshkin": true,
+      "skipDuringUnsafeWeather": true,
       "note": "spell_aggro_unhidden"
     },
     {
@@ -1034,13 +1075,13 @@
         "z": 665.097
       },
       "aggroLevel": 28,
-      "forceHidden": true,
+      "forceUnhidden": true,
       "routeOnly": true,
       "disableExitHideThreshold": true,
       "mountOnArrival": true,
       "arrivalDistance": 3.0,
       "specialBranch": "ascent5_only",
-      "note": "drop_hide_before_ascent_5"
+      "note": "unhide_before_ascent_5"
     },
     {
       "area": "Abandoned Ascent",
@@ -1241,6 +1282,10 @@
     },
     {
       "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9_RehidePoint"
+    },
+    {
+      "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_9"
     },
     {
@@ -1258,6 +1303,10 @@
     {
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_6"
+    },
+    {
+      "area": "Crystallized Caverns",
+      "label": "Crystallized Caverns_9_UnhidePoint"
     },
     {
       "area": "Crystallized Caverns",

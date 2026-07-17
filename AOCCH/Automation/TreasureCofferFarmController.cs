@@ -10,11 +10,21 @@ using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
 
 namespace AOCCH.Automation;
 
 public sealed class TreasureCofferFarmController : IDisposable
 {
+    private enum HiddenTravelReadiness
+    {
+        Ready,
+        Pending,
+        Failed,
+    }
+
+    private readonly record struct WeatherCondition(byte? Id, bool IsUnsafe);
+
     private static int nextRunSequence;
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferAcquisitionDistance = 60f;
@@ -22,6 +32,15 @@ public sealed class TreasureCofferFarmController : IDisposable
     private const int RequiredInventoryFreeSlots = 3;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ArrivalMountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ArrivalMountRetryInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan HiddenDismountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HiddenDismountRequestInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(2);
+    private static readonly HashSet<byte> UnsafeWeatherIds = [7, 62, 64, 192];
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -55,6 +74,16 @@ public sealed class TreasureCofferFarmController : IDisposable
     private VisibleCofferMatch? pendingInteractionMatch;
     private VisibleCofferFarmSpotData? activePreviousThresholdSpot;
     private bool activeSpotRequiresHiddenTravel;
+    private bool activeSpotWeatherForcedHidden;
+    private bool activeAscentWeatherRecheckCompleted;
+    private DateTimeOffset arrivalMountRequestedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset arrivalMountRetryAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideDispatchRetryAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+    private bool hiddenHideVerificationRetryUsed;
 
     public TreasureCofferFarmController(
         IFramework framework,
@@ -208,7 +237,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     public VisibleCofferPositionOverride? LastSavedOverride
         => overrideStore.LastSavedOverride;
 
-    public bool Start(bool startedByFarmSession = false)
+    public bool Start(int? startRouteIndex = null, bool startedByFarmSession = false)
     {
         if (IsRunning)
         {
@@ -242,11 +271,20 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
+        var validatedStartRouteIndex = startRouteIndex ?? 0;
+        if (validatedStartRouteIndex < 0 || validatedStartRouteIndex >= data.VisibleCofferFarmRoute.Count)
+        {
+            SetFailure($"Overworld coffer route start index {validatedStartRouteIndex} is out of range for {data.VisibleCofferFarmRoute.Count} entries.");
+            return false;
+        }
+
+        var startingRouteEntry = data.VisibleCofferFarmRoute[validatedStartRouteIndex];
+
         lock (gate)
         {
             lastResult = TreasureCofferFarmResult.None;
             currentRunId = $"CofferFarm#{Interlocked.Increment(ref nextRunSequence)}";
-            currentRouteIndex = -1;
+            currentRouteIndex = validatedStartRouteIndex - 1;
             activeRouteEntry = null;
             activeSpot = null;
             activeResolvedPosition = Vector3.Zero;
@@ -257,18 +295,24 @@ public sealed class TreasureCofferFarmController : IDisposable
             pendingInteractionMatch = null;
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
+            activeSpotWeatherForcedHidden = false;
+            activeAscentWeatherRecheckCompleted = false;
+            ResetArrivalMountState();
+            ResetHiddenTravelReadiness();
         }
 
         movementController.SetLogOwner(currentRunId);
-        logger.Info($"{BuildLogTag()} op=start territorySouthHorn={scanner.Snapshot.IsInSouthHorn} routeEntries={data.VisibleCofferFarmRoute.Count} spotEntries={data.VisibleCofferFarmSpots.Count} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} inventoryRequiredFreeSlots={RequiredInventoryFreeSlots} startedByFarmSession={startedByFarmSession}");
+        logger.Info($"{BuildLogTag()} op=start territorySouthHorn={scanner.Snapshot.IsInSouthHorn} routeEntries={data.VisibleCofferFarmRoute.Count} spotEntries={data.VisibleCofferFarmSpots.Count} startIndex={validatedStartRouteIndex} startSpot={startingRouteEntry.Area}:{startingRouteEntry.Label} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} inventoryRequiredFreeSlots={RequiredInventoryFreeSlots} startedByFarmSession={startedByFarmSession}");
         TransitionTo(TreasureCofferFarmState.Starting, startedByFarmSession
-            ? $"Starting automatic overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries."
-            : $"Starting overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries.");
+            ? $"Starting automatic overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}."
+            : $"Starting overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}.");
         return true;
     }
 
     public void Stop(string reason)
     {
+        logger.Info($"{BuildLogTag()} op=stop-request state={State} spot={DescribeActiveSpot()} movementState={movementController.State} dangerousState={dangerousTreasureTravelController.State} interactionState={cofferInteractionController.State} reason={reason}");
+
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
             movementController.Stop(reason);
@@ -312,6 +356,10 @@ public sealed class TreasureCofferFarmController : IDisposable
             pendingInteractionMatch = null;
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
+            activeSpotWeatherForcedHidden = false;
+            activeAscentWeatherRecheckCompleted = false;
+            ResetArrivalMountState();
+            ResetHiddenTravelReadiness();
         }
 
         logger.Info($"[CofferFarm] op=reset reason={reason}");
@@ -405,6 +453,10 @@ public sealed class TreasureCofferFarmController : IDisposable
                     pendingInteractionMatch = null;
                     activePreviousThresholdSpot = null;
                     activeSpotRequiresHiddenTravel = false;
+                    activeSpotWeatherForcedHidden = false;
+                    activeAscentWeatherRecheckCompleted = false;
+                    ResetArrivalMountState();
+                    ResetHiddenTravelReadiness();
                 }
 
                 logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} reason={routeRuleSkipReason}");
@@ -425,13 +477,18 @@ public sealed class TreasureCofferFarmController : IDisposable
                     lastMatchSource = string.Empty;
                     pendingInteractionMatch = null;
                     activePreviousThresholdSpot = GetPreviousThresholdSpot(nextIndex);
+                    activeSpotWeatherForcedHidden = ShouldForceHiddenForWeather(spot);
                     activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
+                    activeAscentWeatherRecheckCompleted = false;
+                    ResetArrivalMountState();
+                    ResetHiddenTravelReadiness();
                 }
 
                 logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-visible-travel-disabled");
                 continue;
             }
 
+            var weatherForcedHidden = ShouldForceHiddenForWeather(spot);
             var resolvedPosition = spot.Position.ToVector3();
             var usesOverride = overrideStore.TryResolvePosition(spot.Area, spot.Label, out var overridePosition);
             if (usesOverride)
@@ -451,10 +508,14 @@ public sealed class TreasureCofferFarmController : IDisposable
                 lastMatchSource = string.Empty;
                 pendingInteractionMatch = null;
                 activePreviousThresholdSpot = GetPreviousThresholdSpot(nextIndex);
+                activeSpotWeatherForcedHidden = weatherForcedHidden;
                 activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
+                activeAscentWeatherRecheckCompleted = false;
+                ResetArrivalMountState();
+                ResetHiddenTravelReadiness();
             }
 
-            logger.Info($"{BuildLogTag()} op=route-entry-selected index={nextIndex} spot={spot.Area}:{spot.Label} canonicalPosition={FormatVector(spot.Position.ToVector3())} resolvedPosition={FormatVector(resolvedPosition)} usesOverride={usesOverride} aggroLevel={spot.AggroLevel} requiresHidden={activeSpotRequiresHiddenTravel} routeOnly={spot.RouteOnly} previousThreshold={DescribeSpot(activePreviousThresholdSpot)}");
+            logger.Info($"{BuildLogTag()} op=route-entry-selected index={nextIndex} spot={spot.Area}:{spot.Label} canonicalPosition={FormatVector(spot.Position.ToVector3())} resolvedPosition={FormatVector(resolvedPosition)} usesOverride={usesOverride} aggroLevel={spot.AggroLevel} requiresHidden={activeSpotRequiresHiddenTravel} hiddenDecision={GetHiddenTravelDecision(spot)} weatherForcedHidden={weatherForcedHidden} weatherId={FormatWeatherId(GetWeatherCondition().Id)} routeOnly={spot.RouteOnly} previousThreshold={DescribeSpot(activePreviousThresholdSpot)}");
 
             if (BeginTravelToActiveSpot())
             {
@@ -488,19 +549,20 @@ public sealed class TreasureCofferFarmController : IDisposable
         var previousThresholdActive = playerPosition.HasValue && IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition.Value);
         var aggroExceededMax = IsDangerousByAggro(spot);
         var helperOverride = GetHelperOverrideLabel(spot);
+        var hiddenDecision = GetHiddenTravelDecision(spot);
         if (RequiresDangerousTravel(spot))
         {
-            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} hiddenDecision={hiddenDecision} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
         }
 
         if (previousThresholdActive)
         {
-            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} hiddenDecision={hiddenDecision} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginPreviousThresholdCarryoverTravel(spot, destination, arrivalDistance);
         }
 
-        logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+        logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
 
         movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Overworld coffer route {spot.Label}", destination, arrivalDistance))
@@ -516,7 +578,13 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool BeginPreviousThresholdCarryoverTravel(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
     {
-        if (!EnsureVisibleRouteHiddenReady($"threshold carryover for {spot.Area}:{spot.Label}"))
+        var hiddenReadiness = EnsureVisibleRouteHiddenReady($"threshold carryover for {spot.Area}:{spot.Label}");
+        if (hiddenReadiness == HiddenTravelReadiness.Failed)
+        {
+            return false;
+        }
+
+        if (hiddenReadiness == HiddenTravelReadiness.Pending)
         {
             TransitionTo(TreasureCofferFarmState.ClearingPreviousHideThreshold, $"Preparing Hide while leaving previous threshold before traveling to {spot.Area}:{spot.Label}.");
             return true;
@@ -550,6 +618,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             configuration.VisibleCofferNinjaGearsetNumber,
             configuration.VisibleCofferHideThresholdDistance,
             configuration.VisibleTreasureCofferMaximumAggroLevel);
+        logger.Info($"{BuildLogTag()} op=dangerous-travel-start spot={spot.Area}:{spot.Label} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0} aggroLevel={spot.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} hideThreshold={dangerousOptions.HideThresholdDistance} gearset={dangerousOptions.GearsetNumber} previousThresholdSpot={DescribeSpot(activePreviousThresholdSpot)} previousCandidatePassed=none");
         if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, dangerousSpot, destination, arrivalDistance, dangerousOptions))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
@@ -603,7 +672,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        if (!EnsureVisibleRouteHiddenReady($"threshold carryover for {DescribeActiveSpot()}"))
+        if (EnsureVisibleRouteHiddenReady($"threshold carryover for {DescribeActiveSpot()}") != HiddenTravelReadiness.Ready)
         {
             return;
         }
@@ -671,7 +740,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         logger.DebugThrottled(
             "visible-coffer-farm-dangerous-travel",
             WaitLogInterval,
-            $"Overworld coffer route is running dangerous travel to {DescribeActiveSpot()}. dangerousState={dangerousTreasureTravelController.State} transition={dangerousTreasureTravelController.LastTransition}.");
+            $"Overworld coffer route is running dangerous travel to {DescribeActiveSpot()}. farmState={State} dangerousState={dangerousTreasureTravelController.State} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(ActiveResolvedPosition)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? ActiveResolvedPosition, ActiveResolvedPosition):0.0}y arrivalDistance={GetArrivalDistance(ActiveSpot):0.0}y movementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]} transition={dangerousTreasureTravelController.LastTransition}.");
     }
 
     private void OnArrivedAtSpot()
@@ -692,7 +761,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        logger.Info($"{BuildLogTag()} op=final-scan-miss spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot):0.0} acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y");
+        logger.Info($"{BuildLogTag()} op=final-scan-miss spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot):0.0} acquisitionDistance={VisibleCofferAcquisitionDistance:0.0}y {DescribeVisibleCofferScanSummary(ActiveResolvedPosition)}");
         TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No overworld coffer matched {DescribeActiveSpot()} on final arrival scan; continuing to the next route entry.");
     }
 
@@ -710,6 +779,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         switch (cofferInteractionController.LastResult)
         {
             case CofferInteractionResult.Opened:
+                logger.Info($"{BuildLogTag()} op=interaction-terminal spot={DescribeActiveSpot()} result={cofferInteractionController.LastResult} state={cofferInteractionController.State} attempts={cofferInteractionController.InteractionAttemptCount} action=advance transition={cofferInteractionController.LastTransition} error={FormatValue(cofferInteractionController.LastError)}");
                 if (LastMatchedCoffer != null)
                 {
                     logger.Info(
@@ -721,12 +791,15 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             case CofferInteractionResult.LostCoffer:
             case CofferInteractionResult.TimedOut:
+                logger.Info($"{BuildLogTag()} op=interaction-terminal spot={DescribeActiveSpot()} result={cofferInteractionController.LastResult} state={cofferInteractionController.State} attempts={cofferInteractionController.InteractionAttemptCount} action=advance transition={cofferInteractionController.LastTransition} error={FormatValue(cofferInteractionController.LastError)}");
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Overworld coffer interaction ended without a confirmed open at {DescribeActiveSpot()}; continuing to the next route entry.");
                 return;
             case CofferInteractionResult.Stopped:
+                logger.Info($"{BuildLogTag()} op=interaction-terminal spot={DescribeActiveSpot()} result={cofferInteractionController.LastResult} state={cofferInteractionController.State} attempts={cofferInteractionController.InteractionAttemptCount} action=stop transition={cofferInteractionController.LastTransition} error={FormatValue(cofferInteractionController.LastError)}");
                 TransitionTo(TreasureCofferFarmState.Stopped, cofferInteractionController.LastTransition, error: cofferInteractionController.LastError, result: TreasureCofferFarmResult.Stopped);
                 return;
             default:
+                logger.Warning($"{BuildLogTag()} op=interaction-terminal spot={DescribeActiveSpot()} result={cofferInteractionController.LastResult} state={cofferInteractionController.State} attempts={cofferInteractionController.InteractionAttemptCount} action=fail transition={cofferInteractionController.LastTransition} error={FormatValue(cofferInteractionController.LastError)}");
                 SetFailure(cofferInteractionController.LastError.Length == 0
                     ? cofferInteractionController.LastTransition
                     : cofferInteractionController.LastError);
@@ -867,8 +940,8 @@ public sealed class TreasureCofferFarmController : IDisposable
         {
             logger.DebugThrottled(
                 "visible-coffer-farm-handoff",
-                TimeSpan.FromMilliseconds(250),
-                $"Overworld coffer route is waiting for vnavmesh to settle before interacting at {DescribeActiveSpot()}. movementState={movementController.State} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
+                WaitLogInterval,
+                $"Overworld coffer route is waiting for vnavmesh to settle before interacting at {DescribeActiveSpot()}. movementState={movementController.State} pathBusy={movementController.IsPathBusy} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} coffer={pendingMatch.Coffer.GameObjectId:X} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
             return;
         }
 
@@ -1129,12 +1202,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool RequiresHiddenTravel(VisibleCofferFarmSpotData spot)
     {
-        if (IsDangerousByAggro(spot))
-        {
-            return true;
-        }
-
-        if (spot.ForceHidden)
+        if (ReferenceEquals(spot, ActiveSpot) && activeSpotWeatherForcedHidden)
         {
             return true;
         }
@@ -1144,7 +1212,42 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
+        if (spot.ForceHidden)
+        {
+            return true;
+        }
+
+        if (IsDangerousByAggro(spot))
+        {
+            return true;
+        }
+
         return (spot.HideThresholdDistance ?? 0) > 0;
+    }
+
+    private string GetHiddenTravelDecision(VisibleCofferFarmSpotData spot)
+    {
+        if (ReferenceEquals(spot, ActiveSpot) && activeSpotWeatherForcedHidden)
+        {
+            return "unsafe-weather";
+        }
+
+        if (spot.ForceUnhidden)
+        {
+            return "force-unhidden";
+        }
+
+        if (spot.ForceHidden)
+        {
+            return "force-hidden";
+        }
+
+        if (IsDangerousByAggro(spot))
+        {
+            return "aggro";
+        }
+
+        return (spot.HideThresholdDistance ?? 0) > 0 ? "threshold" : "none";
     }
 
     private bool IsDangerousByAggro(VisibleCofferFarmSpotData spot)
@@ -1152,14 +1255,14 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private static string GetHelperOverrideLabel(VisibleCofferFarmSpotData spot)
     {
-        if (spot.ForceHidden)
-        {
-            return "forceHidden";
-        }
-
         if (spot.ForceUnhidden)
         {
             return "forceUnhidden";
+        }
+
+        if (spot.ForceHidden)
+        {
+            return "forceHidden";
         }
 
         if (spot.HideOnArrival)
@@ -1172,12 +1275,27 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool ShouldSkipForRouteRules(VisibleCofferFarmSpotData spot, out string reason)
     {
+        var weather = GetWeatherCondition();
+        if (configuration.SkipUnsafeWeatherRoutes && spot.SkipDuringUnsafeWeather && weather.IsUnsafe)
+        {
+            reason = $"unsafe-weather-skip:{FormatWeatherId(weather.Id)}";
+            return true;
+        }
+
+        if (configuration.SkipUnsafeWeatherRoutes
+            && spot.RainSensitive
+            && weather.IsUnsafe
+            && !configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            reason = $"unsafe-weather-ninja-disabled:{FormatWeatherId(weather.Id)}";
+            return true;
+        }
+
         if (configuration.SkipHighLevelCavernsDuringAshkin
-            && string.Equals(spot.Area, "Crystallized Caverns", StringComparison.OrdinalIgnoreCase)
-            && spot.AggroLevel >= 20
+            && spot.SkipDuringAshkin
             && IsAshkinTime())
         {
-            reason = "ashkin-high-caverns-skip";
+            reason = "ashkin-route-skip";
             return true;
         }
 
@@ -1191,11 +1309,34 @@ public sealed class TreasureCofferFarmController : IDisposable
         return false;
     }
 
+    private bool ShouldForceHiddenForWeather(VisibleCofferFarmSpotData spot)
+    {
+        var weather = GetWeatherCondition();
+        return configuration.SkipUnsafeWeatherRoutes
+            && spot.RainSensitive
+            && weather.IsUnsafe
+            && configuration.UseNinjaForDangerousVisibleCoffers;
+    }
+
+    private static unsafe WeatherCondition GetWeatherCondition()
+    {
+        var envManager = EnvManager.Instance();
+        if (envManager == null)
+        {
+            return new WeatherCondition(null, IsUnsafe: true);
+        }
+
+        var weatherId = envManager->ActiveWeather;
+        return new WeatherCondition(weatherId, UnsafeWeatherIds.Contains(weatherId));
+    }
+
+    private static string FormatWeatherId(byte? weatherId)
+        => weatherId.HasValue ? weatherId.Value.ToString() : "unavailable";
+
     private bool IsSpecialBranchActive(string branch)
         => branch switch
         {
             "ascent5_only" => true,
-            "ascent7" => configuration.UseNinjaForDangerousVisibleCoffers && !IsAshkinTime(),
             _ => true,
         };
 
@@ -1273,19 +1414,31 @@ public sealed class TreasureCofferFarmController : IDisposable
             return true;
         }
 
-        if (spot.RecheckAscentSafetyOnArrival)
+        if (configuration.SkipUnsafeWeatherRoutes && spot.RecheckAscentSafetyOnArrival)
         {
-            logger.Info($"{BuildLogTag()} op=route-helper-action action=recheck-ascent-safety-on-arrival result=deferred spot={DescribeActiveSpot()} reason=ashkin-only-branch-port");
+            if (!activeAscentWeatherRecheckCompleted)
+            {
+                var weather = GetWeatherCondition();
+                if (weather.IsUnsafe)
+                {
+                    logger.Warning($"{BuildLogTag()} op=ascent-weather-recheck spot={DescribeActiveSpot()} weatherId={FormatWeatherId(weather.Id)} unsafe=true action=skip-ascent7-retain-hide");
+                    TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping the Ascent 7 route after unsafe weather recheck at {DescribeActiveSpot()}. weatherId={FormatWeatherId(weather.Id)}.");
+                    return false;
+                }
+
+                activeAscentWeatherRecheckCompleted = true;
+                logger.Info($"{BuildLogTag()} op=ascent-weather-recheck spot={DescribeActiveSpot()} weatherId={FormatWeatherId(weather.Id)} unsafe=false action=allow-unhide");
+            }
         }
 
         if (spot.HideOnArrival)
         {
-            if (!EnsureVisibleRouteHiddenReady($"hide-on-arrival for {DescribeActiveSpot()}"))
+            if (EnsureVisibleRouteHiddenReady($"hide-on-arrival for {DescribeActiveSpot()}") != HiddenTravelReadiness.Ready)
             {
                 logger.DebugThrottled(
                     "visible-coffer-farm-arrival-action",
-                    TimeSpan.FromMilliseconds(250),
-                    $"Overworld coffer route is waiting to apply hide-on-arrival at {DescribeActiveSpot()}.");
+                    WaitLogInterval,
+                    $"Overworld coffer route is waiting to apply hide-on-arrival at {DescribeActiveSpot()}. mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\".");
                 return false;
             }
 
@@ -1300,75 +1453,170 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return false;
             }
 
-            if (!gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, $"mount-on-arrival for {DescribeActiveSpot()}"))
+            var now = DateTimeOffset.UtcNow;
+            if (arrivalMountRequestedAt == DateTimeOffset.MinValue)
             {
-                logger.DebugThrottled(
-                    "visible-coffer-farm-arrival-action",
-                    TimeSpan.FromMilliseconds(250),
-                    $"Overworld coffer route is waiting to mount on arrival at {DescribeActiveSpot()}.");
+                arrivalMountRequestedAt = now;
+            }
+
+            if (now - arrivalMountRequestedAt >= ArrivalMountTimeout)
+            {
+                SetFailure($"Timed out mounting on arrival at {DescribeActiveSpot()}. mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} changeableState={gameActionController.GetChangeableStateSummary()}");
                 return false;
             }
 
-            logger.Info($"{BuildLogTag()} op=route-helper-action action=mount-on-arrival result=requested spot={DescribeActiveSpot()}");
+            if (now >= arrivalMountRetryAvailableAt)
+            {
+                arrivalMountRetryAvailableAt = now + ArrivalMountRetryInterval;
+                if (gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, $"mount-on-arrival for {DescribeActiveSpot()}"))
+                {
+                    logger.Info($"{BuildLogTag()} op=route-helper-action action=mount-on-arrival result=requested spot={DescribeActiveSpot()} nextAttemptAt={arrivalMountRetryAvailableAt:O}");
+                }
+            }
+
+            logger.DebugThrottled(
+                "visible-coffer-farm-arrival-action",
+                WaitLogInterval,
+                $"Overworld coffer route is waiting to mount on arrival at {DescribeActiveSpot()}. elapsed={(now - arrivalMountRequestedAt).TotalSeconds:0.0}s timeout={ArrivalMountTimeout.TotalSeconds:0.0}s nextAttemptIn={Math.Max(0, (arrivalMountRetryAvailableAt - now).TotalSeconds):0.0}s mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]} movementState={movementController.State}.");
             return false;
         }
 
+        ResetArrivalMountState();
         logger.ResetThrottle("visible-coffer-farm-arrival-action");
+        logger.ResetThrottle("visible-coffer-farm-ascent-safety");
         return true;
     }
 
-    private bool EnsureVisibleRouteHiddenReady(string context)
+    private void ResetArrivalMountState()
     {
+        arrivalMountRequestedAt = DateTimeOffset.MinValue;
+        arrivalMountRetryAvailableAt = DateTimeOffset.MinValue;
+    }
+
+    private HiddenTravelReadiness EnsureVisibleRouteHiddenReady(string context)
+    {
+        var now = DateTimeOffset.UtcNow;
         if (condition[ConditionFlag.InCombat])
         {
             SetFailure($"Combat started while hidden visible-route travel was required. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
-            return false;
+            return HiddenTravelReadiness.Failed;
         }
 
         if (condition[ConditionFlag.Mounted])
         {
-            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"overworld coffer hidden travel for {DescribeActiveSpot()}"))
+            if (hiddenDismountStartedAt == DateTimeOffset.MinValue)
             {
-                logger.DebugThrottled(
-                    "visible-coffer-farm-hidden-ready",
-                    TimeSpan.FromMilliseconds(250),
-                    $"Overworld coffer route is waiting to dismount before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
-                return false;
+                hiddenDismountStartedAt = now;
             }
 
-            logger.DebugThrottled(
-                "visible-coffer-farm-hidden-ready",
-                TimeSpan.FromMilliseconds(250),
-                $"Overworld coffer route sent a dismount request before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
-            return false;
+            if (now - hiddenDismountStartedAt >= HiddenDismountTimeout)
+            {
+                SetFailure($"Timed out dismounting before hidden visible-route travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} {gameActionController.GetChangeableStateSummary()}");
+                return HiddenTravelReadiness.Failed;
+            }
+
+            if (now >= hiddenDismountRequestAvailableAt)
+            {
+                hiddenDismountRequestAvailableAt = now + HiddenDismountRequestInterval;
+                if (gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"overworld coffer hidden travel for {DescribeActiveSpot()}"))
+                {
+                    logger.Info($"{BuildLogTag()} op=hidden-travel-dismount-request context={context} spot={DescribeActiveSpot()} nextAttemptAt={hiddenDismountRequestAvailableAt:O}");
+                }
+                else
+                {
+                    logger.DebugThrottled("visible-coffer-farm-hidden-dismount-dispatch", TimeSpan.FromSeconds(1), $"Overworld coffer route could not dispatch dismount before hidden travel. context={context} spot={DescribeActiveSpot()} retryAt={hiddenDismountRequestAvailableAt:O} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+                }
+            }
+
+            logger.DebugThrottled("visible-coffer-farm-hidden-ready", WaitLogInterval, $"Overworld coffer route is waiting to dismount before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} elapsed={(now - hiddenDismountStartedAt).TotalSeconds:0.0}s timeout={HiddenDismountTimeout.TotalSeconds:0.0}s nextAttemptIn={Math.Max(0, (hiddenDismountRequestAvailableAt - now).TotalSeconds):0.0}s changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenTravelReadiness.Pending;
+        }
+
+        if (hiddenDismountStartedAt != DateTimeOffset.MinValue && now - hiddenDismountStartedAt < HideStateSettleDelay)
+        {
+            logger.DebugThrottled("visible-coffer-farm-hidden-settle", TimeSpan.FromMilliseconds(250), $"Overworld coffer route is settling after dismount before Hide. context={context} spot={DescribeActiveSpot()} elapsed={(now - hiddenDismountStartedAt).TotalSeconds:0.00}s required={HideStateSettleDelay.TotalSeconds:0.00}s.");
+            return HiddenTravelReadiness.Pending;
         }
 
         if (gameActionController.IsStealthed)
         {
-            logger.ResetThrottle("visible-coffer-farm-hidden-ready");
-            return true;
+            ResetHiddenTravelReadiness();
+            return HiddenTravelReadiness.Ready;
         }
 
-        if (!gameActionController.CanUseHide())
+        if (hiddenHideVerificationDeadlineAt != DateTimeOffset.MinValue)
         {
-            logger.DebugThrottled(
-                "visible-coffer-farm-hidden-ready",
-                TimeSpan.FromMilliseconds(250),
-                $"Overworld coffer route is waiting for Hide before hidden travel. context={context} spot={DescribeActiveSpot()} currentClassJob={gameActionController.CurrentClassJobId}");
-            return false;
+            if (now < hiddenHideVerificationDeadlineAt)
+            {
+                logger.DebugThrottled("visible-coffer-farm-hidden-verify", WaitLogInterval, $"Overworld coffer route is waiting for Hide confirmation before hidden travel. context={context} spot={DescribeActiveSpot()} deadlineIn={(hiddenHideVerificationDeadlineAt - now).TotalSeconds:0.0}s stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]}.");
+                return HiddenTravelReadiness.Pending;
+            }
+
+            if (!hiddenHideVerificationRetryUsed)
+            {
+                hiddenHideVerificationRetryUsed = true;
+                hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+                hiddenHideDispatchRetryAt = now + HideDispatchRetryDelay;
+                logger.Warning($"{BuildLogTag()} op=hidden-travel-hide-verify-timeout context={context} spot={DescribeActiveSpot()} action=retry retryAt={hiddenHideDispatchRetryAt:O}");
+                return HiddenTravelReadiness.Pending;
+            }
+
+            SetFailure($"Hide did not apply before hidden visible-route travel after two attempts. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} changeableState={gameActionController.GetChangeableStateSummary()}");
+            return HiddenTravelReadiness.Failed;
+        }
+
+        if (hiddenHideReadyDeadlineAt == DateTimeOffset.MinValue)
+        {
+            hiddenHideReadyDeadlineAt = now + HideReadyTimeout;
+        }
+
+        if (now >= hiddenHideReadyDeadlineAt)
+        {
+            SetFailure($"Hide did not become ready before hidden visible-route travel within {HideReadyTimeout.TotalSeconds:0.0}s. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentClassJob={gameActionController.CurrentClassJobId} changeableState={gameActionController.GetChangeableStateSummary()}");
+            return HiddenTravelReadiness.Failed;
+        }
+
+        if (now < hiddenHideDispatchRetryAt)
+        {
+            return HiddenTravelReadiness.Pending;
+        }
+
+        if (!gameActionController.IsPlayerInChangeableState() || !gameActionController.CanUseHide())
+        {
+            logger.DebugThrottled("visible-coffer-farm-hidden-ready", WaitLogInterval, $"Overworld coffer route is waiting for Hide before hidden travel. context={context} spot={DescribeActiveSpot()} deadlineIn={(hiddenHideReadyDeadlineAt - now).TotalSeconds:0.0}s currentClassJob={gameActionController.CurrentClassJobId} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenTravelReadiness.Pending;
         }
 
         if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"overworld coffer hidden travel for {DescribeActiveSpot()}"))
         {
-            SetFailure($"Failed to use Hide before hidden visible-route travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
-            return false;
+            hiddenHideDispatchRetryAt = now + HideDispatchRetryDelay;
+            logger.DebugThrottled("visible-coffer-farm-hidden-dispatch", TimeSpan.FromSeconds(1), $"Overworld coffer route received an ambiguous Hide dispatch result before hidden travel. context={context} spot={DescribeActiveSpot()} retryAt={hiddenHideDispatchRetryAt:O} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenTravelReadiness.Pending;
         }
 
-        logger.DebugThrottled(
-            "visible-coffer-farm-hidden-ready",
-            TimeSpan.FromMilliseconds(250),
-            $"Overworld coffer route requested Hide before hidden travel. context={context} spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)}");
-        return false;
+        hiddenHideVerificationDeadlineAt = now + HideVerifyTimeout;
+        logger.Info($"{BuildLogTag()} op=hidden-travel-hide-request context={context} spot={DescribeActiveSpot()} verifyDeadline={hiddenHideVerificationDeadlineAt:O}");
+        return HiddenTravelReadiness.Pending;
+    }
+
+    private void ResetHiddenTravelReadiness()
+    {
+        hiddenDismountStartedAt = DateTimeOffset.MinValue;
+        hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
+        hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
+        hiddenHideDispatchRetryAt = DateTimeOffset.MinValue;
+        hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+        hiddenHideVerificationRetryUsed = false;
+        ResetHiddenTravelThrottles();
+    }
+
+    private void ResetHiddenTravelThrottles()
+    {
+        logger.ResetThrottle("visible-coffer-farm-hidden-ready");
+        logger.ResetThrottle("visible-coffer-farm-hidden-dismount-dispatch");
+        logger.ResetThrottle("visible-coffer-farm-hidden-settle");
+        logger.ResetThrottle("visible-coffer-farm-hidden-dispatch");
+        logger.ResetThrottle("visible-coffer-farm-hidden-verify");
     }
 
     private bool HandleDangerousTravelTerminalResult()
@@ -1376,12 +1624,28 @@ public sealed class TreasureCofferFarmController : IDisposable
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
+                OnArrivedAtSpot();
+
+                // Arrival helpers such as mount-on-arrival may need multiple updates.
+                // Keep the terminal result until the farm has committed its continuation.
+                if (State == TreasureCofferFarmState.TravelingToDangerousSpot)
+                {
+                    logger.DebugThrottled(
+                        "visible-coffer-farm-dangerous-arrival-pending",
+                        WaitLogInterval,
+                        $"Overworld coffer route is retaining dangerous arrival while helpers finish at {DescribeActiveSpot()}. farmState={State} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} movementState={movementController.State} transition={LastTransition}.");
+                    return true;
+                }
+
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
-                OnArrivedAtSpot();
+                logger.ResetThrottle("visible-coffer-farm-dangerous-arrival-pending");
+                logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Arrived result=Arrived action=arrival-complete nextFarmState={State} transition={LastTransition}");
+                logger.Info($"{BuildLogTag()} op=dangerous-travel-consumed spot={DescribeActiveSpot()} result=Arrived nextFarmState={State} transition={LastTransition}");
                 return true;
             case DangerousTreasureTravelState.CandidateSkipped:
                 var skipReason = dangerousTreasureTravelController.LastTransition;
+                logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=CandidateSkipped result={dangerousTreasureTravelController.LastResult} action=advance transition={skipReason} error={FormatValue(dangerousTreasureTravelController.LastError)}");
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, skipReason);
@@ -1390,6 +1654,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 var failureReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
+                logger.Warning($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Failed result={dangerousTreasureTravelController.LastResult} action=fail transition={dangerousTreasureTravelController.LastTransition} error={FormatValue(dangerousTreasureTravelController.LastError)}");
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 SetFailure(failureReason);
@@ -1398,6 +1663,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
+                logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Stopped result={dangerousTreasureTravelController.LastResult} action=stop transition={dangerousTreasureTravelController.LastTransition} error={FormatValue(dangerousTreasureTravelController.LastError)}");
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 TransitionTo(TreasureCofferFarmState.Stopped, stoppedReason, error: stoppedReason, result: TreasureCofferFarmResult.Stopped);

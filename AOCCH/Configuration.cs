@@ -101,6 +101,7 @@ public class Configuration : IPluginConfiguration
     public int FateDismountDistance { get; set; } = 10;
     public int ArrivalDistance { get; set; } = 5;
     public bool SkipHighLevelCavernsDuringAshkin { get; set; }
+    public bool SkipUnsafeWeatherRoutes { get; set; } = true;
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;

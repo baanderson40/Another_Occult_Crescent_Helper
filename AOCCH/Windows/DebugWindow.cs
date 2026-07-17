@@ -52,6 +52,7 @@ public sealed class DebugWindow : Window, IDisposable
     private int shopAtkValueCount = 160;
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
+    private int selectedVisibleCofferRouteStartIndex;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -1007,10 +1008,62 @@ public sealed class DebugWindow : Window, IDisposable
 
     private void DrawVisibleCofferFarm()
     {
+        var routeEntries = plugin.OccultCrescentData.VisibleCofferFarmRoute;
+        var routeSpots = plugin.OccultCrescentData.VisibleCofferFarmSpots;
+
         ImGui.TextUnformatted("Overworld Coffer Route");
         ImGui.TextUnformatted($"State: {treasureCofferFarmController.State}");
         ImGui.TextWrapped($"Last Transition: {treasureCofferFarmController.LastTransition}");
         ImGui.TextWrapped($"Current Route Index: {treasureCofferFarmController.CurrentRouteIndex}");
+
+        if (routeEntries.Count > 0)
+        {
+            selectedVisibleCofferRouteStartIndex = Math.Clamp(selectedVisibleCofferRouteStartIndex, 0, routeEntries.Count - 1);
+            ImGui.SetNextItemWidth(420f);
+            if (ImGui.BeginCombo("Start Candidate", GetVisibleCofferRouteEntryLabel(routeEntries, routeSpots, selectedVisibleCofferRouteStartIndex)))
+            {
+                for (var index = 0; index < routeEntries.Count; index++)
+                {
+                    var isSelected = index == selectedVisibleCofferRouteStartIndex;
+                    if (ImGui.Selectable(GetVisibleCofferRouteEntryLabel(routeEntries, routeSpots, index), isSelected))
+                    {
+                        selectedVisibleCofferRouteStartIndex = index;
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui.SetItemDefaultFocus();
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            var startBlocker = GetVisibleCofferStartBlocker();
+            var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
+            if (DrawDependencyAwareStartButton("Start Route At Candidate", startBlocker == null, dependencyBlocked))
+            {
+                var selectedRouteEntry = routeEntries[selectedVisibleCofferRouteStartIndex];
+                plugin.Logger.Info($"[DebugWindow] op=ui-action action=start-coffer-route startIndex={selectedVisibleCofferRouteStartIndex} startSpot={selectedRouteEntry.Area}:{selectedRouteEntry.Label}");
+                treasureCofferFarmController.Start(startRouteIndex: selectedVisibleCofferRouteStartIndex);
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Stop Route"))
+            {
+                plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-coffer-route");
+                treasureCofferFarmController.Stop("Manual debug overworld coffer route stop requested.");
+            }
+
+            if (startBlocker != null)
+            {
+                ImGui.TextWrapped(startBlocker);
+            }
+        }
+        else
+        {
+            ImGui.TextWrapped("Overworld coffer route data is missing route entries.");
+        }
 
         var activeSpot = treasureCofferFarmController.ActiveSpot;
         var activeLabel = activeSpot == null ? null : $"{activeSpot.Area}:{activeSpot.Label}";
@@ -1199,6 +1252,32 @@ public sealed class DebugWindow : Window, IDisposable
         return enabled && clicked;
     }
 
+    private string? GetVisibleCofferStartBlocker()
+    {
+        if (configuration.ScannerOnlyMode)
+        {
+            return "Scanner-only mode blocks overworld coffer route starts.";
+        }
+
+        if (treasureCofferFarmController.IsRunning)
+        {
+            return "Overworld coffer route is already running.";
+        }
+
+        if (farmSessionController.IsRunning)
+        {
+            return "Overworld coffer route start is blocked while the farm session is running.";
+        }
+
+        if (!scanner.Snapshot.IsInSouthHorn)
+        {
+            return "Overworld coffer route start requires South Horn.";
+        }
+
+        var dependencyReport = plugin.GetNormalAutomationDependencyReport();
+        return dependencyReport.IsReady ? null : dependencyReport.FailureSummary;
+    }
+
     private string? GetFarmStartBlocker()
     {
         if (configuration.ScannerOnlyMode)
@@ -1364,6 +1443,23 @@ public sealed class DebugWindow : Window, IDisposable
 
     private static string FormatSupportJob(byte? supportJob)
         => supportJob.HasValue ? FormatSupportJob(supportJob.Value) : "None";
+
+    private static string GetVisibleCofferRouteEntryLabel(
+        System.Collections.Generic.IReadOnlyList<AOCCH.Data.VisibleCofferFarmRouteEntryData> routeEntries,
+        System.Collections.Generic.IReadOnlyList<AOCCH.Data.VisibleCofferFarmSpotData> routeSpots,
+        int index)
+    {
+        var routeEntry = routeEntries[index];
+        var label = $"#{index} {routeEntry.Area}:{routeEntry.Label}";
+        var spot = routeSpots.FirstOrDefault(candidate => string.Equals(candidate.Area, routeEntry.Area, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.Label, routeEntry.Label, StringComparison.OrdinalIgnoreCase));
+        if (spot == null)
+        {
+            return $"{label} | missing spot";
+        }
+
+        return $"{label} | aggro {spot.AggroLevel} | {(spot.ForceHidden ? "hidden" : "normal")}";
+    }
 
     private static string GetCeTargetLabel(ScannerSnapshot snapshot, ActiveCriticalEncounter encounter)
     {

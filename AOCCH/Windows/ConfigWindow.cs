@@ -226,6 +226,9 @@ public class ConfigWindow : Window, IDisposable
 
         ImGui.Separator();
         ImGui.TextUnformatted("Treasure Travel");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
 
         DrawPotsIntSetting(
             "Maximum Aggro Level (Revealed Treasure)",
@@ -370,6 +373,9 @@ public class ConfigWindow : Window, IDisposable
 
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
 
         var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
         if (ImGui.Checkbox("Use Ninja For Dangerous Overworld Coffers", ref useNinjaForDangerousVisibleCoffers))
@@ -410,7 +416,17 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawSettingTooltip("Reserved for Lua-parity route rules in the overworld coffer route controller.");
+        DrawSettingTooltip("Skips route entries explicitly marked for Ashkin time.");
+
+        var skipUnsafeWeatherRoutes = configuration.SkipUnsafeWeatherRoutes;
+        if (ImGui.Checkbox("Skip Unsafe-Weather Routes", ref skipUnsafeWeatherRoutes))
+        {
+            logger.Info($"[Config] op=setting-change key=SkipUnsafeWeatherRoutes old={configuration.SkipUnsafeWeatherRoutes} new={skipUnsafeWeatherRoutes}");
+            configuration.SkipUnsafeWeatherRoutes = skipUnsafeWeatherRoutes;
+            configuration.Save();
+        }
+
+        DrawSettingTooltip("During unsafe weather, skips the Abandoned Ascent 7 route. Heathcliff_10 uses Ninja Hide when enabled, or is skipped when Ninja travel is disabled.");
     }
 
     private void DrawSettingsTab()

@@ -19,6 +19,13 @@ public sealed class CofferInteractionController : IDisposable
 {
     private sealed record InventorySnapshot(Dictionary<uint, uint> ItemCounts, int NonEmptySlots);
 
+    private enum HiddenApproachReadiness
+    {
+        Ready,
+        Pending,
+        Failed,
+    }
+
     private static int nextRunSequence;
     private const float MaxInteractRange = 4.5f;
     private const float PreferredOpenDistance = 3.25f;
@@ -28,6 +35,11 @@ public sealed class CofferInteractionController : IDisposable
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan HiddenDismountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HiddenDismountRequestInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly InventoryType[] NormalInventoryContainers = [InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4];
@@ -56,6 +68,12 @@ public sealed class CofferInteractionController : IDisposable
     private InventorySnapshot? preInteractionInventorySnapshot;
     private bool preInteractionInventorySnapshotValid;
     private bool inventoryFallbackLoggedThisAttempt;
+    private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideDispatchRetryAt = DateTimeOffset.MinValue;
+    private DateTimeOffset hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+    private bool hiddenHideVerificationRetryUsed;
 
     public CofferInteractionController(
         IFramework framework,
@@ -193,6 +211,7 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            ResetHiddenApproachReadiness();
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
         }
@@ -239,6 +258,7 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            ResetHiddenApproachReadiness();
         }
 
         logger.Info($"[Coffer] op=reset reason={reason}");
@@ -300,10 +320,19 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
-        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, reason))
+        if (ActiveMatch?.MustStayHidden == true)
         {
-            TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Preparing hidden approach to {liveObject.Name.TextValue}. {FormatHiddenContextReason()}");
-            return true;
+            var hiddenReadiness = EnsureHiddenApproachReady(liveObject, reason);
+            if (hiddenReadiness == HiddenApproachReadiness.Failed)
+            {
+                return false;
+            }
+
+            if (hiddenReadiness == HiddenApproachReadiness.Pending)
+            {
+                TransitionTo(CofferInteractionState.ApproachingCoffer, $"{reason} Preparing hidden approach to {liveObject.Name.TextValue}. {FormatHiddenContextReason()}");
+                return true;
+            }
         }
 
         var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f);
@@ -343,7 +372,8 @@ public sealed class CofferInteractionController : IDisposable
                 return;
             }
 
-            if (!EnsureHiddenApproachReady(liveObject, "Hidden coffer approach"))
+            var hiddenReadiness = EnsureHiddenApproachReady(liveObject, "Hidden coffer approach");
+            if (hiddenReadiness != HiddenApproachReadiness.Ready)
             {
                 return;
             }
@@ -418,7 +448,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, "Hidden coffer targeting"))
+        if (ActiveMatch?.MustStayHidden == true && EnsureHiddenApproachReady(liveObject, "Hidden coffer targeting") != HiddenApproachReadiness.Ready)
         {
             return;
         }
@@ -456,7 +486,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        if (ActiveMatch?.MustStayHidden == true && !EnsureHiddenApproachReady(liveObject, "Hidden coffer interaction"))
+        if (ActiveMatch?.MustStayHidden == true && EnsureHiddenApproachReady(liveObject, "Hidden coffer interaction") != HiddenApproachReadiness.Ready)
         {
             return;
         }
@@ -864,61 +894,131 @@ public sealed class CofferInteractionController : IDisposable
         }
     }
 
-    private bool EnsureHiddenApproachReady(IGameObject liveObject, string context)
+    private HiddenApproachReadiness EnsureHiddenApproachReady(IGameObject liveObject, string context)
     {
+        var now = DateTimeOffset.UtcNow;
         if (condition[ConditionFlag.InCombat])
         {
             SetFailure($"Combat started while a hidden coffer approach was required for {liveObject.Name.TextValue}. {FormatHiddenContextReason()}");
-            return false;
+            return HiddenApproachReadiness.Failed;
         }
 
         if (condition[ConditionFlag.Mounted])
         {
-            if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"hidden coffer approach for {liveObject.Name.TextValue}"))
+            if (hiddenDismountStartedAt == DateTimeOffset.MinValue)
             {
-                logger.DebugThrottled("coffer-hidden-dismount", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting to dismount before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
-                return false;
+                hiddenDismountStartedAt = now;
             }
 
-            logger.DebugThrottled("coffer-hidden-dismount", TimeSpan.FromMilliseconds(250), $"Coffer interaction sent a dismount request before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
-            return false;
+            if (now - hiddenDismountStartedAt >= HiddenDismountTimeout)
+            {
+                SetFailure($"Timed out dismounting before hidden coffer approach to {liveObject.Name.TextValue}. context={context} {FormatHiddenContextReason()} {gameActionController.GetChangeableStateSummary()}");
+                return HiddenApproachReadiness.Failed;
+            }
+
+            if (now >= hiddenDismountRequestAvailableAt)
+            {
+                hiddenDismountRequestAvailableAt = now + HiddenDismountRequestInterval;
+                if (gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"hidden coffer approach for {liveObject.Name.TextValue}"))
+                {
+                    logger.Info($"{BuildLogTag()} op=hidden-approach-dismount-request coffer={DescribeActiveCoffer()} context={context} nextAttemptAt={hiddenDismountRequestAvailableAt:O}");
+                }
+                else
+                {
+                    logger.DebugThrottled("coffer-hidden-dismount-dispatch", TimeSpan.FromSeconds(1), $"Coffer interaction could not dispatch dismount before hidden approach to {liveObject.Name.TextValue}. context={context} retryAt={hiddenDismountRequestAvailableAt:O} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+                }
+            }
+
+            logger.DebugThrottled("coffer-hidden-dismount", WaitLogInterval, $"Coffer interaction is waiting to dismount before hidden approach to {liveObject.Name.TextValue}. context={context} elapsed={(now - hiddenDismountStartedAt).TotalSeconds:0.0}s timeout={HiddenDismountTimeout.TotalSeconds:0.0}s nextAttemptIn={Math.Max(0, (hiddenDismountRequestAvailableAt - now).TotalSeconds):0.0}s reason={FormatHiddenContextReason()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenApproachReadiness.Pending;
+        }
+
+        if (hiddenDismountStartedAt != DateTimeOffset.MinValue && now - hiddenDismountStartedAt < HideStateSettleDelay)
+        {
+            logger.DebugThrottled("coffer-hidden-hide-settle", TimeSpan.FromMilliseconds(250), $"Coffer interaction is settling after dismount before Hide at {liveObject.Name.TextValue}. context={context} elapsed={(now - hiddenDismountStartedAt).TotalSeconds:0.00}s required={HideStateSettleDelay.TotalSeconds:0.00}s.");
+            return HiddenApproachReadiness.Pending;
         }
 
         if (gameActionController.IsStealthed)
         {
-            logger.ResetThrottle("coffer-hidden-dismount");
-            logger.ResetThrottle("coffer-hidden-hide-ready");
-            logger.ResetThrottle("coffer-hidden-hide-verify");
-            return true;
+            ResetHiddenApproachThrottles();
+            return HiddenApproachReadiness.Ready;
         }
 
-        if (!gameActionController.CanUseHide())
+        if (hiddenHideVerificationDeadlineAt != DateTimeOffset.MinValue)
         {
-            logger.DebugThrottled("coffer-hidden-hide-ready", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting for Hide before hidden approach to {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()} currentClassJob={gameActionController.CurrentClassJobId}");
-            return false;
+            if (now < hiddenHideVerificationDeadlineAt)
+            {
+                logger.DebugThrottled("coffer-hidden-hide-verify", WaitLogInterval, $"Coffer interaction is waiting for Hide confirmation before hidden approach to {liveObject.Name.TextValue}. context={context} deadlineIn={(hiddenHideVerificationDeadlineAt - now).TotalSeconds:0.0}s reason={FormatHiddenContextReason()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]}");
+                return HiddenApproachReadiness.Pending;
+            }
+
+            if (!hiddenHideVerificationRetryUsed)
+            {
+                hiddenHideVerificationRetryUsed = true;
+                hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+                hiddenHideDispatchRetryAt = now + HideDispatchRetryDelay;
+                logger.Warning($"{BuildLogTag()} op=hidden-approach-hide-verify-timeout coffer={DescribeActiveCoffer()} context={context} action=retry retryAt={hiddenHideDispatchRetryAt:O} reason={FormatHiddenContextReason()}");
+                return HiddenApproachReadiness.Pending;
+            }
+
+            SetFailure($"Hide did not apply before hidden coffer approach to {liveObject.Name.TextValue} after two attempts. context={context} {FormatHiddenContextReason()} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} changeableState={gameActionController.GetChangeableStateSummary()}");
+            return HiddenApproachReadiness.Failed;
+        }
+
+        if (hiddenHideReadyDeadlineAt == DateTimeOffset.MinValue)
+        {
+            hiddenHideReadyDeadlineAt = now + HideReadyTimeout;
+        }
+
+        if (now >= hiddenHideReadyDeadlineAt)
+        {
+            SetFailure($"Hide did not become ready before hidden coffer approach to {liveObject.Name.TextValue} within {HideReadyTimeout.TotalSeconds:0.0}s. context={context} {FormatHiddenContextReason()} currentClassJob={gameActionController.CurrentClassJobId} changeableState={gameActionController.GetChangeableStateSummary()}");
+            return HiddenApproachReadiness.Failed;
+        }
+
+        if (now < hiddenHideDispatchRetryAt)
+        {
+            return HiddenApproachReadiness.Pending;
+        }
+
+        if (!gameActionController.IsPlayerInChangeableState() || !gameActionController.CanUseHide())
+        {
+            logger.DebugThrottled("coffer-hidden-hide-ready", WaitLogInterval, $"Coffer interaction is waiting for Hide before hidden approach to {liveObject.Name.TextValue}. context={context} deadlineIn={(hiddenHideReadyDeadlineAt - now).TotalSeconds:0.0}s reason={FormatHiddenContextReason()} currentClassJob={gameActionController.CurrentClassJobId} canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenApproachReadiness.Pending;
         }
 
         if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"hidden coffer approach for {liveObject.Name.TextValue}"))
         {
-            SetFailure($"Failed to use Hide before approaching {liveObject.Name.TextValue} while hidden travel was required. {FormatHiddenContextReason()}");
-            return false;
+            hiddenHideDispatchRetryAt = now + HideDispatchRetryDelay;
+            logger.DebugThrottled("coffer-hidden-hide-dispatch", TimeSpan.FromSeconds(1), $"Coffer interaction received an ambiguous Hide dispatch result before hidden approach to {liveObject.Name.TextValue}. context={context} retryAt={hiddenHideDispatchRetryAt:O} reason={FormatHiddenContextReason()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\"");
+            return HiddenApproachReadiness.Pending;
         }
 
-        var verifyDeadline = DateTimeOffset.UtcNow + HideVerifyTimeout;
-        while (DateTimeOffset.UtcNow < verifyDeadline)
-        {
-            if (gameActionController.IsStealthed)
-            {
-                logger.ResetThrottle("coffer-hidden-hide-ready");
-                logger.ResetThrottle("coffer-hidden-hide-verify");
-                return true;
-            }
+        hiddenHideVerificationDeadlineAt = now + HideVerifyTimeout;
+        logger.Info($"{BuildLogTag()} op=hidden-approach-hide-request coffer={DescribeActiveCoffer()} context={context} verifyDeadline={hiddenHideVerificationDeadlineAt:O} reason={FormatHiddenContextReason()}");
+        return HiddenApproachReadiness.Pending;
+    }
 
-            Thread.Sleep(50);
-        }
+    private void ResetHiddenApproachReadiness()
+    {
+        hiddenDismountStartedAt = DateTimeOffset.MinValue;
+        hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
+        hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
+        hiddenHideDispatchRetryAt = DateTimeOffset.MinValue;
+        hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
+        hiddenHideVerificationRetryUsed = false;
+        ResetHiddenApproachThrottles();
+    }
 
-        logger.DebugThrottled("coffer-hidden-hide-verify", TimeSpan.FromMilliseconds(250), $"Coffer interaction is waiting for Hide confirmation before approaching {liveObject.Name.TextValue}. context={context} reason={FormatHiddenContextReason()}");
-        return false;
+    private void ResetHiddenApproachThrottles()
+    {
+        logger.ResetThrottle("coffer-hidden-dismount");
+        logger.ResetThrottle("coffer-hidden-dismount-dispatch");
+        logger.ResetThrottle("coffer-hidden-hide-settle");
+        logger.ResetThrottle("coffer-hidden-hide-ready");
+        logger.ResetThrottle("coffer-hidden-hide-dispatch");
+        logger.ResetThrottle("coffer-hidden-hide-verify");
     }
 
     private string FormatHiddenContextReason()
