@@ -6,6 +6,8 @@ namespace AOCCH.IPC;
 
 public sealed class BossModIpc
 {
+    private static readonly TimeSpan IpcFailureLogInterval = TimeSpan.FromSeconds(30);
+
     private readonly AocchLogger logger;
     private readonly ICallGateSubscriber<string> getActivePreset;
     private readonly ICallGateSubscriber<string, bool> setActivePreset;
@@ -32,7 +34,7 @@ public sealed class BossModIpc
         catch (Exception ex)
         {
             SetAvailability(false);
-            logger.Debug($"IPC call failed for BossMod availability probe: {ex.Message}");
+            logger.DebugThrottled("bossmod-ipc-failure", IpcFailureLogInterval, $"IPC call failed for BossMod availability probe: {ex.Message}");
             return false;
         }
     }
@@ -65,7 +67,7 @@ public sealed class BossModIpc
                 SetAvailability(false);
             }
 
-            logger.Debug($"IPC call failed for {operation}: {ex.Message}");
+            logger.DebugThrottled("bossmod-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
         }
     }

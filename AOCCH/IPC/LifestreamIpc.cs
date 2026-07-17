@@ -6,6 +6,8 @@ namespace AOCCH.IPC;
 
 public sealed class LifestreamIpc
 {
+    private static readonly TimeSpan IpcFailureLogInterval = TimeSpan.FromSeconds(30);
+
     private readonly AocchLogger logger;
     private readonly ICallGateSubscriber<bool> isBusy;
     private readonly ICallGateSubscriber<object> abort;
@@ -39,7 +41,7 @@ public sealed class LifestreamIpc
         catch (Exception ex)
         {
             SetAvailability(false);
-            logger.Debug($"IPC call failed for Lifestream availability probe: {ex.Message}");
+            logger.DebugThrottled("lifestream-ipc-failure", IpcFailureLogInterval, $"IPC call failed for Lifestream availability probe: {ex.Message}");
             return false;
         }
     }
@@ -62,7 +64,7 @@ public sealed class LifestreamIpc
         }
         catch (Exception ex)
         {
-            logger.Warning($"[LifestreamIpc] op=abort-failed reason={ex.Message}");
+            logger.WarningThrottled("lifestream-ipc-failure", IpcFailureLogInterval, $"[LifestreamIpc] op=abort-failed reason={ex.Message}");
         }
     }
 
@@ -85,7 +87,7 @@ public sealed class LifestreamIpc
                 SetAvailability(false);
             }
 
-            logger.Debug($"IPC call failed for {operation}: {ex.Message}");
+            logger.DebugThrottled("lifestream-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
         }
     }

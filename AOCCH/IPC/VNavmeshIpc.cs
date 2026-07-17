@@ -7,6 +7,8 @@ namespace AOCCH.IPC;
 
 public sealed class VNavmeshIpc
 {
+    private static readonly TimeSpan IpcFailureLogInterval = TimeSpan.FromSeconds(30);
+
     private readonly AocchLogger logger;
     private readonly ICallGateSubscriber<bool> isReady;
     private readonly ICallGateSubscriber<float> buildProgress;
@@ -69,7 +71,7 @@ public sealed class VNavmeshIpc
         }
         catch (Exception ex)
         {
-            logger.Warning($"[VNavmeshIpc] op=stop-failed reason={ex.Message}");
+            logger.WarningThrottled("vnavmesh-ipc-failure", IpcFailureLogInterval, $"[VNavmeshIpc] op=stop-failed reason={ex.Message}");
         }
     }
 
@@ -92,7 +94,7 @@ public sealed class VNavmeshIpc
                 SetAvailability(false);
             }
 
-            logger.Debug($"IPC call failed for {operation}: {ex.Message}");
+            logger.DebugThrottled("vnavmesh-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
         }
     }
