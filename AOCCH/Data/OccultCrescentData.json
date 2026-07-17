@@ -962,7 +962,7 @@
         "z": 561.15
       },
       "aggroLevel": 26,
-      "hideThresholdDistance": 175
+      "hideThresholdDistance": 400
     },
     {
       "area": "Abandoned Ascent",

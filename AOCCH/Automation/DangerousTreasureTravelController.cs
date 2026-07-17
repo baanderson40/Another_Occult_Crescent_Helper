@@ -92,6 +92,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private int activeHideThresholdDistance;
     private int activeMaximumAggroLevel;
     private bool hideRetryUsed;
+    private bool hiddenFinalApproachRetryUsed;
     private DateTimeOffset lastHideActivatedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hideReadyDeadline = DateTimeOffset.MinValue;
     private DateTimeOffset hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
@@ -270,6 +271,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeHideThresholdDistance = 0;
             activeMaximumAggroLevel = 0;
             hideRetryUsed = false;
+            hiddenFinalApproachRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
             hideReadyDeadline = DateTimeOffset.MinValue;
             hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
@@ -475,6 +477,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeHideThresholdDistance = options.HideThresholdDistance;
             activeMaximumAggroLevel = options.MaximumAggroLevel;
             hideRetryUsed = false;
+            hiddenFinalApproachRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
             hideReadyDeadline = DateTimeOffset.MinValue;
             hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
@@ -1068,7 +1071,16 @@ public sealed class DangerousTreasureTravelController : IDisposable
                 TransitionTo(DangerousTreasureTravelState.Arrived, $"Reached dangerous treasure candidate {activeCandidateLabel} after Ninja travel.", result: DangerousTreasureTravelResult.Arrived);
                 return;
             case MovementState.Failed:
+                SkipCandidate(movementController.LastError.Length == 0
+                    ? $"Failed movement for dangerous treasure candidate {activeCandidateLabel}."
+                    : movementController.LastError);
+                return;
             case MovementState.TimedOut:
+                if (TryRetryTimedOutHiddenFinalApproach())
+                {
+                    return;
+                }
+
                 SkipCandidate(movementController.LastError.Length == 0
                     ? $"Failed movement for dangerous treasure candidate {activeCandidateLabel}."
                     : movementController.LastError);
@@ -1079,6 +1091,28 @@ public sealed class DangerousTreasureTravelController : IDisposable
             "dangerous-treasure-travel",
             WaitLogInterval,
             $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y tolerance={arrivalTolerance:0.0} MovementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]}.");
+    }
+
+    private bool TryRetryTimedOutHiddenFinalApproach()
+    {
+        if (activeWalkingPhase != DangerousTreasureWalkingPhase.FinalApproach
+            || hiddenFinalApproachRetryUsed
+            || !gameActionController.IsStealthed
+            || condition[ConditionFlag.Mounted]
+            || condition[ConditionFlag.InCombat])
+        {
+            return false;
+        }
+
+        hiddenFinalApproachRetryUsed = true;
+        logger.Warning($"{BuildLogTag()} op=hidden-final-approach-retry candidate={activeCandidateLabel} destination={FormatVector(finalDestination)} arrivalTolerance={arrivalTolerance:0.0} reason={movementController.LastError}");
+        return StartWalkingPhase(
+            DangerousTreasureWalkingPhase.FinalApproach,
+            finalDestination,
+            arrivalTolerance,
+            allowMount: false,
+            $"Hidden final approach for {activeCandidateLabel}",
+            $"Retrying the timed-out hidden final approach for dangerous candidate {activeCandidateLabel}.");
     }
 
     private void SkipCandidate(string reason)

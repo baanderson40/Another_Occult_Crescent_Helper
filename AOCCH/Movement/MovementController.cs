@@ -17,7 +17,7 @@ public sealed class MovementController : IDisposable
     private static int nextMovementOperationSequence;
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan ActivePathStallTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan ActivePathStallTimeout = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(250);
