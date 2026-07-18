@@ -15,6 +15,7 @@ public sealed class DebugWindow : Window, IDisposable
     private enum DebugSection
     {
         Overview,
+        DebugActions,
         Safety,
         AutomationTestReadiness,
         SelectedTarget,
@@ -53,6 +54,7 @@ public sealed class DebugWindow : Window, IDisposable
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
+    private bool waitForMagicalElixirReady;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -119,6 +121,7 @@ public sealed class DebugWindow : Window, IDisposable
     private void DrawSectionList()
     {
         DrawSectionButton(DebugSection.Overview, "Overview");
+        DrawSectionButton(DebugSection.DebugActions, "Debug Actions");
         DrawSectionButton(DebugSection.Safety, "Safety");
         DrawSectionButton(DebugSection.AutomationTestReadiness, "Automation Test Readiness");
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
@@ -152,6 +155,9 @@ public sealed class DebugWindow : Window, IDisposable
         {
             case DebugSection.Overview:
                 DrawOverview(snapshot);
+                break;
+            case DebugSection.DebugActions:
+                DrawDebugActions();
                 break;
             case DebugSection.Safety:
                 DrawSafety(snapshot);
@@ -212,6 +218,38 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
         ImGui.TextUnformatted($"In South Horn: {(snapshot.IsInSouthHorn ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
+    }
+
+    private void DrawDebugActions()
+    {
+        ImGui.TextUnformatted("Debug Actions");
+        ImGui.TextWrapped("These diagnostic operations are intentionally available only from the debug window.");
+
+        ImGui.Checkbox("Wait for Magical Elixir readiness", ref waitForMagicalElixirReady);
+        if (ImGui.Button("Use Magical Elixir"))
+        {
+            plugin.RunMagicalElixirDebugTest(waitForMagicalElixirReady);
+        }
+
+        if (ImGui.Button("Log Pot Coffer Snapshot"))
+        {
+            plugin.LogPotCofferDebugSnapshot();
+        }
+
+        if (ImGui.Button("Start Pot Coffer Interaction"))
+        {
+            plugin.RunDebugPotInteraction();
+        }
+
+        if (ImGui.Button("Start Automatic Coffer Survey"))
+        {
+            plugin.RunDebugAutomaticCofferSurvey();
+        }
+
+        if (ImGui.Button("Probe Foray Target"))
+        {
+            plugin.RunProbeForay();
+        }
     }
 
     private static string FormatTimestamp(DateTimeOffset timestamp)

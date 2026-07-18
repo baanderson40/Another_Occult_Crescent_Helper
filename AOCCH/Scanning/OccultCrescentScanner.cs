@@ -8,6 +8,7 @@ using AOCCH.Logging;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace AOCCH.Scanning;
@@ -21,6 +22,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private const float FateEntityDiagnosticPadding = 15f;
     private const int MaxFateEntityDiagnosticEntries = 8;
     private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private const uint TreasureBuffStatusId = 1531;
 
     private readonly IClientState clientState;
@@ -43,6 +45,8 @@ public sealed class OccultCrescentScanner : IDisposable
     private bool? lastSouthHornState;
     private string lastSelectionKey = string.Empty;
     private bool? lastTreasureBuffState;
+    private int? lastPlayerForayLevel;
+    private bool hasLastPlayerForayLevel;
     private bool pendingForceRefresh = true;
 
     public OccultCrescentScanner(
@@ -121,6 +125,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var territoryTypeId = clientState.TerritoryType;
             var isInSouthHorn = territoryTypeId == data.TerritoryTypeId;
             var playerPosition = objectTable.LocalPlayer?.Position;
+            var playerForayLevel = TryGetForayLevel(objectTable.LocalPlayer);
 
             if (lastSouthHornState != isInSouthHorn)
             {
@@ -135,6 +140,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var fates = new List<ActiveFate>();
             var potFates = new List<ActivePotFate>();
             var visibleCoffers = new List<VisibleCoffer>();
+            var nearbyForayEntities = new List<ForayThreatEntity>();
             uint currentCriticalEncounterId = 0;
             ActiveCriticalEncounter? currentCriticalEncounter = null;
             ActiveCriticalEncounter? selectedCriticalEncounter = null;
@@ -155,12 +161,16 @@ public sealed class OccultCrescentScanner : IDisposable
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
                 ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
                 ScanVisibleCoffers(visibleCoffers);
+                ScanNearbyForayEntities(nearbyForayEntities, playerPosition);
                 LogNearbyFateEntityDiagnostics(selectedFate, playerPosition);
+                LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
             }
             else
             {
                 TrackTreasureBuffState(false);
             }
+
+            TrackPlayerForayLevel(playerForayLevel);
 
             var nextSnapshot = new ScannerSnapshot
             {
@@ -180,6 +190,8 @@ public sealed class OccultCrescentScanner : IDisposable
                 HasTreasureBuff = hasTreasureBuff,
                 TreasureBuffRemainingSeconds = treasureBuffRemainingSeconds,
                 VisibleCoffers = visibleCoffers,
+                PlayerForayLevel = playerForayLevel,
+                NearbyForayEntities = nearbyForayEntities,
                 EffectiveTarget = effectiveTarget,
             };
 
@@ -460,6 +472,107 @@ public sealed class OccultCrescentScanner : IDisposable
                 VisibleCofferDiagnosticLogInterval,
                 $"Visible coffer scan found no recognized coffers, but nearby treasure-kind objects were present: {string.Join(" | ", nearbyTreasureObjects)}");
         }
+    }
+
+    private void ScanNearbyForayEntities(List<ForayThreatEntity> entities, Vector3? playerPosition)
+    {
+        if (!playerPosition.HasValue)
+        {
+            return;
+        }
+
+        var scanRadius = Math.Max(configuration.KnowledgeThreatExitDistance, configuration.KnowledgeThreatEnterDistance);
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is not IBattleNpc || gameObject is not ICharacter character
+                || !character.IsValid() || !character.IsTargetable)
+            {
+                continue;
+            }
+
+            var distance = CalculateFlatDistance(playerPosition.Value, character.Position);
+            if (distance > scanRadius || TryGetForayLevel(character) is not { } knowledgeLevel || knowledgeLevel < 1)
+            {
+                continue;
+            }
+
+            entities.Add(new ForayThreatEntity
+            {
+                ObjectId = character.GameObjectId,
+                Name = character.Name.ToString(),
+                Position = character.Position,
+                KnowledgeLevel = knowledgeLevel,
+                DistanceToPlayer = distance,
+            });
+        }
+
+        entities.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
+    }
+
+    private void TrackPlayerForayLevel(int? playerForayLevel)
+    {
+        if (hasLastPlayerForayLevel && lastPlayerForayLevel == playerForayLevel)
+        {
+            return;
+        }
+
+        hasLastPlayerForayLevel = true;
+        lastPlayerForayLevel = playerForayLevel;
+        logger.Info(playerForayLevel.HasValue
+            ? $"[Scanner] op=foray-player-level state=available level={playerForayLevel.Value}"
+            : "[Scanner] op=foray-player-level state=unavailable");
+    }
+
+    private void LogForayThreatDiagnostics(int? playerForayLevel, IReadOnlyList<ForayThreatEntity> entities)
+    {
+        if (!playerForayLevel.HasValue)
+        {
+            logger.InfoThrottled(
+                "foray-threat-scan",
+                ForayThreatDiagnosticLogInterval,
+                "[Scanner] op=foray-threat-scan playerLevel=unavailable entities=0 reason=player-foray-unavailable");
+            return;
+        }
+
+        var potHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.PotKnowledgeHideOffset, 1, 28);
+        var visibleHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.VisibleCofferKnowledgeHideOffset, 1, 28);
+        var entitySummary = entities.Count == 0
+            ? "none"
+            : string.Join(
+                " | ",
+                entities.Select(entity =>
+                    $"name='{entity.Name}' objectId={entity.ObjectId:X} level={entity.KnowledgeLevel} distance={entity.DistanceToPlayer:0.0}y potThreat={entity.KnowledgeLevel >= potHideAtOrAbove} overworldThreat={entity.KnowledgeLevel >= visibleHideAtOrAbove}"));
+        logger.InfoThrottled(
+            "foray-threat-scan",
+            ForayThreatDiagnosticLogInterval,
+            $"[Scanner] op=foray-threat-scan playerLevel={playerForayLevel.Value} potOffset={configuration.PotKnowledgeHideOffset} potHideAtOrAbove={potHideAtOrAbove} overworldOffset={configuration.VisibleCofferKnowledgeHideOffset} overworldHideAtOrAbove={visibleHideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0}y exitRange={configuration.KnowledgeThreatExitDistance:0.0}y entities={entities.Count} entries={entitySummary}");
+    }
+
+    private static unsafe int? TryGetForayLevel(ICharacter? character)
+    {
+        if (character == null)
+        {
+            return null;
+        }
+
+        var characterPointer = (Character*)character.Address;
+        if (characterPointer == null || characterPointer->VirtualTable == null)
+        {
+            return null;
+        }
+
+        var forayInfo = characterPointer->GetForayInfo();
+        if (forayInfo != null)
+        {
+            return forayInfo->Level;
+        }
+
+        if (character is not IBattleNpc)
+        {
+            return null;
+        }
+
+        return ((BattleChara*)characterPointer)->ForayInfo.Level;
     }
 
     private bool IsVisibleCofferObject(IGameObject gameObject)

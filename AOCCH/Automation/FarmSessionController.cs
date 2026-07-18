@@ -38,6 +38,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
     private readonly DeathRecoveryController deathRecoveryController;
+    private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly PotCycleTracker potCycleTracker;
     private readonly PotFallbackWindowEvaluator potFallbackWindowEvaluator;
     private readonly PotFarmController potFarmController;
@@ -88,6 +89,7 @@ public sealed class FarmSessionController : IDisposable
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
         DeathRecoveryController deathRecoveryController,
+        DangerousTreasureTravelController dangerousTreasureTravelController,
         PotCycleTracker potCycleTracker,
         PotFallbackWindowEvaluator potFallbackWindowEvaluator,
         PotFarmController potFarmController,
@@ -108,6 +110,7 @@ public sealed class FarmSessionController : IDisposable
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
         this.deathRecoveryController = deathRecoveryController;
+        this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.potCycleTracker = potCycleTracker;
         this.potFallbackWindowEvaluator = potFallbackWindowEvaluator;
         this.potFarmController = potFarmController;
@@ -709,6 +712,11 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        if (TryHandlePendingReturnFateGearsetRestore("farm target selection", "target selection"))
+        {
+            return;
+        }
+
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
@@ -716,6 +724,11 @@ public sealed class FarmSessionController : IDisposable
                 if (!ceStartDecision.AllowStart)
                 {
                     TransitionTo(FarmSessionState.IdleWaiting, ceStartDecision.Reason, "Idle waiting");
+                    return;
+                }
+
+                if (TryHandlePendingReturnFateGearsetRestore($"starting CE {snapshot.EffectiveTarget.CriticalEncounter.Name}", "CE automation"))
+                {
                     return;
                 }
 
@@ -736,6 +749,11 @@ public sealed class FarmSessionController : IDisposable
                 if (!fateStartDecision.AllowStart)
                 {
                     TransitionTo(FarmSessionState.IdleWaiting, fateStartDecision.Reason, "Idle waiting");
+                    return;
+                }
+
+                if (TryHandlePendingReturnFateGearsetRestore($"starting FATE {snapshot.EffectiveTarget.Fate.Name}", "FATE automation"))
+                {
                     return;
                 }
 
@@ -884,6 +902,11 @@ public sealed class FarmSessionController : IDisposable
         if (TryStartCurrencyShopping(now))
         {
             logger.ResetThrottle("farm-idle-waiting");
+            return;
+        }
+
+        if (TryHandlePendingReturnFateGearsetRestore("farm idle waiting", "idle farm loop"))
+        {
             return;
         }
 
@@ -1153,6 +1176,11 @@ public sealed class FarmSessionController : IDisposable
 
         logger.ResetThrottle("farm-resume-ce");
         logger.Info($"{BuildLogTag()} op=resume-attempt activity=CE target=\"{ceTarget.Name}\" ({ceTarget.Id}) reason=after-raise");
+        if (TryHandlePendingReturnFateGearsetRestore($"resuming CE {ceTarget.Name} ({ceTarget.Id}) after raise", "CE resume"))
+        {
+            return;
+        }
+
         if (!criticalEngagementAutomationController.Start(ceTarget))
         {
             SetFailure(criticalEngagementAutomationController.LastError.Length == 0
@@ -1198,6 +1226,11 @@ public sealed class FarmSessionController : IDisposable
 
         logger.ResetThrottle(throttleKey);
         logger.Info($"{BuildLogTag()} op=resume-attempt activity={activityLabel} target=\"{fateTarget.Name}\" ({fateTarget.Id}) reason=after-raise completionBehavior={completionBehavior}");
+        if (TryHandlePendingReturnFateGearsetRestore($"resuming {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise", $"{activityLabel} resume"))
+        {
+            return;
+        }
+
         if (!fateAutomationController.Start(fateTarget, completionBehavior))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
@@ -1232,6 +1265,30 @@ public sealed class FarmSessionController : IDisposable
 
         var mappedState = MapPotFarmState(potFarmController.State);
         TransitionTo(mappedState, reason, MapPotFarmActivity(mappedState));
+        return true;
+    }
+
+    private bool TryHandlePendingReturnFateGearsetRestore(string reason, string nextActivity)
+    {
+        if (!dangerousTreasureTravelController.HasEquippedNinjaGearset
+            && !dangerousTreasureTravelController.IsFateGearsetRestorePending)
+        {
+            logger.ResetThrottle("farm-return-fate-gearset-restore");
+            return false;
+        }
+
+        dangerousTreasureTravelController.RestoreFateGearset(reason);
+        dangerousTreasureTravelController.TryProcessPendingFateGearsetRestore(nextActivity);
+        if (!dangerousTreasureTravelController.IsFateGearsetRestorePending)
+        {
+            logger.ResetThrottle("farm-return-fate-gearset-restore");
+            return false;
+        }
+
+        logger.DebugThrottled(
+            "farm-return-fate-gearset-restore",
+            WaitLogInterval,
+            $"Farm session is waiting to restore the configured FATE gearset before {nextActivity}. reason=\"{dangerousTreasureTravelController.LastFateGearsetRestoreReason}\" targetGearset={dangerousTreasureTravelController.PendingFateGearsetNumber} restoreError={(string.IsNullOrEmpty(dangerousTreasureTravelController.LastFateGearsetRestoreError) ? "none" : dangerousTreasureTravelController.LastFateGearsetRestoreError)} currentClassJob={gameActionController.CurrentClassJobId}.");
         return true;
     }
 
@@ -1585,6 +1642,7 @@ public sealed class FarmSessionController : IDisposable
         switch (treasureCofferFarmController.State)
         {
             case TreasureCofferFarmState.Completed:
+                dangerousTreasureTravelController.RestoreFateGearset($"automatic overworld coffer route completed: {treasureCofferFarmController.LastTransition}");
                 ResetAutomaticTreasureCofferSurveyTrustAfterRoute();
                 if (treasureCofferFarmController.LastResult == TreasureCofferFarmResult.ReturnedToBase)
                 {
@@ -1601,9 +1659,11 @@ public sealed class FarmSessionController : IDisposable
                 StartRecoveryToBase("Automatic overworld coffer route ended without a confirmed Base Camp return; recovering before the next automatic coffer decision.");
                 return;
             case TreasureCofferFarmState.Stopped:
+                dangerousTreasureTravelController.RestoreFateGearset($"automatic overworld coffer route stopped: {treasureCofferFarmController.LastTransition}");
                 TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastTransition, "Selecting target");
                 return;
             case TreasureCofferFarmState.Failed:
+                dangerousTreasureTravelController.RestoreFateGearset($"automatic overworld coffer route failed: {(treasureCofferFarmController.LastError.Length == 0 ? treasureCofferFarmController.LastTransition : treasureCofferFarmController.LastError)}");
                 TransitionTo(FarmSessionState.SelectingTarget, treasureCofferFarmController.LastError.Length == 0
                     ? treasureCofferFarmController.LastTransition
                     : treasureCofferFarmController.LastError, "Selecting target");

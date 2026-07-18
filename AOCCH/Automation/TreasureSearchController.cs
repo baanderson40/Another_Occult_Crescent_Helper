@@ -644,6 +644,11 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
+        if (TryStartKnowledgeThreatTravel())
+        {
+            return;
+        }
+
         if (TryHandleCandidateTravelStall())
         {
             return;
@@ -1419,12 +1424,14 @@ public sealed class TreasureSearchController : IDisposable
         var canonicalPosition = candidate.Position.ToVector3();
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition);
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
-        var isDangerousCandidate = IsDangerousCandidate(candidate);
+        var hasKnowledgeThreat = TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove);
+        var isDangerousCandidate = !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate);
+        var requiresDangerousTravel = isDangerousCandidate || hasKnowledgeThreat;
         var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             var navFailureReason = $"Treasure candidate {candidate.Label} has no reliable vnavmesh point near <{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}>.";
-            if (isDangerousCandidate)
+            if (requiresDangerousTravel)
             {
                 return SkipDangerousCandidate(navFailureReason);
             }
@@ -1433,15 +1440,16 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        logger.Info($"{BuildLogTag()} op=candidate-start candidate={candidate.Label} fate=\"{activeFateName}\" ({activeFateId}) group={candidate.GroupKey} dangerous={isDangerousCandidate} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
-        if (isDangerousCandidate)
+        logger.Info($"{BuildLogTag()} op=candidate-start candidate={candidate.Label} fate=\"{activeFateName}\" ({activeFateId}) group={candidate.GroupKey} dangerous={requiresDangerousTravel} staticFallbackDangerous={isDangerousCandidate} knowledgeThreat={hasKnowledgeThreat} threatEntity='{threat?.Name ?? "none"}' threatLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
+        if (requiresDangerousTravel)
         {
             if (!configuration.UseNinjaForDangerousArea)
             {
                 return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because it requires dangerous-area Ninja travel and Ninja travel is disabled.");
             }
 
-            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions()))
+            KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat ? GetPotKnowledgeThreatPolicy() : null;
+            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(), knowledgeThreatPolicy))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1505,7 +1513,50 @@ public sealed class TreasureSearchController : IDisposable
 
         TransitionTo(
             TreasureSearchState.TravelingToCandidate,
-            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position{(isDangerousCandidate ? " with Ninja/Hide dangerous-area flow" : string.Empty)}.");
+            $"{reason} Moving to treasure candidate {candidate.Label} in group {candidate.GroupKey} using {(usedOverride ? "override" : "canonical")} position{(requiresDangerousTravel ? " with Ninja/Hide dangerous-area flow" : string.Empty)}.");
+        return true;
+    }
+
+    private KnowledgeThreatPolicy GetPotKnowledgeThreatPolicy()
+        => new(
+            configuration.PotKnowledgeHideOffset,
+            configuration.KnowledgeThreatEnterDistance,
+            configuration.KnowledgeThreatExitDistance);
+
+    private bool TryGetPotKnowledgeThreat(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
+        => KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, GetPotKnowledgeThreatPolicy(), radius, out threat, out hideAtOrAbove);
+
+    private bool TryStartKnowledgeThreatTravel()
+    {
+        if (dangerousTreasureTravelController.IsRunning
+            || !TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove)
+            || !TryGetCurrentCandidate(out var candidate))
+        {
+            return false;
+        }
+
+        var destination = movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            SetFailure($"Treasure candidate {candidate.Label} has no reliable vnavmesh point while responding to a live knowledge threat.");
+            return true;
+        }
+
+        if (!configuration.UseNinjaForDangerousArea)
+        {
+            SetFailure($"Treasure candidate {candidate.Label} encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous-area Ninja travel is disabled.");
+            return true;
+        }
+
+        movementController.Stop("Live knowledge threat entered the pot treasure Hide range.");
+        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=pot-reveal candidate={candidate.Label} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.PotKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(), GetPotKnowledgeThreatPolicy()))
+        {
+            SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                ? $"Failed to start Ninja/Hide travel after detecting a live knowledge threat for {candidate.Label}."
+                : dangerousTreasureTravelController.LastError);
+        }
+
         return true;
     }
 
@@ -1876,7 +1927,7 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var handoffCandidate = orderedCandidates[bestIndex];
-        var handoffIsDangerous = IsDangerousCandidate(handoffCandidate);
+        var handoffIsDangerous = !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(handoffCandidate);
         var handoffKey = ToCandidateKey(handoffCandidate);
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(handoffKey, out var overridePosition);
         var handoffResolvedPosition = usedOverride ? overridePosition : handoffCandidate.Position.ToVector3();
@@ -1949,7 +2000,7 @@ public sealed class TreasureSearchController : IDisposable
 
         foreach (var candidate in group.Candidates)
         {
-            if (IsDangerousCandidate(candidate))
+            if (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate))
             {
                 if (!configuration.UseNinjaForDangerousArea)
                 {

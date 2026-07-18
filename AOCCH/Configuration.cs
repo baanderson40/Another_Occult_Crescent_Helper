@@ -83,6 +83,7 @@ public class Configuration : IPluginConfiguration
     public int AutomaticTreasureCofferBronzeThreshold { get; set; }
     public bool UseNinjaForDangerousArea { get; set; }
     public int HideThresholdDistance { get; set; } = 120;
+    public int PotKnowledgeHideOffset { get; set; }
     public int NinjaGearsetNumber
     {
         get => ninjaGearsetNumber;
@@ -91,6 +92,9 @@ public class Configuration : IPluginConfiguration
 
     public bool UseNinjaForDangerousVisibleCoffers { get; set; }
     public int VisibleCofferHideThresholdDistance { get; set; } = 120;
+    public int VisibleCofferKnowledgeHideOffset { get; set; } = 4;
+    public int KnowledgeThreatEnterDistance { get; set; } = 10;
+    public int KnowledgeThreatExitDistance { get; set; } = 20;
     public int VisibleCofferNinjaGearsetNumber
     {
         get => visibleCofferNinjaGearsetNumber;
@@ -158,6 +162,7 @@ public class Configuration : IPluginConfiguration
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
         RangedTargetRange = ClampTargetRange(RangedTargetRange);
+        ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
         Plugin.PluginInterface.SavePluginConfig(this);
         logger?.Debug("Configuration saved.");
@@ -170,6 +175,7 @@ public class Configuration : IPluginConfiguration
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
         RangedTargetRange = ClampTargetRange(RangedTargetRange);
+        ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
         if (Version >= 3)
@@ -317,5 +323,13 @@ public class Configuration : IPluginConfiguration
             target.BuyAmount = Math.Max(0, target.BuyAmount);
             target.Priority = Math.Max(0, target.Priority);
         }
+    }
+
+    private void ClampKnowledgeThreatSettings()
+    {
+        PotKnowledgeHideOffset = Math.Clamp(PotKnowledgeHideOffset, -27, 27);
+        VisibleCofferKnowledgeHideOffset = Math.Clamp(VisibleCofferKnowledgeHideOffset, -27, 27);
+        KnowledgeThreatEnterDistance = Math.Clamp(KnowledgeThreatEnterDistance, 1, 50);
+        KnowledgeThreatExitDistance = Math.Clamp(KnowledgeThreatExitDistance, KnowledgeThreatEnterDistance, 100);
     }
 }

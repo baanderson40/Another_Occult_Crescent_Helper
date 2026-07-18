@@ -410,6 +410,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToDangerousSpot:
                 TickTravelingToDangerousSpot();
                 break;
+            case TreasureCofferFarmState.TravelingToThreatenedCoffer:
+                TickTravelingToThreatenedCoffer();
+                break;
             case TreasureCofferFarmState.WaitingForInteractionHandoff:
                 TickWaitingForInteractionHandoff();
                 break;
@@ -616,12 +619,13 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var dangerousSpot = ToDangerousTravelCandidate(spot, playerPosition.Value, destination);
-        var dangerousOptions = new DangerousTreasureTravelOptions(
-            configuration.VisibleCofferNinjaGearsetNumber,
-            configuration.VisibleCofferHideThresholdDistance,
-            configuration.VisibleTreasureCofferMaximumAggroLevel);
-        logger.Info($"{BuildLogTag()} op=dangerous-travel-start spot={spot.Area}:{spot.Label} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0} aggroLevel={spot.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} hideThreshold={dangerousOptions.HideThresholdDistance} gearset={dangerousOptions.GearsetNumber} previousThresholdSpot={DescribeSpot(activePreviousThresholdSpot)} previousCandidatePassed=none");
-        if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, dangerousSpot, destination, arrivalDistance, dangerousOptions))
+        var dangerousOptions = GetVisibleDangerousTravelOptions();
+        var hasKnowledgeThreat = TryGetVisibleKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove);
+        KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat && !RequiresHiddenTravel(spot)
+            ? GetVisibleKnowledgeThreatPolicy()
+            : null;
+        logger.Info($"{BuildLogTag()} op=dangerous-travel-start spot={spot.Area}:{spot.Label} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0} aggroLevel={spot.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} hideThreshold={dangerousOptions.HideThresholdDistance} gearset={dangerousOptions.GearsetNumber} knowledgeThreat={hasKnowledgeThreat} threatEntity='{threat?.Name ?? "none"}' threatLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} previousThresholdSpot={DescribeSpot(activePreviousThresholdSpot)} previousCandidatePassed=none");
+        if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, dangerousSpot, destination, arrivalDistance, dangerousOptions, knowledgeThreatPolicy))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
@@ -642,6 +646,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void TickTravelingToSpot()
     {
+        if (TryStartKnowledgeThreatTravel())
+        {
+            return;
+        }
+
         if (TryStartInteractionForActiveSpot(requireApproachThreshold: true, acquisitionSource: "approach"))
         {
             return;
@@ -745,6 +754,44 @@ public sealed class TreasureCofferFarmController : IDisposable
             $"Overworld coffer route is running dangerous travel to {DescribeActiveSpot()}. farmState={State} dangerousState={dangerousTreasureTravelController.State} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(ActiveResolvedPosition)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? ActiveResolvedPosition, ActiveResolvedPosition):0.0}y arrivalDistance={GetArrivalDistance(ActiveSpot):0.0}y movementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]} transition={dangerousTreasureTravelController.LastTransition}.");
     }
 
+    private void TickTravelingToThreatenedCoffer()
+    {
+        switch (dangerousTreasureTravelController.State)
+        {
+            case DangerousTreasureTravelState.Arrived:
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.Info($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-arrived spot={DescribeActiveSpot()} action=resume-hidden-interaction");
+                TransitionTo(TreasureCofferFarmState.WaitingForInteractionHandoff, "Reached the matched coffer under live knowledge threat protection; resuming hidden interaction.");
+                return;
+            case DangerousTreasureTravelState.CandidateSkipped:
+                var skipReason = dangerousTreasureTravelController.LastTransition;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.Warning($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-terminal state=CandidateSkipped action=advance reason={skipReason}");
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, skipReason);
+                return;
+            case DangerousTreasureTravelState.Failed:
+                var failureReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                logger.Warning($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-terminal state=Failed action=fail reason={failureReason}");
+                SetFailure(failureReason);
+                return;
+            case DangerousTreasureTravelState.Stopped:
+                var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
+                    ? dangerousTreasureTravelController.LastTransition
+                    : dangerousTreasureTravelController.LastError;
+                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                TransitionTo(TreasureCofferFarmState.Stopped, stoppedReason, error: stoppedReason, result: TreasureCofferFarmResult.Stopped);
+                return;
+        }
+
+        logger.DebugThrottled(
+            "visible-coffer-farm-threatened-interaction",
+            WaitLogInterval,
+            $"Overworld coffer interaction is moving hidden after a live knowledge threat. spot={DescribeActiveSpot()} dangerousState={dangerousTreasureTravelController.State} coffer={pendingInteractionMatch?.Coffer.GameObjectId:X} movementState={movementController.State} stealthed={gameActionController.IsStealthed}.");
+    }
+
     private void OnArrivedAtSpot()
     {
         if (!TryHandleArrivalActions())
@@ -769,6 +816,14 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void TickInteractingWithCoffer()
     {
+        if (cofferInteractionController.ActiveMatch is { } activeMatch
+            && !activeMatch.MustStayHidden
+            && cofferInteractionController.State is CofferInteractionState.ApproachingCoffer or CofferInteractionState.TargetingCoffer
+            && TryStartThreatenedCofferTravel(activeMatch, "interaction-approach"))
+        {
+            return;
+        }
+
         if (cofferInteractionController.IsRunning)
         {
             logger.DebugThrottled(
@@ -947,6 +1002,11 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
+        if (!pendingMatch.MustStayHidden && TryStartThreatenedCofferTravel(pendingMatch, "interaction-handoff"))
+        {
+            return;
+        }
+
         logger.Debug($"{BuildLogTag()} op=coffer-handoff-ready spot={DescribeActiveSpot()} movementState={movementController.State} pathBusy={movementController.IsPathBusy} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} coffer={pendingMatch.Coffer.GameObjectId:X}");
 
         if (!TryVerifyInventorySpaceForActiveSpot("before opening the matched overworld coffer"))
@@ -986,6 +1046,67 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         TransitionTo(TreasureCofferFarmState.InteractingWithCoffer, $"Matched overworld coffer for {DescribeActiveSpot()} via handoff; starting interaction.");
+    }
+
+    private bool TryStartThreatenedCofferTravel(VisibleCofferMatch match, string source)
+    {
+        var spot = ActiveSpot;
+        if (spot == null
+            || dangerousTreasureTravelController.IsRunning
+            || !TryGetVisibleKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove))
+        {
+            return false;
+        }
+
+        if (!configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            SetFailure($"Overworld coffer interaction encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous Ninja travel is disabled.");
+            return true;
+        }
+
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue)
+        {
+            SetFailure("Overworld coffer interaction lost player position while responding to a live knowledge threat.");
+            return true;
+        }
+
+        if (cofferInteractionController.IsRunning)
+        {
+            cofferInteractionController.Stop("Live knowledge threat entered the coffer interaction Hide range.");
+        }
+
+        var hiddenMatch = new VisibleCofferMatch
+        {
+            Flow = match.Flow,
+            CandidateKey = match.CandidateKey,
+            Coffer = match.Coffer,
+            MatchDistance = match.MatchDistance,
+            IsTrustworthy = match.IsTrustworthy,
+            RequiresJumpAssist = match.RequiresJumpAssist,
+            MustStayHidden = true,
+            HiddenContextReason = "live-knowledge-threat",
+            DistanceToNearestOtherCandidate = match.DistanceToNearestOtherCandidate,
+            AttributionReason = $"{match.AttributionReason} Live knowledge threat handoff source={source} entity='{threat?.Name ?? "unknown"}' entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove}.",
+        };
+        lock (gate)
+        {
+            pendingInteractionMatch = hiddenMatch;
+        }
+
+        var dangerousCandidate = ToDangerousTravelCandidate(spot, playerPosition.Value, match.Coffer.Position);
+        var dangerousOptions = GetVisibleDangerousTravelOptions();
+        logger.Info($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-enter source={source} spot={DescribeActiveSpot()} coffer={match.Coffer.GameObjectId:X} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        if (!dangerousTreasureTravelController.Start("VisibleCofferInteraction", null, dangerousCandidate, match.Coffer.Position, 4.5f, dangerousOptions, GetVisibleKnowledgeThreatPolicy()))
+        {
+            SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                ? "Failed to start Ninja/Hide travel for a threatened coffer interaction."
+                : dangerousTreasureTravelController.LastError);
+            return true;
+        }
+
+        TransitionTo(TreasureCofferFarmState.TravelingToThreatenedCoffer, $"Live knowledge threat interrupted the {source} coffer approach; moving hidden to the matched coffer.");
+        return true;
     }
 
     private bool ShouldRunVisibleCofferScan(bool requireApproachThreshold, out float remainingDistanceToSpot)
@@ -1088,7 +1209,24 @@ public sealed class TreasureCofferFarmController : IDisposable
     }
 
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
-        => RequiresHiddenTravel(spot);
+    {
+        if (spot.ForceUnhidden)
+        {
+            return false;
+        }
+
+        if (RequiresHiddenTravel(spot))
+        {
+            return true;
+        }
+
+        return KnowledgeThreatEvaluator.TryFindThreat(
+            scanner.Snapshot,
+            GetVisibleKnowledgeThreatPolicy(),
+            configuration.KnowledgeThreatEnterDistance,
+            out _,
+            out _);
+    }
 
     private bool ShouldSkipSpot(VisibleCofferFarmSpotData spot)
         => RequiresDangerousTravel(spot)
@@ -1219,12 +1357,63 @@ public sealed class TreasureCofferFarmController : IDisposable
             return true;
         }
 
+        if (scanner.Snapshot.PlayerForayLevel.HasValue)
+        {
+            return false;
+        }
+
         if (IsDangerousByAggro(spot))
         {
             return true;
         }
 
         return (spot.HideThresholdDistance ?? 0) > 0;
+    }
+
+    private KnowledgeThreatPolicy GetVisibleKnowledgeThreatPolicy()
+        => new(
+            configuration.VisibleCofferKnowledgeHideOffset,
+            configuration.KnowledgeThreatEnterDistance,
+            configuration.KnowledgeThreatExitDistance);
+
+    private DangerousTreasureTravelOptions GetVisibleDangerousTravelOptions()
+        => new(
+            configuration.VisibleCofferNinjaGearsetNumber,
+            configuration.VisibleCofferHideThresholdDistance,
+            configuration.VisibleTreasureCofferMaximumAggroLevel);
+
+    private bool TryGetVisibleKnowledgeThreat(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
+    {
+        if (ActiveSpot?.ForceUnhidden == true)
+        {
+            threat = null;
+            hideAtOrAbove = 0;
+            return false;
+        }
+
+        return KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, GetVisibleKnowledgeThreatPolicy(), radius, out threat, out hideAtOrAbove);
+    }
+
+    private bool TryStartKnowledgeThreatTravel()
+    {
+        var spot = ActiveSpot;
+        if (spot == null
+            || dangerousTreasureTravelController.IsRunning
+            || !TryGetVisibleKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove))
+        {
+            return false;
+        }
+
+        if (!configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            SetFailure($"Overworld coffer route encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous Ninja travel is disabled.");
+            return true;
+        }
+
+        movementController.Stop("Live knowledge threat entered the overworld coffer Hide range.");
+        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=overworld-coffer spot={DescribeActiveSpot()} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        BeginDangerousTravelToActiveSpot(spot, ActiveResolvedPosition, GetArrivalDistance(spot));
+        return true;
     }
 
     private string GetHiddenTravelDecision(VisibleCofferFarmSpotData spot)

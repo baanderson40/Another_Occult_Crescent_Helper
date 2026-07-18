@@ -5,6 +5,7 @@ using System.Threading;
 using AOCCH.Data;
 using AOCCH.Logging;
 using AOCCH.Movement;
+using AOCCH.Scanning;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 
@@ -20,6 +21,7 @@ public enum DangerousTreasureTravelState
     UsingHide,
     VerifyingHide,
     WalkingToCandidate,
+    TravelingDirectlyAfterThreatClear,
     Arrived,
     CandidateSkipped,
     Stopped,
@@ -52,6 +54,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private static readonly TimeSpan GearsetPostElixirDelay = TimeSpan.FromSeconds(2);
     private const int MaximumGearsetEquipAttempts = 2;
     private static readonly TimeSpan DismountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DismountRequestInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
@@ -65,6 +68,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly MovementController movementController;
+    private readonly OccultCrescentScanner scanner;
     private readonly GameActionController gameActionController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
@@ -89,6 +93,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private string activeGearsetName = string.Empty;
     private DateTimeOffset gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastHideDismountRequestAt = DateTimeOffset.MinValue;
     private int activeHideThresholdDistance;
     private int activeMaximumAggroLevel;
     private bool hideRetryUsed;
@@ -114,11 +119,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private DateTimeOffset restoreAttemptAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset restoreAttemptStartedAt = DateTimeOffset.MinValue;
     private string callerName = string.Empty;
+    private KnowledgeThreatPolicy? activeKnowledgeThreatPolicy;
 
     public DangerousTreasureTravelController(
         IFramework framework,
         ICondition condition,
         IObjectTable objectTable,
+        OccultCrescentScanner scanner,
         MovementController movementController,
         GameActionController gameActionController,
         Configuration configuration,
@@ -127,6 +134,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         this.framework = framework;
         this.condition = condition;
         this.objectTable = objectTable;
+        this.scanner = scanner;
         this.movementController = movementController;
         this.gameActionController = gameActionController;
         this.configuration = configuration;
@@ -268,6 +276,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeGearsetName = string.Empty;
             gearsetAttemptAvailableAt = DateTimeOffset.MinValue;
             lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
+            lastHideDismountRequestAt = DateTimeOffset.MinValue;
             activeHideThresholdDistance = 0;
             activeMaximumAggroLevel = 0;
             hideRetryUsed = false;
@@ -293,6 +302,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             restoreAttemptAvailableAt = DateTimeOffset.MinValue;
             restoreAttemptStartedAt = DateTimeOffset.MinValue;
             callerName = string.Empty;
+            activeKnowledgeThreatPolicy = null;
         }
 
         logger.Info($"[DangerousTravel] op=reset reason={reason}");
@@ -429,7 +439,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     public bool Start(TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance, DangerousTreasureTravelOptions options)
         => Start("unspecified", previousCandidate, candidate, destination, finalArrivalTolerance, options);
 
-    public bool Start(string caller, TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance, DangerousTreasureTravelOptions options)
+    public bool Start(string caller, TreasureCofferCandidateData? previousCandidate, TreasureCofferCandidateData candidate, Vector3 destination, float finalArrivalTolerance, DangerousTreasureTravelOptions options, KnowledgeThreatPolicy? knowledgeThreatPolicy = null)
     {
         if (IsRunning)
         {
@@ -474,6 +484,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeGearsetName = string.Empty;
             gearsetAttemptAvailableAt = DateTimeOffset.UtcNow + GearsetPostElixirDelay;
             lastGearsetDismountRequestAt = DateTimeOffset.MinValue;
+            lastHideDismountRequestAt = DateTimeOffset.MinValue;
             activeHideThresholdDistance = options.HideThresholdDistance;
             activeMaximumAggroLevel = options.MaximumAggroLevel;
             hideRetryUsed = false;
@@ -488,9 +499,17 @@ public sealed class DangerousTreasureTravelController : IDisposable
             pendingHiddenMoveDestination = Vector3.Zero;
             pendingHiddenMoveArrivalTolerance = 0f;
             callerName = caller;
+            activeKnowledgeThreatPolicy = knowledgeThreatPolicy;
         }
 
-        logger.Info($"{BuildLogTag()} op=start caller={FormatValue(caller)} candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} playerPos={FormatVector(playerPosition)} candidatePos={FormatVector(candidate.Position.ToVector3())} previousCandidatePos={FormatVector(previousCandidate?.Position.ToVector3())} destination={FormatVector(destination)} arrivalTolerance={finalArrivalTolerance:0.0} gearset={options.GearsetNumber} candidateAggro={candidate.AggroLevel} maxAggro={options.MaximumAggroLevel} candidateHideThreshold={(candidate.HideThresholdDistance?.ToString() ?? "none")} configuredHideThreshold={options.HideThresholdDistance}");
+        var playerForayLevel = scanner.Snapshot.PlayerForayLevel;
+        var knowledgeHideAtOrAbove = knowledgeThreatPolicy.HasValue && playerForayLevel.HasValue
+            ? knowledgeThreatPolicy.Value.GetHideAtOrAbove(playerForayLevel.Value)
+            : 0;
+        var knowledgeOffsetText = knowledgeThreatPolicy.HasValue ? knowledgeThreatPolicy.Value.HideOffset.ToString() : "none";
+        var knowledgeEnterRangeText = knowledgeThreatPolicy.HasValue ? knowledgeThreatPolicy.Value.EnterDistance.ToString("0.0") : "none";
+        var knowledgeExitRangeText = knowledgeThreatPolicy.HasValue ? knowledgeThreatPolicy.Value.ExitDistance.ToString("0.0") : "none";
+        logger.Info($"{BuildLogTag()} op=start caller={FormatValue(caller)} candidate={candidate.Label} previousCandidate={(previousCandidate?.Label ?? "none")} playerPos={FormatVector(playerPosition)} candidatePos={FormatVector(candidate.Position.ToVector3())} previousCandidatePos={FormatVector(previousCandidate?.Position.ToVector3())} destination={FormatVector(destination)} arrivalTolerance={finalArrivalTolerance:0.0} gearset={options.GearsetNumber} candidateAggro={candidate.AggroLevel} maxAggro={options.MaximumAggroLevel} candidateHideThreshold={(candidate.HideThresholdDistance?.ToString() ?? "none")} configuredHideThreshold={options.HideThresholdDistance} knowledgePolicy={knowledgeThreatPolicy.HasValue} playerForayLevel={(playerForayLevel?.ToString() ?? "unavailable")} knowledgeOffset={knowledgeOffsetText} knowledgeHideAtOrAbove={(knowledgeHideAtOrAbove == 0 ? "unavailable" : knowledgeHideAtOrAbove)} knowledgeEnterRange={knowledgeEnterRangeText} knowledgeExitRange={knowledgeExitRangeText}");
         movementController.SetLogOwner(currentRunId);
         TransitionTo(DangerousTreasureTravelState.EquippingNinjaGearset, $"Equipping Ninja gearset for dangerous candidate {candidate.Label}.");
         return true;
@@ -701,6 +720,9 @@ public sealed class DangerousTreasureTravelController : IDisposable
             case DangerousTreasureTravelState.WalkingToCandidate:
                 TickWalkingToCandidate();
                 break;
+            case DangerousTreasureTravelState.TravelingDirectlyAfterThreatClear:
+                TickTravelingDirectlyAfterThreatClear();
+                break;
         }
     }
 
@@ -899,6 +921,13 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return;
         }
 
+        var now = DateTimeOffset.UtcNow;
+        if (now - lastHideDismountRequestAt < DismountRequestInterval)
+        {
+            return;
+        }
+
+        lastHideDismountRequestAt = now;
         if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, $"dangerous treasure travel for {activeCandidateLabel}"))
         {
             logger.DebugThrottled(
@@ -1055,6 +1084,27 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
     private void TickWalkingToCandidate()
     {
+        LogKnowledgeThreatStatus("hidden");
+        if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
+            && activeKnowledgeThreatPolicy.HasValue
+            && scanner.Snapshot.PlayerForayLevel.HasValue
+            && !IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.ExitDistance, out _, out _))
+        {
+            movementController.Stop("Knowledge threat cleared; resuming mounted treasure travel.");
+            StartDirectTravelAfterThreatClear();
+            return;
+        }
+
+        if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
+            && activeKnowledgeThreatPolicy.HasValue
+            && !gameActionController.IsStealthed
+            && !condition[ConditionFlag.InCombat])
+        {
+            movementController.Stop("Hide was lost while a knowledge threat remained nearby.");
+            ContinueDangerousApproach($"Hide was lost while a live knowledge threat remained near {activeCandidateLabel}.");
+            return;
+        }
+
         switch (movementController.State)
         {
             case MovementState.Arrived:
@@ -1091,6 +1141,85 @@ public sealed class DangerousTreasureTravelController : IDisposable
             "dangerous-treasure-travel",
             WaitLogInterval,
             $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y tolerance={arrivalTolerance:0.0} MovementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]}.");
+    }
+
+    private void TickTravelingDirectlyAfterThreatClear()
+    {
+        LogKnowledgeThreatStatus("direct-after-clear");
+        if (activeKnowledgeThreatPolicy.HasValue && !scanner.Snapshot.PlayerForayLevel.HasValue)
+        {
+            movementController.Stop("Live knowledge data became unavailable during treasure travel.");
+            ContinueDangerousApproach($"Live knowledge data became unavailable while traveling to {activeCandidateLabel}.");
+            return;
+        }
+
+        if (activeKnowledgeThreatPolicy.HasValue
+            && IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.EnterDistance, out var threat, out var hideAtOrAbove))
+        {
+            movementController.Stop("Knowledge threat entered the Hide range.");
+            logger.Info($"{BuildLogTag()} op=knowledge-threat-enter candidate={activeCandidateLabel} entity='{threat?.Name}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} entityLevel={threat?.KnowledgeLevel} hideAtOrAbove={hideAtOrAbove} enterRange={activeKnowledgeThreatPolicy.Value.EnterDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+            ContinueDangerousApproach($"A live knowledge threat entered the Hide range for {activeCandidateLabel}.");
+            return;
+        }
+
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Reached treasure candidate after knowledge threat cleared.");
+                activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+                TransitionTo(DangerousTreasureTravelState.Arrived, $"Reached dangerous treasure candidate {activeCandidateLabel} after the knowledge threat cleared.", result: DangerousTreasureTravelResult.Arrived);
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                SkipCandidate(movementController.LastError.Length == 0
+                    ? $"Failed direct movement after the knowledge threat cleared for {activeCandidateLabel}."
+                    : movementController.LastError);
+                return;
+        }
+    }
+
+    private void StartDirectTravelAfterThreatClear()
+    {
+        logger.Info($"{BuildLogTag()} op=knowledge-threat-clear candidate={activeCandidateLabel} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} destination={FormatVector(finalDestination)} exitRange={activeKnowledgeThreatPolicy?.ExitDistance:0.0}");
+        movementController.SetLogOwner(currentRunId);
+        if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true))
+        {
+            SkipCandidate(movementController.LastError.Length == 0
+                ? $"Failed to resume direct travel after the knowledge threat cleared for {activeCandidateLabel}."
+                : movementController.LastError);
+            return;
+        }
+
+        activeWalkingPhase = DangerousTreasureWalkingPhase.None;
+        TransitionTo(DangerousTreasureTravelState.TravelingDirectlyAfterThreatClear, $"No live knowledge threat remained near {activeCandidateLabel}; resuming mounted travel.");
+    }
+
+    private bool IsKnowledgeThreatActive(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
+    {
+        threat = null;
+        hideAtOrAbove = 0;
+        return activeKnowledgeThreatPolicy.HasValue
+            && KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, activeKnowledgeThreatPolicy.Value, radius, out threat, out hideAtOrAbove);
+    }
+
+    private void LogKnowledgeThreatStatus(string travelMode)
+    {
+        if (!activeKnowledgeThreatPolicy.HasValue)
+        {
+            return;
+        }
+
+        var snapshot = scanner.Snapshot;
+        var hasExitThreat = KnowledgeThreatEvaluator.TryFindThreat(
+            snapshot,
+            activeKnowledgeThreatPolicy.Value,
+            activeKnowledgeThreatPolicy.Value.ExitDistance,
+            out var threat,
+            out var hideAtOrAbove);
+        logger.InfoThrottled(
+            $"dangerous-knowledge-threat-status-{currentRunId}",
+            WaitLogInterval,
+            $"{BuildLogTag()} op=knowledge-threat-status mode={travelMode} caller={FormatValue(callerName)} playerForayLevel={snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={activeKnowledgeThreatPolicy.Value.HideOffset} hideAtOrAbove={(hideAtOrAbove == 0 ? "unavailable" : hideAtOrAbove)} enterRange={activeKnowledgeThreatPolicy.Value.EnterDistance:0.0} exitRange={activeKnowledgeThreatPolicy.Value.ExitDistance:0.0} exitThreat={hasExitThreat} entity='{threat?.Name ?? "none"}' objectId={threat?.ObjectId:X} entityLevel={threat?.KnowledgeLevel ?? 0} distance={threat?.DistanceToPlayer:0.0} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]}");
     }
 
     private bool TryRetryTimedOutHiddenFinalApproach()
@@ -1225,6 +1354,11 @@ public sealed class DangerousTreasureTravelController : IDisposable
 
         activeWalkingPhase = DangerousTreasureWalkingPhase.None;
         logger.Info($"{BuildLogTag()} op=approach-evaluate candidate={activeCandidateLabel} previousCandidate={FormatValue(previousCandidateLabel)} playerPos={FormatVector(playerPosition)} destination={FormatVector(finalDestination)} previousThresholdActive={IsWithinHideThreshold(previousCandidate, playerPosition.Value)} currentThresholdActive={IsWithinHideThreshold(currentCandidate, playerPosition.Value)} mounted={condition[ConditionFlag.Mounted]} stealthed={gameActionController.IsStealthed} inCombat={condition[ConditionFlag.InCombat]} reason={reason}");
+        if (activeKnowledgeThreatPolicy.HasValue)
+        {
+            return ContinueKnowledgeThreatApproach(reason);
+        }
+
         if (TryBeginPreviousThresholdClear(playerPosition.Value, reason))
         {
             return true;
@@ -1271,6 +1405,37 @@ public sealed class DangerousTreasureTravelController : IDisposable
         pendingHiddenMoveArrivalTolerance = arrivalTolerance;
         logger.Info($"{BuildLogTag()} op=approach-decision candidate={activeCandidateLabel} branch=prepare-hide phase=FinalApproach destination={FormatVector(finalDestination)} arrivalTolerance={arrivalTolerance:0.0}");
         TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Preparing Hide before the final approach to dangerous candidate {activeCandidateLabel}.");
+        return true;
+    }
+
+    private bool ContinueKnowledgeThreatApproach(string reason)
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            return StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: true,
+                $"Knowledge threat travel for {activeCandidateLabel}",
+                $"{reason} Continuing without Hide because combat is active.");
+        }
+
+        if (gameActionController.IsStealthed)
+        {
+            return StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: false,
+                $"Hidden knowledge threat travel for {activeCandidateLabel}",
+                $"{reason} Reusing active Hide while a live knowledge threat remains nearby.");
+        }
+
+        pendingHiddenMovePhase = DangerousTreasureWalkingPhase.FinalApproach;
+        pendingHiddenMoveDestination = finalDestination;
+        pendingHiddenMoveArrivalTolerance = arrivalTolerance;
+        TransitionTo(DangerousTreasureTravelState.Dismounting, $"{reason} Preparing Hide for a live knowledge threat near {activeCandidateLabel}.");
         return true;
     }
 

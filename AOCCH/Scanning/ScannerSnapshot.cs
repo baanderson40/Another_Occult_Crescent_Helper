@@ -22,6 +22,8 @@ public sealed class ScannerSnapshot
     public bool HasTreasureBuff { get; init; }
     public float TreasureBuffRemainingSeconds { get; init; }
     public IReadOnlyList<VisibleCoffer> VisibleCoffers { get; init; } = [];
+    public int? PlayerForayLevel { get; init; }
+    public IReadOnlyList<ForayThreatEntity> NearbyForayEntities { get; init; } = [];
     public TargetSelection EffectiveTarget { get; init; } = TargetSelection.None;
 
     public ActiveCriticalEncounter? FindCriticalEncounter(uint id)

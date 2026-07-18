@@ -332,7 +332,7 @@ public sealed class TreasureHintTracker : IDisposable
                 reason = debugLogCaptureReason;
             }
 
-            logger.Info($"[TreasureHintTracker] op=treasure-logmessage-debug attempt={attemptId} source=testkeyitem reason=\"{SanitizeLogText(reason)}\" {summary}");
+            logger.Info($"[TreasureHintTracker] op=treasure-logmessage-debug attempt={attemptId} source=debug-window reason=\"{SanitizeLogText(reason)}\" {summary}");
         }
 
         if (TryParseCofferSurveyLogMessage(message, out var surveySnapshot))

@@ -119,7 +119,7 @@ public sealed class Plugin : IDalamudPlugin
         RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
-        DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, MovementController, GameActionController, Configuration, Logger);
+        DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
@@ -139,7 +139,7 @@ public sealed class Plugin : IDalamudPlugin
         ShopPurchaseController = new ShopPurchaseController(Framework, ChatGui, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
         ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -155,7 +155,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open AOCCH. Args: main, debug, config, log, start, stop, coffer-start, coffer-stop, panic, testkeyitem, debug-potcoffer, debug-potinteract, debug-autocoffer, probe-foray, help."
+            HelpMessage = "Open AOCCH. Args: main, config, log, shopping, start, stop, coffer-start [index], coffer-stop, panic, help."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -266,10 +266,11 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        var normalizedArgs = args.Trim().ToLowerInvariant();
+        var tokens = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var subcommand = tokens.Length == 0 ? string.Empty : tokens[0].ToLowerInvariant();
         Logger.Info($"[Plugin] op=slash-command command=\"{command}\" args=\"{args.Trim()}\"");
 
-        switch (normalizedArgs)
+        switch (subcommand)
         {
             case "":
             case "main":
@@ -287,6 +288,10 @@ public sealed class Plugin : IDalamudPlugin
             case "log":
                 Logger.Info("[Plugin] op=slash-command-action action=toggle-log-window");
                 LogWindow.Toggle();
+                break;
+            case "shopping":
+                Logger.Info("[Plugin] op=slash-command-action action=open-shopping-window");
+                OpenShoppingUi();
                 break;
             case "help":
                 Logger.Info("[Plugin] op=slash-command-action action=show-help");
@@ -306,6 +311,20 @@ public sealed class Plugin : IDalamudPlugin
                 FarmSessionController.Stop("Slash command stop requested.");
                 break;
             case "coffer-start":
+            {
+                int? startRouteIndex = null;
+                var oneBasedRouteIndex = 0;
+                if (tokens.Length > 2 || (tokens.Length == 2 && (!int.TryParse(tokens[1], out oneBasedRouteIndex) || oneBasedRouteIndex < 1 || oneBasedRouteIndex > OccultCrescentData.VisibleCofferFarmRoute.Count)))
+                {
+                    ChatGui.Print($"Coffer route index must be between 1 and {OccultCrescentData.VisibleCofferFarmRoute.Count}.");
+                    break;
+                }
+
+                if (tokens.Length == 2)
+                {
+                    startRouteIndex = oneBasedRouteIndex - 1;
+                }
+
                 if (FarmSessionController.IsRunning)
                 {
                     Logger.Warning("[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=farm-session-running");
@@ -319,13 +338,14 @@ public sealed class Plugin : IDalamudPlugin
                     break;
                 }
 
-                if (!TreasureCofferFarmController.Start())
+                if (!TreasureCofferFarmController.Start(startRouteIndex: startRouteIndex))
                 {
                     ChatGui.Print(TreasureCofferFarmController.LastError.Length == 0
                         ? TreasureCofferFarmController.LastTransition
                         : TreasureCofferFarmController.LastError);
                 }
                 break;
+            }
             case "coffer-stop":
                 Logger.Info("[Plugin] op=slash-command-action action=stop-visible-coffer-farm");
                 TreasureCofferFarmController.Stop("Slash command overworld coffer stop requested.");
@@ -334,27 +354,7 @@ public sealed class Plugin : IDalamudPlugin
                 Logger.Warning("[Plugin] op=slash-command-action action=panic-stop");
                 PanicStopAll();
                 break;
-            case "debug-potcoffer":
-                Logger.Info("[Plugin] op=slash-command-action action=debug-potcoffer");
-                LogPotCofferDebugSnapshot();
-                break;
-            case "debug-potinteract":
-                HandleDebugPotInteractCommand();
-                break;
-            case "debug-autocoffer":
-                HandleDebugAutomaticCofferCommand();
-                break;
-            case "probe-foray":
-                Logger.Info("[Plugin] op=slash-command-action action=probe-foray");
-                RunProbeForay();
-                break;
             default:
-                if (normalizedArgs.StartsWith("testkeyitem", StringComparison.Ordinal))
-                {
-                    HandleTestKeyItemCommand(args);
-                    break;
-                }
-
                 Logger.Warning($"[Plugin] op=slash-command-unknown args=\"{args}\"");
                 PrintCommandHelp();
                 break;
@@ -366,47 +366,42 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print("AOCCH commands:");
         ChatGui.Print("/aocch - Toggle main window");
         ChatGui.Print("/aocch main - Toggle main window");
-        ChatGui.Print("/aocch debug - Toggle debug window");
         ChatGui.Print("/aocch config - Toggle config window");
         ChatGui.Print("/aocch log - Toggle log window");
+        ChatGui.Print("/aocch shopping - Open shopping configuration");
         ChatGui.Print("/aocch start - Start unified CE/FATE farm session");
         ChatGui.Print("/aocch stop - Stop unified CE/FATE farm session");
-        ChatGui.Print("/aocch coffer-start - Start overworld coffer route");
+        ChatGui.Print("/aocch coffer-start [index] - Start overworld coffer route at an optional one-based route index");
         ChatGui.Print("/aocch coffer-stop - Stop overworld coffer route");
         ChatGui.Print("/aocch panic - Panic stop all farm activity");
-        ChatGui.Print("/aocch testkeyitem [wait] - Use Magical Elixir via the production inventory path with detailed treasure logs");
-        ChatGui.Print("/aocch debug-potcoffer - Log nearby raw objects for pot treasure reveal debugging");
-        ChatGui.Print("/aocch debug-potinteract - Start coffer interaction for the active pot reveal match using the production interaction controller");
-        ChatGui.Print("/aocch debug-autocoffer - Run the automatic coffer survey flow without starting the coffer route");
-        ChatGui.Print("/aocch probe-foray - Log player OC state plus current target level/foray data");
         ChatGui.Print("/aocch help - Show this help");
     }
 
-    private void HandleDebugPotInteractCommand()
+    internal void RunDebugPotInteraction()
     {
         if (CofferInteractionController.IsRunning)
         {
-            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=coffer-interaction-running");
+            Logger.Warning("[Plugin] op=debug-window-action-blocked action=debug-potinteract reason=coffer-interaction-running");
             ChatGui.Print("Pot coffer interaction debug is blocked because coffer interaction is already running.");
             return;
         }
 
         if (!TryPrepareDebugPotInteractionMatch(out var match, out var reason) || match == null)
         {
-            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=active-pot-match-unavailable detail=\"{reason}\"");
+            Logger.Warning($"[Plugin] op=debug-window-action-blocked action=debug-potinteract reason=active-pot-match-unavailable detail=\"{reason}\"");
             ChatGui.Print(reason);
             return;
         }
 
         Logger.Info(
-            $"[Plugin] op=slash-command-action action=debug-potinteract candidate={match.CandidateKey.Label} flow={match.Flow} trustworthy={match.IsTrustworthy} baseId={match.Coffer.DataId} objectId={match.Coffer.GameObjectId:X} playerDistance={match.Coffer.DistanceToPlayer:0.0}y reason=\"{reason}\" attribution=\"{match.AttributionReason}\"");
+            $"[Plugin] op=debug-window-action action=debug-potinteract candidate={match.CandidateKey.Label} flow={match.Flow} trustworthy={match.IsTrustworthy} baseId={match.Coffer.DataId} objectId={match.Coffer.GameObjectId:X} playerDistance={match.Coffer.DistanceToPlayer:0.0}y reason=\"{reason}\" attribution=\"{match.AttributionReason}\"");
 
         if (!CofferInteractionController.Start(match))
         {
             var failureDetail = CofferInteractionController.LastError.Length == 0
                 ? CofferInteractionController.LastTransition
                 : CofferInteractionController.LastError;
-            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-potinteract reason=coffer-start-failed detail=\"{failureDetail}\"");
+            Logger.Warning($"[Plugin] op=debug-window-action-blocked action=debug-potinteract reason=coffer-start-failed detail=\"{failureDetail}\"");
             ChatGui.Print(failureDetail);
             return;
         }
@@ -481,53 +476,37 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
-    private void HandleDebugAutomaticCofferCommand()
+    internal void RunDebugAutomaticCofferSurvey()
     {
         if (AutomaticTreasureCofferDebugController.IsRunning)
         {
-            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=already-running");
+            Logger.Warning("[Plugin] op=debug-window-action-blocked action=debug-autocoffer reason=already-running");
             ChatGui.Print("Automatic coffer debug survey is already running.");
             return;
         }
 
         if (FarmSessionController.IsRunning || TreasureCofferFarmController.IsRunning || BuffRotationController.IsRunning || CriticalEngagementAutomationController.IsRunning || FateAutomationController.IsRunning || PotFarmController.IsRunning)
         {
-            Logger.Warning("[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=conflicting-automation");
+            Logger.Warning("[Plugin] op=debug-window-action-blocked action=debug-autocoffer reason=conflicting-automation");
             ChatGui.Print("Automatic coffer debug survey requires the farm session, overworld coffer routing, CE/FATE automation, pot control, and buff rotation to be stopped.");
             return;
         }
 
         if (!AutomaticTreasureCofferDebugController.Start())
         {
-            Logger.Warning($"[Plugin] op=slash-command-action-blocked action=debug-autocoffer reason=controller-start-failed detail=\"{AutomaticTreasureCofferDebugController.LastTransition}\"");
+            Logger.Warning($"[Plugin] op=debug-window-action-blocked action=debug-autocoffer reason=controller-start-failed detail=\"{AutomaticTreasureCofferDebugController.LastTransition}\"");
             ChatGui.Print(AutomaticTreasureCofferDebugController.LastTransition);
             return;
         }
 
-        Logger.Info("[Plugin] op=slash-command-action action=debug-autocoffer");
+        Logger.Info("[Plugin] op=debug-window-action action=debug-autocoffer");
     }
 
-    private void HandleTestKeyItemCommand(string rawArgs)
+    internal void RunMagicalElixirDebugTest(bool waitForReady)
     {
-        var tokens = rawArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var waitForReady = false;
-
         TreasureHintTracker.ClearDebugLogMessageCapture();
 
-        for (var i = 1; i < tokens.Length; i++)
-        {
-            switch (tokens[i].ToLowerInvariant())
-            {
-                case "wait":
-                    waitForReady = true;
-                    break;
-                default:
-                    Logger.Warning($"[Plugin] op=testkeyitem-option-ignored value=\"{tokens[i]}\" reason=inventory-path-only");
-                    break;
-            }
-        }
-
-        Logger.Info($"[Plugin] op=slash-command-action action=test-magical-elixir mode=inventory wait={waitForReady}");
+        Logger.Info($"[Plugin] op=debug-window-action action=test-magical-elixir mode=inventory wait={waitForReady}");
         LogMagicalElixirDebugSnapshot("preflight");
 
         if (waitForReady && !WaitForMagicalElixirReady())
@@ -590,7 +569,7 @@ public sealed class Plugin : IDalamudPlugin
         Logger.Info($"[Plugin] op=magical-elixir-debug-inventory label={label} state={GameActionController.DescribeMagicalElixirState()}");
     }
 
-    private void LogPotCofferDebugSnapshot()
+    internal void LogPotCofferDebugSnapshot()
     {
         var snapshot = Scanner.Snapshot;
         var treasureSnapshot = TreasureHintTracker.Snapshot;
@@ -664,7 +643,7 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private unsafe void RunProbeForay()
+    internal unsafe void RunProbeForay()
     {
         var snapshot = Scanner.Snapshot;
         var player = ObjectTable.LocalPlayer;
@@ -689,7 +668,7 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
-        Logger.Info($"[Plugin] op=probe-foray-player territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={playerPositionText} hp={player?.CurrentHp ?? 0} ocState={stateAvailable} knowledge={currentKnowledge} neededKnowledge={neededKnowledge} knowledgeSync={knowledgeLevelSync} supportJob={currentSupportJob} supportJobLevel={supportJobLevel}");
+        Logger.Info($"[Plugin] op=probe-foray-player territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={playerPositionText} hp={player?.CurrentHp ?? 0} forayLevel={(snapshot.PlayerForayLevel?.ToString() ?? "unavailable")} ocState={stateAvailable} knowledge={currentKnowledge} neededKnowledge={neededKnowledge} knowledgeSync={knowledgeLevelSync} supportJob={currentSupportJob} supportJobLevel={supportJobLevel}");
 
         var target = TargetManager.Target;
         if (target == null)
