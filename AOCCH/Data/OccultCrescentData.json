@@ -740,39 +740,6 @@
     },
     {
       "area": "Crystallized Caverns",
-      "label": "Crystallized Caverns_9_RehidePoint",
-      "position": {
-        "x": -819.415,
-        "y": 64.798,
-        "z": 45.804
-      },
-      "aggroLevel": 24,
-      "forceUnhidden": true,
-      "routeOnly": true,
-      "hideOnArrival": true,
-      "skipDuringAshkin": true,
-      "arrivalDistance": 3.0,
-      "note": "rehide_before_crystallized_caverns_9"
-    },
-    {
-      "area": "Crystallized Caverns",
-      "label": "Crystallized Caverns_9_UnhidePoint",
-      "position": {
-        "x": -806.728,
-        "y": 66.344,
-        "z": 65.36
-      },
-      "aggroLevel": 13,
-      "forceUnhidden": true,
-      "routeOnly": true,
-      "disableExitHideThreshold": true,
-      "mountOnArrival": true,
-      "skipDuringAshkin": true,
-      "arrivalDistance": 3.0,
-      "note": "unhide_before_crystallized_caverns_4"
-    },
-    {
-      "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_4_To_Heathcliff_10_Helper",
       "position": {
         "x": -574.154,
@@ -1003,9 +970,7 @@
         "y": 170.977,
         "z": 640.375
       },
-      "aggroLevel": 28,
-      "forceUnhidden": true,
-      "note": "spell_aggro_unhidden"
+      "aggroLevel": 28
     },
     {
       "area": "Abandoned Ascent",
@@ -1068,24 +1033,7 @@
     },
     {
       "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_5_UnhidePoint",
-      "position": {
-        "x": -687.237,
-        "y": 171.0,
-        "z": 665.097
-      },
-      "aggroLevel": 28,
-      "forceUnhidden": true,
-      "routeOnly": true,
-      "disableExitHideThreshold": true,
-      "mountOnArrival": true,
-      "arrivalDistance": 3.0,
-      "specialBranch": "ascent5_only",
-      "note": "unhide_before_ascent_5"
-    },
-    {
-      "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_5_RehidePoint",
+      "label": "Abandoned Ascent_7_RehidePoint",
       "position": {
         "x": -687.237,
         "y": 171.0,
@@ -1096,7 +1044,9 @@
       "routeOnly": true,
       "hideOnArrival": true,
       "arrivalDistance": 3.0,
-      "note": "rehide_after_ascent_5"
+      "skipDuringAshkin": true,
+      "skipDuringUnsafeWeather": true,
+      "note": "rehide_after_ascent_7"
     }
   ],
   "visibleCofferFarmRoute": [
@@ -1254,15 +1204,11 @@
     },
     {
       "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_5_UnhidePoint"
+      "label": "Abandoned Ascent_7_RehidePoint"
     },
     {
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_5"
-    },
-    {
-      "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_5_RehidePoint"
     },
     {
       "area": "Abandoned Ascent",
@@ -1279,10 +1225,6 @@
     {
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_3"
-    },
-    {
-      "area": "Crystallized Caverns",
-      "label": "Crystallized Caverns_9_RehidePoint"
     },
     {
       "area": "Crystallized Caverns",
@@ -1303,10 +1245,6 @@
     {
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_6"
-    },
-    {
-      "area": "Crystallized Caverns",
-      "label": "Crystallized Caverns_9_UnhidePoint"
     },
     {
       "area": "Crystallized Caverns",

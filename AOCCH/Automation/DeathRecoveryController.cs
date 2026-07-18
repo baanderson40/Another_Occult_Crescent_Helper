@@ -13,7 +13,8 @@ public sealed class DeathRecoveryController : IDisposable
     private static readonly TimeSpan RaiseTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RaiseSettleDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReviveConfirmTimeout = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan ReleaseConfirmTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ReleaseDialogConfirmTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ReleaseReviveConfirmTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly uint[] RaiseStatusIds = [148u, 1140u];
 
@@ -205,7 +206,9 @@ public sealed class DeathRecoveryController : IDisposable
                 return;
             }
 
-            if (State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped)
+            if (State is not DeathRecoveryState.Idle
+                and not DeathRecoveryState.Stopped
+                and not DeathRecoveryState.Failed)
             {
                 FinishRecovery(
                     "Player revived.",
@@ -364,7 +367,7 @@ public sealed class DeathRecoveryController : IDisposable
                     actionStartedAt = DateTimeOffset.UtcNow;
                 }
             }
-            else if (stateEnteredAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - stateEnteredAt >= ReleaseConfirmTimeout)
+            else if (stateEnteredAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - stateEnteredAt >= ReleaseDialogConfirmTimeout)
             {
                 logger.ResetThrottle("death-releasing");
                 SetFailure("Raise timed out and release dialog was unavailable.");
@@ -382,7 +385,7 @@ public sealed class DeathRecoveryController : IDisposable
             return;
         }
 
-        if (actionStartedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - actionStartedAt >= ReleaseConfirmTimeout)
+        if (actionStartedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - actionStartedAt >= ReleaseReviveConfirmTimeout)
         {
             logger.ResetThrottle("death-releasing");
             SetFailure("Release did not revive player.");
