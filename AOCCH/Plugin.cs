@@ -634,11 +634,13 @@ public sealed class Plugin : IDalamudPlugin
             var territory = Scanner.ActiveTerritoryData;
             var recognitionSource = string.Empty;
             var recognized = territory != null && CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out recognitionSource);
+            var potRevealRecognitionSource = string.Empty;
+            var recognizedAsPotReveal = territory != null && CofferRecognition.TryRecognizePotReveal(territory.VisibleCoffers, objectEntry, out potRevealRecognitionSource);
             var recognizedByTreasureKind = objectKind.StartsWith("Treasure", StringComparison.OrdinalIgnoreCase);
             var includedInVisibleScan = visibleObjectIds.Contains(objectEntry.GameObjectId);
             entries.Add((
                 playerDistance,
-                $"[Plugin] op=pot-coffer-debug-object name='{objectEntry.Name}' baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} kind={objectKind} pos=<{objectEntry.Position.X:0.0}, {objectEntry.Position.Y:0.0}, {objectEntry.Position.Z:0.0}> playerDistance={playerDistance:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")} targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()} recognized={recognized} recognition={recognitionSource} recognizedByTreasureKind={recognizedByTreasureKind} includedInVisibleScan={includedInVisibleScan}"));
+                $"[Plugin] op=pot-coffer-debug-object name='{objectEntry.Name}' baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} kind={objectKind} pos=<{objectEntry.Position.X:0.0}, {objectEntry.Position.Y:0.0}, {objectEntry.Position.Z:0.0}> playerDistance={playerDistance:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")} targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()} recognized={recognized} recognition={recognitionSource} recognizedAsPotReveal={recognizedAsPotReveal} potRevealRecognition={potRevealRecognitionSource} recognizedByTreasureKind={recognizedByTreasureKind} includedInVisibleScan={includedInVisibleScan}"));
         }
 
         if (entries.Count == 0)

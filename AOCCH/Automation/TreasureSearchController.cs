@@ -1205,7 +1205,7 @@ public sealed class TreasureSearchController : IDisposable
 
             var territory = scanner.ActiveTerritoryData;
             var nextRecognitionSource = string.Empty;
-            if (territory == null || !CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out nextRecognitionSource))
+            if (territory == null || !CofferRecognition.TryRecognizePotReveal(territory.VisibleCoffers, objectEntry, out nextRecognitionSource))
             {
                 continue;
             }
