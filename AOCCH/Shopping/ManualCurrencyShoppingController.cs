@@ -77,6 +77,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private bool vendorTravelPending;
     private bool vendorRecoveryAttempted;
     private bool vendorRecoveryPending;
+    private bool silverQualifiedForCurrentRun;
+    private bool goldQualifiedForCurrentRun;
 
     public ManualCurrencyShoppingController(
         IFramework framework,
@@ -275,7 +277,27 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
+            silverQualifiedForCurrentRun = false;
+            goldQualifiedForCurrentRun = false;
             skippedTargetIndices.Clear();
+        }
+
+        var qualification = EvaluateQualifiedCurrencies();
+        if (!qualification.HasAnyQualifiedCurrency)
+        {
+            StopSkipped("Blocked: no actionable targets meet their related currency thresholds.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            if (!isRunning)
+            {
+                return false;
+            }
+
+            silverQualifiedForCurrentRun = qualification.SilverQualified;
+            goldQualifiedForCurrentRun = qualification.GoldQualified;
         }
 
         logger.Info("[ManualCurrencyShopping] op=start");
@@ -325,6 +347,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
+            silverQualifiedForCurrentRun = false;
+            goldQualifiedForCurrentRun = false;
             skippedTargetIndices.Clear();
         }
 
@@ -430,6 +454,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return;
             }
 
+            if (snapshot.IsShopExchangeCurrencyOpen && TryCloseCurrencyShop())
+            {
+                UpdateStatus("Running automatic shopping | Closing vendor window");
+                return;
+            }
+
             if (availableCurrency <= 0)
             {
                 StopCompleted(completedAnyPurchases
@@ -529,7 +559,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             }
         }
 
-        if (!HasActionableTargetsAboveThreshold())
+        if (!EvaluateQualifiedCurrencies().HasAnyQualifiedCurrency)
         {
             return new(false, "Blocked: no actionable targets meet currency thresholds.");
         }
@@ -939,6 +969,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     private bool HasActionableTarget(ShopCurrencyPageDefinition page, ShopCurrencyTabDefinition tab, int availableCurrency)
     {
+        if (!IsCurrencyQualifiedForCurrentRun(page.CurrencyItemId))
+        {
+            return false;
+        }
+
         if (availableCurrency <= 0)
         {
             return false;
@@ -972,6 +1007,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     {
         foreach (var page in ShopCurrencyCatalog.Pages.OrderBy(page => page.CurrencyItemId).ThenBy(page => page.MenuIndex))
         {
+            if (!IsCurrencyQualifiedForCurrentRun(page.CurrencyItemId))
+            {
+                continue;
+            }
+
             var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == page.CurrencyItemId)?.ReserveAmount ?? 0;
             var currentCurrency = GetItemCount(page.CurrencyItemId);
             var availableCurrency = Math.Max(0, (int)currentCurrency - reserve);
@@ -992,8 +1032,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         return false;
     }
 
-    private bool HasActionableTargetsAboveThreshold()
+    private QualifiedCurrencyState EvaluateQualifiedCurrencies()
     {
+        var silverQualified = false;
+        var goldQualified = false;
+
         foreach (var page in ShopCurrencyCatalog.Pages)
         {
             var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == page.CurrencyItemId)?.ReserveAmount ?? 0;
@@ -1009,14 +1052,66 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
             foreach (var tab in page.Tabs)
             {
-                if (HasActionableTarget(page, tab, availableCurrency))
+                if (!HasActionableTargetForCurrency(page, tab, availableCurrency))
                 {
-                    return true;
+                    continue;
                 }
+
+                if (page.CurrencyItemId == EnlightenmentGoldPieceItemId)
+                {
+                    goldQualified = true;
+                }
+                else if (page.CurrencyItemId == EnlightenmentSilverPieceItemId)
+                {
+                    silverQualified = true;
+                }
+
+                break;
+            }
+        }
+
+        return new QualifiedCurrencyState(silverQualified, goldQualified);
+    }
+
+    private bool HasActionableTargetForCurrency(ShopCurrencyPageDefinition page, ShopCurrencyTabDefinition tab, int availableCurrency)
+    {
+        if (availableCurrency <= 0)
+        {
+            return false;
+        }
+
+        var candidateTargets = configuration.CurrencyShopTargets
+            .Where(target => target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
+            .OrderBy(target => target.Priority);
+
+        foreach (var candidate in candidateTargets)
+        {
+            var itemDefinition = tab.Items.FirstOrDefault(item => item.ItemId == candidate.ItemId);
+            if (itemDefinition == null || itemDefinition.Cost > (uint)availableCurrency)
+            {
+                continue;
+            }
+
+            var currentCount = (int)GetItemCount(candidate.ItemId);
+            if ((candidate.KeepAmount > 0 && currentCount < candidate.KeepAmount)
+                || candidate.BuyAmount > 0
+                || candidate.KeepBuying)
+            {
+                return true;
             }
         }
 
         return false;
+    }
+
+    private bool IsCurrencyQualifiedForCurrentRun(uint currencyItemId)
+        => currencyItemId == EnlightenmentGoldPieceItemId
+            ? goldQualifiedForCurrentRun
+            : currencyItemId == EnlightenmentSilverPieceItemId && silverQualifiedForCurrentRun;
+
+    private readonly record struct QualifiedCurrencyState(bool SilverQualified, bool GoldQualified)
+    {
+        public bool HasAnyQualifiedCurrency => SilverQualified || GoldQualified;
     }
 
     private bool TryFindVendor(out IGameObject? vendor)
