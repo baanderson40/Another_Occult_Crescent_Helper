@@ -12,6 +12,24 @@
         "potTreasure": true,
         "buffRotation": true
       },
+      "visibleCoffers": {
+        "baseIds": [2014741, 2014742, 2014743],
+        "objectKinds": ["Treasure"],
+        "localizedNames": ["Treasure Coffer"],
+        "areaAethernetMappings": [
+          { "area": "Southdown Heath", "aethernet": "BaseCamp" },
+          { "area": "Lost Citadel", "aethernet": "BaseCamp" },
+          { "area": "Shadowed City", "aethernet": "Eldergrowth" },
+          { "area": "Eldergrowth", "aethernet": "Eldergrowth" },
+          { "area": "Stonemarsh", "aethernet": "Stonemarsh" },
+          { "area": "Heathcliff", "aethernet": "Stonemarsh" },
+          { "area": "Abandoned Ascent", "aethernet": "Stonemarsh" },
+          { "area": "Crystallized Caverns", "aethernet": "CrystallizedCaverns" },
+          { "area": "Vanishing Slope", "aethernet": "TheWanderersHaven" },
+          { "area": "The Wanderer's Haven", "aethernet": "TheWanderersHaven" }
+        ],
+        "unsafeWeatherIds": [7, 62, 64, 192]
+      },
       "shopping": {
         "vendors": [
           {
@@ -32,7 +50,8 @@
       "position": { "x": 830.7468, "y": 72.98389, "z": -695.97925 },
       "destination": { "x": 852.51874, "y": 73.22737, "z": -702.8938 },
       "interactDistanceMin": 3.15,
-      "interactDistanceMax": 4.5
+      "interactDistanceMax": 4.5,
+      "isBaseCamp": true
     },
     {
       "name": "Eldergrowth",

@@ -530,9 +530,9 @@ public sealed class RoutePlanner
 
     private float CalculateReturnTime(AethernetData preferredAethernet, Vector3 destination, float travelSpeed)
         => ReturnPenaltySeconds
-            + (string.Equals(preferredAethernet.Name, "BaseCamp", StringComparison.OrdinalIgnoreCase) ? 0f : AethernetTransitionPenaltySeconds)
+            + (preferredAethernet.IsBaseCamp ? 0f : AethernetTransitionPenaltySeconds)
             + (CalculateFlatDistance(preferredAethernet.Destination.ToVector3(), destination) / travelSpeed);
 
     private AethernetData? GetBaseCampAethernet(OccultCrescentTerritoryData territory)
-        => territory.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, "BaseCamp", StringComparison.OrdinalIgnoreCase));
+        => territory.Aethernets.FirstOrDefault(aethernet => aethernet.IsBaseCamp);
 }

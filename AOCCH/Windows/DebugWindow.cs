@@ -1121,7 +1121,7 @@ public sealed class DebugWindow : Window, IDisposable
 
         var overrideEntry = activeSpot == null
             ? null
-            : plugin.VisibleCofferPositionOverrideStore.TryGetOverride(activeSpot.Area, activeSpot.Label);
+            : plugin.VisibleCofferPositionOverrideStore.TryGetOverride(scanner.Snapshot.TerritoryKey, activeSpot.Area, activeSpot.Label);
         ImGui.TextWrapped($"Active Override: {FormatVisibleCofferOverride(overrideEntry)}");
         ImGui.TextWrapped($"Overworld Override Count: {plugin.VisibleCofferPositionOverrideStore.Count}");
         ImGui.TextWrapped($"Last Saved Override: {FormatVisibleCofferOverride(plugin.VisibleCofferPositionOverrideStore.LastSavedOverride)}");
@@ -1135,7 +1135,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Visible Coffers In Scanner: {scanner.Snapshot.VisibleCoffers.Count}");
         foreach (var visibleCoffer in scanner.Snapshot.VisibleCoffers.Take(8))
         {
-            ImGui.TextWrapped($"{visibleCoffer.Name} ({visibleCoffer.GameObjectId:X}) baseId={visibleCoffer.DataId} distance={visibleCoffer.DistanceToPlayer:0.0}y targetable={visibleCoffer.IsTargetable} pos={FormatVector3(visibleCoffer.Position)}");
+            ImGui.TextWrapped($"{visibleCoffer.Name} ({visibleCoffer.GameObjectId:X}) recognition={visibleCoffer.RecognitionSource} kind={visibleCoffer.ObjectKind} baseId={visibleCoffer.DataId} distance={visibleCoffer.DistanceToPlayer:0.0}y targetable={visibleCoffer.IsTargetable} pos={FormatVector3(visibleCoffer.Position)}");
         }
 
         if (!string.IsNullOrEmpty(treasureCofferFarmController.LastError))

@@ -70,7 +70,6 @@ public sealed class TreasureSearchController : IDisposable
     private readonly GameActionController gameActionController;
     private readonly TreasureHintTracker treasureHintTracker;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
-    private readonly CofferNameResolver cofferNameResolver;
     private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
@@ -131,7 +130,6 @@ public sealed class TreasureSearchController : IDisposable
         GameActionController gameActionController,
         TreasureHintTracker treasureHintTracker,
         DangerousTreasureTravelController dangerousTreasureTravelController,
-        CofferNameResolver cofferNameResolver,
         CofferPositionOverrideStore cofferPositionOverrideStore,
         Configuration configuration,
         AocchLogger logger)
@@ -142,7 +140,6 @@ public sealed class TreasureSearchController : IDisposable
         this.gameActionController = gameActionController;
         this.treasureHintTracker = treasureHintTracker;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
-        this.cofferNameResolver = cofferNameResolver;
         this.cofferPositionOverrideStore = cofferPositionOverrideStore;
         this.configuration = configuration;
         this.logger = logger;
@@ -1198,7 +1195,9 @@ public sealed class TreasureSearchController : IDisposable
                 continue;
             }
 
-            if (!TryRecognizePotRevealCoffer(objectEntry, out var nextRecognitionSource))
+            var territory = scanner.ActiveTerritoryData;
+            var nextRecognitionSource = string.Empty;
+            if (territory == null || !CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out nextRecognitionSource))
             {
                 continue;
             }
@@ -1234,6 +1233,8 @@ public sealed class TreasureSearchController : IDisposable
                 GameObjectId = objectEntry.GameObjectId,
                 DataId = objectEntry.BaseId,
                 Name = objectEntry.Name.ToString(),
+                ObjectKind = bestObjectKind,
+                RecognitionSource = nextRecognitionSource,
                 Position = objectEntry.Position,
                 DistanceToPlayer = distanceToPlayer,
                 IsTargetable = targetable,
@@ -1249,24 +1250,6 @@ public sealed class TreasureSearchController : IDisposable
         recognitionSource = bestRecognitionSource;
         objectKind = bestObjectKind;
         return true;
-    }
-
-    private bool TryRecognizePotRevealCoffer(Dalamud.Game.ClientState.Objects.Types.IGameObject objectEntry, out string recognitionSource)
-    {
-        if (objectEntry.BaseId is 2014741u or 2014742u or 2014743u)
-        {
-            recognitionSource = "base-id";
-            return true;
-        }
-
-        if (cofferNameResolver.IsKnownLocalizedName(objectEntry.Name.ToString()))
-        {
-            recognitionSource = "localized-name";
-            return true;
-        }
-
-        recognitionSource = string.Empty;
-        return false;
     }
 
     private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, bool isTrustworthy, float nearestOtherDistance, string reason)

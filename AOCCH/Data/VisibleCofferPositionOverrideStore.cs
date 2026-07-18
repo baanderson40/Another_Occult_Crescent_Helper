@@ -56,11 +56,11 @@ public sealed class VisibleCofferPositionOverrideStore
         }
     }
 
-    public bool TryResolvePosition(string area, string label, out Vector3 position)
+    public bool TryResolvePosition(string territoryKey, string area, string label, out Vector3 position)
     {
         lock (gate)
         {
-            if (overridesByKey.TryGetValue(BuildKey(area, label), out var entry))
+            if (overridesByKey.TryGetValue(BuildKey(territoryKey, area, label), out var entry))
             {
                 position = entry.ObservedPosition.ToVector3();
                 return true;
@@ -71,19 +71,20 @@ public sealed class VisibleCofferPositionOverrideStore
         return false;
     }
 
-    public VisibleCofferPositionOverride? TryGetOverride(string area, string label)
+    public VisibleCofferPositionOverride? TryGetOverride(string territoryKey, string area, string label)
     {
         lock (gate)
         {
-            overridesByKey.TryGetValue(BuildKey(area, label), out var entry);
+            overridesByKey.TryGetValue(BuildKey(territoryKey, area, label), out var entry);
             return entry;
         }
     }
 
-    public bool SaveConfirmedPosition(string area, string label, VisibleCoffer coffer)
+    public bool SaveConfirmedPosition(string territoryKey, string area, string label, VisibleCoffer coffer)
     {
         var next = new VisibleCofferPositionOverride
         {
+            TerritoryKey = territoryKey,
             Area = area,
             Label = label,
             ObservedPosition = new Vector3Data
@@ -99,7 +100,7 @@ public sealed class VisibleCofferPositionOverrideStore
 
         lock (gate)
         {
-            var key = BuildKey(area, label);
+            var key = BuildKey(territoryKey, area, label);
             if (overridesByKey.TryGetValue(key, out var existing)
                 && existing.ObservedDataId == next.ObservedDataId
                 && existing.ObservedObjectName == next.ObservedObjectName
@@ -110,7 +111,7 @@ public sealed class VisibleCofferPositionOverrideStore
             else
             {
                 overridesByKey[key] = next;
-                logger.Info($"[VisibleCofferOverrideStore] op=save area={area} label={label} position=<{next.ObservedPosition.X:0.000}, {next.ObservedPosition.Y:0.000}, {next.ObservedPosition.Z:0.000}> source=\"{coffer.Name}\" ({coffer.DataId})");
+                logger.Info($"[VisibleCofferOverrideStore] op=save territoryKey={territoryKey} area={area} label={label} position=<{next.ObservedPosition.X:0.000}, {next.ObservedPosition.Y:0.000}, {next.ObservedPosition.Z:0.000}> source=\"{coffer.Name}\" ({coffer.DataId})");
             }
 
             var persisted = PersistLocked();
@@ -142,9 +143,29 @@ public sealed class VisibleCofferPositionOverrideStore
             var json = File.ReadAllText(filePath);
             var file = JsonSerializer.Deserialize<VisibleCofferPositionOverrideFile>(json, SerializerOptions) ?? new VisibleCofferPositionOverrideFile();
             overridesByKey = new Dictionary<string, VisibleCofferPositionOverride>(StringComparer.OrdinalIgnoreCase);
+            var migratedLegacyEntries = false;
             foreach (var entry in file.Overrides)
             {
-                overridesByKey[BuildKey(entry.Area, entry.Label)] = entry;
+                var territoryKey = string.IsNullOrWhiteSpace(entry.TerritoryKey) ? "southHorn" : entry.TerritoryKey;
+                migratedLegacyEntries |= !string.Equals(territoryKey, entry.TerritoryKey, StringComparison.Ordinal);
+                var normalizedEntry = string.Equals(territoryKey, entry.TerritoryKey, StringComparison.Ordinal)
+                    ? entry
+                    : new VisibleCofferPositionOverride
+                    {
+                        TerritoryKey = territoryKey,
+                        Area = entry.Area,
+                        Label = entry.Label,
+                        ObservedPosition = entry.ObservedPosition,
+                        ObservedDataId = entry.ObservedDataId,
+                        ObservedObjectName = entry.ObservedObjectName,
+                        LastConfirmedAt = entry.LastConfirmedAt,
+                    };
+                overridesByKey[BuildKey(territoryKey, entry.Area, entry.Label)] = normalizedEntry;
+            }
+
+            if (migratedLegacyEntries && PersistLocked())
+            {
+                logger.Info("[VisibleCofferOverrideStore] op=migrate-legacy territoryKey=southHorn");
             }
 
             logger.Info($"[VisibleCofferOverrideStore] op=load count={overridesByKey.Count} path=\"{filePath}\"");
@@ -188,6 +209,6 @@ public sealed class VisibleCofferPositionOverrideStore
             && MathF.Abs(left.Y - right.Y) < 0.001f
             && MathF.Abs(left.Z - right.Z) < 0.001f;
 
-    private static string BuildKey(string area, string label)
-        => $"{area}:{label}";
+    private static string BuildKey(string territoryKey, string area, string label)
+        => $"{territoryKey}:{area}:{label}";
 }

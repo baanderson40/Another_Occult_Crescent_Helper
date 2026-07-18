@@ -40,7 +40,6 @@ public sealed class TreasureCofferFarmController : IDisposable
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(2);
-    private static readonly HashSet<byte> UnsafeWeatherIds = [7, 62, 64, 192];
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -387,7 +386,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (deathRecoveryController.State != DeathRecoveryState.Idle)
         {
-            var reason = $"Overworld coffer route interrupted because death recovery became active. state={deathRecoveryController.State}";
+            var reason = $"Overworld coffer route stopped without resume because death recovery became active. state={deathRecoveryController.State}";
             Stop(reason);
             deathRecoveryController.RequestImmediateRelease(reason);
             return;
@@ -395,7 +394,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
         {
-            SetFailure("Left a visible-coffer-supported territory while the overworld coffer route was active.");
+            SetFailure("Overworld coffer route stopped because visible-coffer data became unavailable in the active territory.");
             return;
         }
 
@@ -506,7 +505,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
             var weatherForcedHidden = ShouldForceHiddenForWeather(spot);
             var resolvedPosition = spot.Position.ToVector3();
-            var usesOverride = overrideStore.TryResolvePosition(spot.Area, spot.Label, out var overridePosition);
+            var usesOverride = overrideStore.TryResolvePosition(scanner.Snapshot.TerritoryKey, spot.Area, spot.Label, out var overridePosition);
             if (usesOverride)
             {
                 resolvedPosition = overridePosition;
@@ -580,16 +579,30 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} helperOverride={helperOverride} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
 
+        return StartNormalTravelToActiveSpot(spot, destination, arrivalDistance, "initial route start");
+    }
+
+    private bool StartNormalTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance, string context)
+    {
+        var preferredAethernet = ResolvePreferredAethernetName(spot.Area);
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Overworld coffer route {spot.Label}", destination, arrivalDistance))
+        if (movementController.PlanRouteToLocation($"Overworld coffer route {spot.Label}", preferredAethernet, destination, arrivalDistance)
+            && movementController.StartPlannedRoute())
         {
-            logger.Warning($"{BuildLogTag()} op=travel-start-failed spot={spot.Area}:{spot.Label} destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> arrivalDistance={arrivalDistance:0.0} reason={(movementController.LastError.Length == 0 ? $"Failed to start travel to overworld coffer route spot {spot.Area}:{spot.Label}." : movementController.LastError)}");
-            TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Skipping overworld coffer route spot {spot.Area}:{spot.Label} because direct travel could not start.");
-            return false;
+            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to overworld coffer route spot {spot.Area}:{spot.Label} using territory route planning. context={context}");
+            return true;
         }
 
-        TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to overworld coffer route spot {spot.Area}:{spot.Label} with direct-only movement.");
-        return true;
+        var failure = movementController.LastError.Length == 0
+            ? $"Failed to start territory route planning for overworld coffer spot {spot.Area}:{spot.Label}."
+            : movementController.LastError;
+        if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
+        {
+            movementController.Stop($"Overworld coffer route planning failed. context={context}");
+        }
+
+        SetFailure($"Overworld coffer route could not start. territoryKey={scanner.Snapshot.TerritoryKey} routeIndex={CurrentRouteIndex} spot={spot.Area}:{spot.Label} context={context} preferredAethernet={preferredAethernet} reason={failure}");
+        return false;
     }
 
     private bool BeginPreviousThresholdCarryoverTravel(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
@@ -711,16 +724,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             }
 
-            movementController.SetLogOwner(currentRunId);
-            if (!movementController.StartDirectMove($"Overworld coffer route {ActiveSpot!.Label}", ActiveResolvedPosition, GetArrivalDistance(ActiveSpot)))
-            {
-                SetFailure(movementController.LastError.Length == 0
-                    ? $"Failed to resume normal travel after clearing the previous hide threshold for {DescribeActiveSpot()}."
-                    : movementController.LastError);
-                return;
-            }
-
-            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Cleared previous hide threshold; resuming normal travel to {DescribeActiveSpot()}.");
+            StartNormalTravelToActiveSpot(ActiveSpot!, ActiveResolvedPosition, GetArrivalDistance(ActiveSpot), "post-threshold route resume");
             return;
         }
 
@@ -1213,7 +1217,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        if (!overrideStore.SaveConfirmedPosition(spot.Area, spot.Label, matched))
+        if (!overrideStore.SaveConfirmedPosition(scanner.Snapshot.TerritoryKey, spot.Area, spot.Label, matched))
         {
             logger.Warning($"{BuildLogTag()} op=override-save-failed spot={spot.Area}:{spot.Label} reason=save-confirmed-position-returned-false");
         }
@@ -1520,7 +1524,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             && configuration.UseNinjaForDangerousVisibleCoffers;
     }
 
-    private static unsafe WeatherCondition GetWeatherCondition()
+    private unsafe WeatherCondition GetWeatherCondition()
     {
         var envManager = EnvManager.Instance();
         if (envManager == null)
@@ -1529,7 +1533,8 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         var weatherId = envManager->ActiveWeather;
-        return new WeatherCondition(weatherId, UnsafeWeatherIds.Contains(weatherId));
+        var unsafeWeatherIds = scanner.ActiveTerritoryData?.VisibleCoffers.UnsafeWeatherIds;
+        return new WeatherCondition(weatherId, unsafeWeatherIds?.Contains(weatherId) == true);
     }
 
     private static string FormatWeatherId(byte? weatherId)
@@ -1912,21 +1917,10 @@ public sealed class TreasureCofferFarmController : IDisposable
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
 
-    private static string ResolvePreferredAethernetName(string area)
-        => area switch
-        {
-            "Southdown Heath" => "BaseCamp",
-            "Lost Citadel" => "BaseCamp",
-            "Shadowed City" => "Eldergrowth",
-            "Eldergrowth" => "Eldergrowth",
-            "Stonemarsh" => "Stonemarsh",
-            "Heathcliff" => "Stonemarsh",
-            "Abandoned Ascent" => "Stonemarsh",
-            "Crystallized Caverns" => "CrystallizedCaverns",
-            "Vanishing Slope" => "TheWanderersHaven",
-            "The Wanderer's Haven" => "TheWanderersHaven",
-            _ => string.Empty,
-        };
+    private string ResolvePreferredAethernetName(string area)
+        => scanner.ActiveTerritoryData?.VisibleCoffers.AreaAethernetMappings
+            .FirstOrDefault(mapping => string.Equals(mapping.Area, area, StringComparison.OrdinalIgnoreCase))?.Aethernet
+            ?? string.Empty;
 
     private Dictionary<string, VisibleCofferFarmSpotData> GetSpotsByKey()
         => scanner.ActiveTerritoryData?.VisibleCofferFarmSpots.ToDictionary(spot => BuildKey(spot.Area, spot.Label), StringComparer.OrdinalIgnoreCase) ?? [];

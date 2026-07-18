@@ -119,6 +119,7 @@ public static class OccultCrescentDataLoader
             FateAethernetPreferences = territory.FateAethernetPreferences,
             Shopping = ShopCurrencyCatalog.CreateSouthHornData(territory.Shopping.Vendors),
             Drops = territory.Drops,
+            VisibleCoffers = territory.VisibleCoffers,
         };
     }
 
@@ -161,6 +162,7 @@ public static class OccultCrescentDataLoader
         ValidateAethernetNames(territory, errors);
         ValidateTreasureGroups(territory, errors);
         ValidateVisibleCofferSpots(territory, errors);
+        ValidateVisibleCoffers(territory, errors);
         ValidateAethernetReferences(territory, errors);
         ValidateShopping(territory, errors);
 
@@ -375,6 +377,128 @@ public static class OccultCrescentDataLoader
         }
     }
 
+    private static void ValidateVisibleCoffers(OccultCrescentTerritoryData territory, List<string> errors)
+    {
+        if (!territory.Features.VisibleCoffers && !territory.Features.PotTreasure)
+        {
+            return;
+        }
+
+        var data = territory.VisibleCoffers;
+        if (data.BaseIds.Count == 0)
+        {
+            errors.Add("visible coffers are enabled but no coffer base ids are defined");
+        }
+
+        ValidateUniqueIds(data.BaseIds, "visible coffer base", errors);
+        ValidateNonzeroIds(data.BaseIds, "visible coffer base", errors);
+        if (data.ObjectKinds.Count == 0 || data.ObjectKinds.Any(string.IsNullOrWhiteSpace))
+        {
+            errors.Add("visible coffers are enabled but object kinds are incomplete");
+        }
+
+        if (data.LocalizedNames.Count == 0 || data.LocalizedNames.Any(string.IsNullOrWhiteSpace))
+        {
+            errors.Add("visible coffers are enabled but localized names are incomplete");
+        }
+
+        foreach (var duplicateKind in data.ObjectKinds
+                     .GroupBy(kind => kind, StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1)
+                     .Select(group => group.Key))
+        {
+            errors.Add($"duplicate visible coffer object kind '{duplicateKind}'");
+        }
+
+        foreach (var duplicateName in data.LocalizedNames
+                     .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1)
+                     .Select(group => group.Key))
+        {
+            errors.Add($"duplicate visible coffer localized name '{duplicateName}'");
+        }
+
+        if (!territory.Features.VisibleCoffers)
+        {
+            return;
+        }
+
+        if (territory.VisibleCofferFarmSpots.Count == 0 || territory.VisibleCofferFarmRoute.Count == 0)
+        {
+            errors.Add("visible coffers are enabled but route or spot data is missing");
+        }
+
+        var aethernetNames = territory.Aethernets.Select(aethernet => aethernet.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var mappedAreas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var mapping in data.AreaAethernetMappings)
+        {
+            if (string.IsNullOrWhiteSpace(mapping.Area) || string.IsNullOrWhiteSpace(mapping.Aethernet))
+            {
+                errors.Add("visible coffer area-to-aethernet mapping is incomplete");
+                continue;
+            }
+
+            if (!mappedAreas.Add(mapping.Area))
+            {
+                errors.Add($"duplicate visible coffer area mapping '{mapping.Area}'");
+            }
+
+            if (!aethernetNames.Contains(mapping.Aethernet))
+            {
+                errors.Add($"visible coffer area '{mapping.Area}' references unknown aethernet '{mapping.Aethernet}'");
+            }
+        }
+
+        foreach (var area in territory.VisibleCofferFarmSpots.Select(spot => spot.Area).Where(area => !string.IsNullOrWhiteSpace(area)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!mappedAreas.Contains(area))
+            {
+                errors.Add($"visible coffer area '{area}' has no aethernet mapping");
+            }
+        }
+
+        var baseCampCount = territory.Aethernets.Count(aethernet => aethernet.IsBaseCamp);
+        if (baseCampCount == 0)
+        {
+            errors.Add("visible coffers are enabled but no Base Camp aethernet is defined");
+        }
+        else if (baseCampCount > 1)
+        {
+            errors.Add("visible coffers have multiple Base Camp aetherytes defined");
+        }
+
+        foreach (var duplicateWeatherId in data.UnsafeWeatherIds.GroupBy(id => id).Where(group => group.Count() > 1).Select(group => group.Key))
+        {
+            errors.Add($"duplicate unsafe weather id {duplicateWeatherId}");
+        }
+
+        foreach (var spot in territory.VisibleCofferFarmSpots)
+        {
+            if (string.IsNullOrWhiteSpace(spot.Area) || string.IsNullOrWhiteSpace(spot.Label))
+            {
+                errors.Add("visible coffer spot is missing area or label");
+            }
+
+            if (spot.Position.X == 0f && spot.Position.Y == 0f && spot.Position.Z == 0f)
+            {
+                errors.Add($"visible coffer spot '{spot.Area}:{spot.Label}' has an invalid zero position");
+            }
+
+            if (spot.ArrivalDistance is <= 0f)
+            {
+                errors.Add($"visible coffer spot '{spot.Area}:{spot.Label}' has an invalid arrival distance");
+            }
+        }
+
+        foreach (var duplicateRouteEntry in territory.VisibleCofferFarmRoute
+                     .GroupBy(entry => (entry.Area, entry.Label), new AreaLabelComparer())
+                     .Where(group => group.Count() > 1)
+                     .Select(group => group.Key))
+        {
+            errors.Add($"duplicate visible coffer route entry area='{duplicateRouteEntry.Area}' label='{duplicateRouteEntry.Label}'");
+        }
+    }
+
     private static void ValidateAethernetReferences(OccultCrescentTerritoryData territory, List<string> errors)
     {
         var aethernetNames = territory.Aethernets
@@ -440,7 +564,7 @@ public static class OccultCrescentDataLoader
         foreach (var territory in catalog.Territories)
         {
             logger.Info(
-                $"[OccultCrescentDataLoader] op=load key={territory.Key} territoryId={territory.TerritoryTypeId} displayName=\"{territory.DisplayName}\" features=fates:{territory.Features.Fates},ces:{territory.Features.CriticalEncounters},shopping:{territory.Features.Shopping},visibleCoffers:{territory.Features.VisibleCoffers},potTreasure:{territory.Features.PotTreasure},buffRotation:{territory.Features.BuffRotation} aethernets={territory.Aethernets.Count} criticalEncounters={territory.CriticalEncounters.Count} fates={territory.Fates.Count} potFates={territory.PotFates.Count} shoppingVendors={territory.Shopping.Vendors.Count} shoppingPages={territory.Shopping.Pages.Count} treasureCofferGroups={territory.TreasureCofferGroups.Count} visibleCofferSpots={territory.VisibleCofferFarmSpots.Count} visibleCofferRouteEntries={territory.VisibleCofferFarmRoute.Count}");
+                $"[OccultCrescentDataLoader] op=load key={territory.Key} territoryId={territory.TerritoryTypeId} displayName=\"{territory.DisplayName}\" features=fates:{territory.Features.Fates},ces:{territory.Features.CriticalEncounters},shopping:{territory.Features.Shopping},visibleCoffers:{territory.Features.VisibleCoffers},potTreasure:{territory.Features.PotTreasure},buffRotation:{territory.Features.BuffRotation} aethernets={territory.Aethernets.Count} criticalEncounters={territory.CriticalEncounters.Count} fates={territory.Fates.Count} potFates={territory.PotFates.Count} shoppingVendors={territory.Shopping.Vendors.Count} shoppingPages={territory.Shopping.Pages.Count} treasureCofferGroups={territory.TreasureCofferGroups.Count} visibleCofferBaseIds={territory.VisibleCoffers.BaseIds.Count} visibleCofferAreas={territory.VisibleCoffers.AreaAethernetMappings.Count} visibleCofferUnsafeWeatherIds={territory.VisibleCoffers.UnsafeWeatherIds.Count} visibleCofferSpots={territory.VisibleCofferFarmSpots.Count} visibleCofferRouteEntries={territory.VisibleCofferFarmRoute.Count}");
         }
     }
 

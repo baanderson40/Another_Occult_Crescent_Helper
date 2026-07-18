@@ -26,7 +26,6 @@ namespace AOCCH;
 
 public sealed class Plugin : IDalamudPlugin
 {
-    private static readonly HashSet<uint> KnownTreasureCofferBaseIds = [2014741u, 2014742u, 2014743u];
     private const float PotCofferDebugRadius = 60f;
     private const float ManualPotInteractFallbackRadius = 30f;
     private const int PotCofferDebugEntryLimit = 30;
@@ -53,7 +52,6 @@ public sealed class Plugin : IDalamudPlugin
     public CofferPositionOverrideStore CofferPositionOverrideStore { get; init; }
     public VisibleCofferPositionOverrideStore VisibleCofferPositionOverrideStore { get; init; }
     public OccultCrescentNameResolver OccultCrescentNameResolver { get; init; }
-    public CofferNameResolver CofferNameResolver { get; init; }
     public OccultCrescentScanner Scanner { get; init; }
     public VNavmeshIpc VNavmesh { get; init; }
     public LifestreamIpc Lifestream { get; init; }
@@ -109,8 +107,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData, Logger);
-        CofferNameResolver = new CofferNameResolver(DataManager, [2014741u, 2014742u, 2014743u], Logger);
-        Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, CofferNameResolver, Logger);
+        Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
@@ -127,7 +124,7 @@ public sealed class Plugin : IDalamudPlugin
         InstancedContentController = new InstancedContentController(Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
-        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferNameResolver, CofferPositionOverrideStore, Configuration, Logger);
+        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
         TreasureCofferFarmController = new TreasureCofferFarmController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
@@ -634,13 +631,14 @@ public sealed class Plugin : IDalamudPlugin
                 ? CalculateFlatDistance(objectEntry.Position, activeCandidatePosition)
                 : float.NaN;
             var objectKind = objectEntry.ObjectKind.ToString();
-            var recognizedByBaseId = KnownTreasureCofferBaseIds.Contains(objectEntry.BaseId);
-            var recognizedByLocalizedName = CofferNameResolver.IsKnownLocalizedName(objectEntry.Name.ToString());
+            var territory = Scanner.ActiveTerritoryData;
+            var recognitionSource = string.Empty;
+            var recognized = territory != null && CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out recognitionSource);
             var recognizedByTreasureKind = objectKind.StartsWith("Treasure", StringComparison.OrdinalIgnoreCase);
             var includedInVisibleScan = visibleObjectIds.Contains(objectEntry.GameObjectId);
             entries.Add((
                 playerDistance,
-                $"[Plugin] op=pot-coffer-debug-object name='{objectEntry.Name}' baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} kind={objectKind} pos=<{objectEntry.Position.X:0.0}, {objectEntry.Position.Y:0.0}, {objectEntry.Position.Z:0.0}> playerDistance={playerDistance:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")} targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()} recognizedByBaseId={recognizedByBaseId} recognizedByLocalizedName={recognizedByLocalizedName} recognizedByTreasureKind={recognizedByTreasureKind} includedInVisibleScan={includedInVisibleScan}"));
+                $"[Plugin] op=pot-coffer-debug-object name='{objectEntry.Name}' baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} kind={objectKind} pos=<{objectEntry.Position.X:0.0}, {objectEntry.Position.Y:0.0}, {objectEntry.Position.Z:0.0}> playerDistance={playerDistance:0.0}y candidateDistance={(float.IsNaN(candidateDistance) ? "n/a" : $"{candidateDistance:0.0}y")} targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()} recognized={recognized} recognition={recognitionSource} recognizedByTreasureKind={recognizedByTreasureKind} includedInVisibleScan={includedInVisibleScan}"));
         }
 
         if (entries.Count == 0)

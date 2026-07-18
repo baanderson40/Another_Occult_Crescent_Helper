@@ -57,7 +57,6 @@ public sealed class OccultCrescentScanner : IDisposable
         IObjectTable objectTable,
         OccultCrescentDataCatalog catalog,
         Configuration configuration,
-        CofferNameResolver cofferNameResolver,
         AocchLogger logger)
     {
         this.clientState = clientState;
@@ -202,7 +201,7 @@ public sealed class OccultCrescentScanner : IDisposable
 
                 if (canRunVisibleCofferRoute)
                 {
-                    ScanVisibleCoffers(visibleCoffers);
+                    ScanVisibleCoffers(territory!, visibleCoffers);
                 }
 
                 if (canFarmFates)
@@ -468,7 +467,7 @@ public sealed class OccultCrescentScanner : IDisposable
         TrackTreasureBuffState(hasTreasureBuff);
     }
 
-    private void ScanVisibleCoffers(List<VisibleCoffer> visibleCoffers)
+    private void ScanVisibleCoffers(OccultCrescentTerritoryData territory, List<VisibleCoffer> visibleCoffers)
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
         var nearbyTreasureObjects = new List<string>();
@@ -494,7 +493,9 @@ public sealed class OccultCrescentScanner : IDisposable
                 }
             }
 
-            if (!IsVisibleCofferObject(objectEntry))
+            if (!CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out var recognitionSource)
+                || !objectEntry.IsTargetable
+                || !objectEntry.IsValid())
             {
                 continue;
             }
@@ -508,6 +509,8 @@ public sealed class OccultCrescentScanner : IDisposable
                 GameObjectId = objectEntry.GameObjectId,
                 DataId = objectEntry.BaseId,
                 Name = objectEntry.Name.ToString(),
+                ObjectKind = objectKind,
+                RecognitionSource = recognitionSource,
                 Position = objectEntry.Position,
                 DistanceToPlayer = distanceToPlayer,
                 IsTargetable = objectEntry.IsTargetable,
@@ -521,11 +524,11 @@ public sealed class OccultCrescentScanner : IDisposable
             var summary = string.Join(
                 " | ",
                 visibleCoffers.Take(8).Select(coffer =>
-                    $"{coffer.Name}({coffer.GameObjectId:X}) baseId={coffer.DataId} dist={coffer.DistanceToPlayer:0.0}y pos=<{coffer.Position.X:0.0},{coffer.Position.Y:0.0},{coffer.Position.Z:0.0}> targetable={coffer.IsTargetable}"));
+                    $"localizedName='{coffer.Name}' objectId={coffer.GameObjectId:X} recognition={coffer.RecognitionSource} objectKind={coffer.ObjectKind} baseId={coffer.DataId} dist={coffer.DistanceToPlayer:0.0}y pos=<{coffer.Position.X:0.0},{coffer.Position.Y:0.0},{coffer.Position.Z:0.0}> targetable={coffer.IsTargetable}"));
             logger.DebugThrottled(
                 "visible-coffer-scan-results",
                 VisibleCofferDiagnosticLogInterval,
-                $"[Scanner] op=visible-coffer-scan count={visibleCoffers.Count} entries={summary}");
+                $"[Scanner] op=visible-coffer-scan territoryKey={territory.Key} count={visibleCoffers.Count} entries={summary}");
         }
 
         if (visibleCoffers.Count == 0 && nearbyTreasureObjects.Count > 0)
@@ -533,7 +536,7 @@ public sealed class OccultCrescentScanner : IDisposable
             logger.DebugThrottled(
                 "visible-coffer-diagnostics",
                 VisibleCofferDiagnosticLogInterval,
-                $"Visible coffer scan found no recognized coffers, but nearby treasure-kind objects were present: {string.Join(" | ", nearbyTreasureObjects)}");
+                $"[Scanner] op=visible-coffer-unrecognized territoryKey={territory.Key} entries={string.Join(" | ", nearbyTreasureObjects)}");
         }
     }
 
@@ -636,14 +639,6 @@ public sealed class OccultCrescentScanner : IDisposable
         }
 
         return ((BattleChara*)characterPointer)->ForayInfo.Level;
-    }
-
-    private bool IsVisibleCofferObject(IGameObject gameObject)
-    {
-        var objectKind = gameObject.ObjectKind.ToString();
-        return objectKind.StartsWith("Treasure", StringComparison.OrdinalIgnoreCase)
-            && gameObject.IsTargetable
-            && gameObject.IsValid();
     }
 
     private void TrackTreasureBuffState(bool hasTreasureBuff)

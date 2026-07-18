@@ -64,6 +64,7 @@ public sealed class OccultCrescentTerritoryData
     public List<FateAethernetPreference> FateAethernetPreferences { get; init; } = [];
     public CurrencyShopData Shopping { get; init; } = new();
     public List<DropData> Drops { get; init; } = [];
+    public VisibleCofferData VisibleCoffers { get; init; } = new();
 }
 
 public sealed class TerritoryFeatureAvailability
@@ -85,6 +86,22 @@ public sealed class AethernetData
     public Vector3Data Destination { get; init; } = new();
     public float InteractDistanceMin { get; init; }
     public float InteractDistanceMax { get; init; }
+    public bool IsBaseCamp { get; init; }
+}
+
+public sealed class VisibleCofferData
+{
+    public List<uint> BaseIds { get; init; } = [];
+    public List<string> ObjectKinds { get; init; } = [];
+    public List<string> LocalizedNames { get; init; } = [];
+    public List<VisibleCofferAreaAethernetData> AreaAethernetMappings { get; init; } = [];
+    public List<byte> UnsafeWeatherIds { get; init; } = [];
+}
+
+public sealed class VisibleCofferAreaAethernetData
+{
+    public string Area { get; init; } = string.Empty;
+    public string Aethernet { get; init; } = string.Empty;
 }
 
 public sealed class CriticalEncounterData

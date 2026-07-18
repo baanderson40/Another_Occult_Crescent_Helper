@@ -280,9 +280,16 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
+        var activeFlow = ActiveMatch?.Flow;
+        var featureAvailable = activeFlow switch
         {
-            SetFailure("Coffer interaction stopped because pot treasure became unavailable.");
+            CofferInteractionFlow.VisibleRoute => scanner.Snapshot.CanRunVisibleCofferRoute,
+            CofferInteractionFlow.PotReveal => scanner.Snapshot.CanRunPotTreasure,
+            _ => false,
+        };
+        if (!scanner.Snapshot.IsInSupportedTerritory || !featureAvailable)
+        {
+            SetFailure($"Coffer interaction stopped because {activeFlow} data became unavailable.");
             return;
         }
 
