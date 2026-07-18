@@ -17,7 +17,6 @@ public sealed class PotCycleTracker : IDisposable
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
     private readonly AocchLogger logger;
-    private readonly Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
 
     private PotCycleSnapshot snapshot = new();
@@ -26,13 +25,11 @@ public sealed class PotCycleTracker : IDisposable
     public PotCycleTracker(
         IFramework framework,
         OccultCrescentScanner scanner,
-        OccultCrescentData data,
         AocchLogger logger)
     {
         this.framework = framework;
         this.scanner = scanner;
         this.logger = logger;
-        potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
 
         framework.Update += OnFrameworkUpdate;
         logger.Info("[PotCycleTracker] op=init");
@@ -97,9 +94,8 @@ public sealed class PotCycleTracker : IDisposable
 
     private PotCycleSnapshot BuildSnapshot(ScannerSnapshot scannerSnapshot, DateTimeOffset now, PotCycleSnapshot previous)
     {
-        if (!scannerSnapshot.IsInSouthHorn)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
-            logger.DebugThrottled("pot-cycle-outside-south-horn", WaitLogInterval, "Pot cycle tracker is idle because the player is outside South Horn.");
             return ClearCurrentActivePot(previous, now);
         }
 
@@ -112,7 +108,6 @@ public sealed class PotCycleTracker : IDisposable
             return ClearCurrentActivePot(previous, now);
         }
 
-        logger.ResetThrottle("pot-cycle-outside-south-horn");
         logger.ResetThrottle("pot-cycle-no-active-pot");
         if (previous.CurrentActivePotFateId == activePotFate.Id)
         {
@@ -165,5 +160,5 @@ public sealed class PotCycleTracker : IDisposable
         };
 
     private PotFateData? GetOppositePotFate(uint fateId)
-        => potFatesById.Values.FirstOrDefault(potFate => potFate.FateId != fateId);
+        => scanner.ActiveTerritoryData?.PotFates.FirstOrDefault(potFate => potFate.FateId != fateId);
 }

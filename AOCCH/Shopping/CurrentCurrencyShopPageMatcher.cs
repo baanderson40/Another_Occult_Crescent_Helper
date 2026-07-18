@@ -13,7 +13,7 @@ public sealed class CurrentCurrencyShopMatch
 
 public sealed class CurrentCurrencyShopPageMatcher
 {
-    public bool TryMatch(LiveShopSnapshot snapshot, out CurrentCurrencyShopMatch? match, out string reason)
+    public bool TryMatch(IReadOnlyList<ShopCurrencyPageDefinition> pages, LiveShopSnapshot snapshot, out CurrentCurrencyShopMatch? match, out string reason)
     {
         match = null;
         reason = string.Empty;
@@ -24,10 +24,10 @@ public sealed class CurrentCurrencyShopPageMatcher
             return false;
         }
 
-        var liveEntriesById = snapshot.ShopEntries.ToDictionary(entry => entry.ItemId, entry => entry.RowIndex);
-        var candidates = new List<(ShopCurrencyPageDefinition Page, ShopCurrencyTabDefinition Tab, int OverlapCount, int RowMatchCount, int ReportedTabBonus)>();
+        var liveEntriesById = snapshot.ShopEntries.GroupBy(entry => entry.ItemId).ToDictionary(group => group.Key, group => group.First());
+        var candidates = new List<(ShopCurrencyPageDefinition Page, ShopCurrencyTabDefinition Tab, int OverlapCount, int ExactMatchCount, int ReportedTabBonus)>();
 
-        foreach (var candidatePage in ShopCurrencyCatalog.Pages)
+        foreach (var candidatePage in pages)
         {
             if (candidatePage.CurrencyItemId != snapshot.CurrencyItemId)
             {
@@ -37,25 +37,26 @@ public sealed class CurrentCurrencyShopPageMatcher
             foreach (var candidateTab in candidatePage.Tabs)
             {
                 var overlapCount = 0;
-                var rowMatchCount = 0;
+                var exactMatchCount = 0;
                 foreach (var item in candidateTab.Items)
                 {
-                    if (!liveEntriesById.TryGetValue(item.ItemId, out var liveRowIndex))
+                    if (!liveEntriesById.TryGetValue(item.ItemId, out var liveEntry))
                     {
                         continue;
                     }
 
                     overlapCount++;
-                    if (liveRowIndex == item.RowIndex)
+                    if (liveEntry.RowIndex == item.RowIndex
+                        && liveEntry.Cost == item.Cost)
                     {
-                        rowMatchCount++;
+                        exactMatchCount++;
                     }
                 }
 
                 if (overlapCount > 0)
                 {
                     var reportedTabBonus = candidateTab.TabId == snapshot.SelectedTabId ? 1 : 0;
-                    candidates.Add((candidatePage, candidateTab, overlapCount, rowMatchCount, reportedTabBonus));
+                    candidates.Add((candidatePage, candidateTab, overlapCount, exactMatchCount, reportedTabBonus));
                 }
             }
         }
@@ -67,13 +68,13 @@ public sealed class CurrentCurrencyShopPageMatcher
         }
 
         var orderedCandidates = candidates
-            .OrderByDescending(candidate => candidate.OverlapCount)
-            .ThenByDescending(candidate => candidate.RowMatchCount)
+            .OrderByDescending(candidate => candidate.ExactMatchCount)
+            .ThenByDescending(candidate => candidate.OverlapCount)
             .ThenByDescending(candidate => candidate.ReportedTabBonus)
             .ToList();
 
         var bestCandidate = orderedCandidates[0];
-        if (bestCandidate.OverlapCount < 2 && bestCandidate.RowMatchCount < 1)
+        if (bestCandidate.ExactMatchCount == 0)
         {
             reason = "The current page match confidence is too low.";
             return false;
@@ -83,7 +84,7 @@ public sealed class CurrentCurrencyShopPageMatcher
         {
             var secondCandidate = orderedCandidates[1];
             if (secondCandidate.OverlapCount == bestCandidate.OverlapCount
-                && secondCandidate.RowMatchCount == bestCandidate.RowMatchCount
+                && secondCandidate.ExactMatchCount == bestCandidate.ExactMatchCount
                 && secondCandidate.ReportedTabBonus == bestCandidate.ReportedTabBonus)
             {
                 reason = $"The current shop tab is ambiguous between {bestCandidate.Page.MenuLabel}/{bestCandidate.Tab.TabLabel} and {secondCandidate.Page.MenuLabel}/{secondCandidate.Tab.TabLabel}.";
@@ -96,7 +97,7 @@ public sealed class CurrentCurrencyShopPageMatcher
             Page = bestCandidate.Page,
             Tab = bestCandidate.Tab,
             ReportedTabId = snapshot.SelectedTabId,
-            Reason = $"Matched {bestCandidate.Page.MenuLabel}/{bestCandidate.Tab.TabLabel} with overlap={bestCandidate.OverlapCount} rowMatches={bestCandidate.RowMatchCount} reportedTab={snapshot.SelectedTabId}.",
+            Reason = $"Matched {bestCandidate.Page.MenuLabel}/{bestCandidate.Tab.TabLabel} with overlap={bestCandidate.OverlapCount} exactMatches={bestCandidate.ExactMatchCount} reportedTab={snapshot.SelectedTabId}.",
         };
         reason = match.Reason;
         return true;

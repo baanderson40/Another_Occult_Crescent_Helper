@@ -216,7 +216,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"CE Farming: {(configuration.EnableCriticalEngagementFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"FATE Farming: {(configuration.EnableFateFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
-        ImGui.TextUnformatted($"In South Horn: {(snapshot.IsInSouthHorn ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"In Supported Territory: {(snapshot.IsInSupportedTerritory ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
     }
 
@@ -492,9 +492,9 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Critical Engagements");
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
-            ImGui.TextUnformatted("Not in South Horn.");
+            ImGui.TextUnformatted("Not in a supported Occult Crescent territory.");
             return;
         }
 
@@ -552,9 +552,9 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("FATEs");
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
-            ImGui.TextUnformatted("Not in South Horn.");
+            ImGui.TextUnformatted("Not in a supported Occult Crescent territory.");
             return;
         }
 
@@ -590,9 +590,9 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Selected Target");
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
-            ImGui.TextUnformatted("No target selection outside South Horn.");
+            ImGui.TextUnformatted("No target selection outside a supported Occult Crescent territory.");
             return;
         }
 
@@ -677,7 +677,8 @@ public sealed class DebugWindow : Window, IDisposable
 
         var otherAutomationRunning = fateAutomationController.IsRunning || farmSessionController.IsRunning;
         var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
-        var canStart = snapshot.IsInSouthHorn
+        var canStart = snapshot.IsInSupportedTerritory
+            && snapshot.CanFarmCriticalEncounters
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && !otherAutomationRunning
             && !configuration.ScannerOnlyMode
@@ -710,7 +711,9 @@ public sealed class DebugWindow : Window, IDisposable
         }
         else if (!canStart)
         {
-            ImGui.TextUnformatted("Start CE Automation requires South Horn and a CE effective target.");
+            ImGui.TextUnformatted(snapshot.IsInSupportedTerritory && !snapshot.CanFarmCriticalEncounters
+                ? $"CE data is unavailable in {snapshot.TerritoryDisplayName}."
+                : "Start CE Automation requires a CE-capable territory and a CE effective target.");
         }
     }
 
@@ -761,7 +764,8 @@ public sealed class DebugWindow : Window, IDisposable
 
         var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || farmSessionController.IsRunning;
         var dependencyBlocked = !plugin.GetNormalAutomationDependencyReport().IsReady;
-        var canStart = snapshot.IsInSouthHorn
+        var canStart = snapshot.IsInSupportedTerritory
+            && snapshot.CanFarmFates
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.Fate
             && !otherAutomationRunning
             && !configuration.ScannerOnlyMode
@@ -794,7 +798,9 @@ public sealed class DebugWindow : Window, IDisposable
         }
         else if (!canStart)
         {
-            ImGui.TextUnformatted("Start FATE Automation requires South Horn and a FATE effective target.");
+            ImGui.TextUnformatted(snapshot.IsInSupportedTerritory && !snapshot.CanFarmFates
+                ? $"FATE data is unavailable in {snapshot.TerritoryDisplayName}."
+                : "Start FATE Automation requires a FATE-capable territory and a FATE effective target.");
         }
     }
 
@@ -817,7 +823,7 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         var otherAutomationRunning = criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || farmSessionController.IsRunning;
-        var canStart = snapshot.IsInSouthHorn && !otherAutomationRunning && !buffRotationController.IsRunning;
+        var canStart = snapshot.IsInSupportedTerritory && snapshot.CanRunBuffRotation && !otherAutomationRunning && !buffRotationController.IsRunning;
         canStart = canStart && !configuration.ScannerOnlyMode;
 
         ImGui.BeginDisabled(!canStart);
@@ -850,9 +856,13 @@ public sealed class DebugWindow : Window, IDisposable
         {
             ImGui.TextUnformatted("Scanner-only mode blocks buff rotation starts.");
         }
-        else if (!snapshot.IsInSouthHorn)
+        else if (!snapshot.IsInSupportedTerritory)
         {
-            ImGui.TextUnformatted("Buff rotation requires South Horn.");
+            ImGui.TextUnformatted("Buff rotation requires a supported Occult Crescent territory.");
+        }
+        else if (!snapshot.CanRunBuffRotation)
+        {
+            ImGui.TextUnformatted($"Buff rotation is unavailable in {snapshot.TerritoryDisplayName}.");
         }
         else if (buffRotationController.IsRunning)
         {
@@ -1046,8 +1056,8 @@ public sealed class DebugWindow : Window, IDisposable
 
     private void DrawVisibleCofferFarm()
     {
-        var routeEntries = plugin.OccultCrescentData.VisibleCofferFarmRoute;
-        var routeSpots = plugin.OccultCrescentData.VisibleCofferFarmSpots;
+        var routeEntries = plugin.Scanner.ActiveTerritoryData?.VisibleCofferFarmRoute ?? [];
+        var routeSpots = plugin.Scanner.ActiveTerritoryData?.VisibleCofferFarmSpots ?? [];
 
         ImGui.TextUnformatted("Overworld Coffer Route");
         ImGui.TextUnformatted($"State: {treasureCofferFarmController.State}");
@@ -1239,16 +1249,16 @@ public sealed class DebugWindow : Window, IDisposable
             ImGui.TextWrapped("Automation start requests are blocked while scanner-only mode is enabled.");
         }
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
-            ImGui.TextUnformatted("Automation is currently outside South Horn.");
+            ImGui.TextUnformatted("Automation is currently outside a supported Occult Crescent territory.");
         }
     }
 
     private void DrawTestReadiness(ScannerSnapshot snapshot)
     {
         ImGui.TextUnformatted("Automation Test Readiness");
-        ImGui.TextUnformatted($"South Horn: {(snapshot.IsInSouthHorn ? "Ready" : "Blocked")}");
+        ImGui.TextUnformatted($"Supported Territory: {(snapshot.IsInSupportedTerritory ? "Ready" : "Blocked")}");
         ImGui.TextUnformatted($"Return Required: {(configuration.UseReturn ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Return Available: {(movementController.CanUseReturnAction ? "Yes" : "No")}");
         ImGui.TextUnformatted($"Farm Start: {FormatValue(GetFarmStartBlocker() ?? "Ready for full farm test")}");
@@ -1307,9 +1317,9 @@ public sealed class DebugWindow : Window, IDisposable
             return "Overworld coffer route start is blocked while the farm session is running.";
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            return "Overworld coffer route start requires South Horn.";
+            return "Overworld coffer route requires a supported Occult Crescent territory.";
         }
 
         var dependencyReport = plugin.GetNormalAutomationDependencyReport();

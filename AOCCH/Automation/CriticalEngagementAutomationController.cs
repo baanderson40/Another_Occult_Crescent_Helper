@@ -186,9 +186,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return false;
         }
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory || !snapshot.CanFarmCriticalEncounters)
         {
-            SetFailure("Critical Engagement automation requires South Horn.");
+            SetFailure(snapshot.IsInSupportedTerritory
+                ? $"Critical Engagement automation is unavailable in {snapshot.TerritoryDisplayName}."
+                : "Critical Engagement automation requires a supported Occult Crescent territory.");
             return false;
         }
 
@@ -274,9 +276,9 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         var snapshot = scanner.Snapshot;
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory || !snapshot.CanFarmCriticalEncounters)
         {
-            Stop("Left South Horn while CE automation was active.");
+            Stop("CE automation stopped because its territory feature became unavailable.");
             return;
         }
 

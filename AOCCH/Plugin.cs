@@ -26,7 +26,6 @@ namespace AOCCH;
 
 public sealed class Plugin : IDalamudPlugin
 {
-    private const uint SouthHornTerritoryTypeId = 1252;
     private static readonly HashSet<uint> KnownTreasureCofferBaseIds = [2014741u, 2014742u, 2014743u];
     private const float PotCofferDebugRadius = 60f;
     private const float ManualPotInteractFallbackRadius = 30f;
@@ -50,7 +49,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public Configuration Configuration { get; init; }
     public AocchLogger Logger { get; init; }
-    public OccultCrescentData OccultCrescentData { get; init; }
+    public OccultCrescentDataCatalog OccultCrescentData { get; init; }
     public CofferPositionOverrideStore CofferPositionOverrideStore { get; init; }
     public VisibleCofferPositionOverrideStore VisibleCofferPositionOverrideStore { get; init; }
     public OccultCrescentNameResolver OccultCrescentNameResolver { get; init; }
@@ -92,7 +91,7 @@ public sealed class Plugin : IDalamudPlugin
     private DebugWindow DebugWindow { get; init; }
     private DependencyWindow DependencyWindow { get; init; }
     private bool isDisposing;
-    private bool wasInSouthHorn;
+    private string lastTerritoryKey = string.Empty;
 
     public Plugin()
     {
@@ -116,9 +115,9 @@ public sealed class Plugin : IDalamudPlugin
         Lifestream = new LifestreamIpc(Logger);
         BossMod = new BossModIpc(Logger);
         DependencyChecker = new NormalAutomationDependencyChecker(VNavmesh, Lifestream, BossMod);
-        RoutePlanner = new RoutePlanner(OccultCrescentData, Configuration, Logger);
+        RoutePlanner = new RoutePlanner(Configuration, Logger);
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
-        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, OccultCrescentData, Logger);
+        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, Lifestream, RoutePlanner, GameActionController, Configuration, Logger);
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
@@ -126,22 +125,22 @@ public sealed class Plugin : IDalamudPlugin
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(Logger);
-        PotCycleTracker = new PotCycleTracker(Framework, Scanner, OccultCrescentData, Logger);
+        PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
-        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferNameResolver, OccultCrescentData, CofferPositionOverrideStore, Configuration, Logger);
+        TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferNameResolver, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
-        TreasureCofferFarmController = new TreasureCofferFarmController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, OccultCrescentData, VisibleCofferPositionOverrideStore, Configuration, Logger);
+        TreasureCofferFarmController = new TreasureCofferFarmController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, OccultCrescentData, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
         ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
         ShopPurchaseController = new ShopPurchaseController(Framework, ChatGui, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
-        ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
+        ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Scanner, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
         FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, Lifestream, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
 
-        ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentData, OccultCrescentNameResolver, Logger);
+        ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
         DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController, TreasureCofferFarmController);
@@ -167,7 +166,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
-        wasInSouthHorn = ClientState.TerritoryType == SouthHornTerritoryTypeId;
+        lastTerritoryKey = OccultCrescentData.GetTerritoryOrNull(ClientState.TerritoryType)?.Key ?? string.Empty;
         ClientState.TerritoryChanged += OnTerritoryChanged;
 
         Logger.Info($"[Plugin] op=loaded name=\"{PluginInterface.Manifest.Name}\"");
@@ -312,11 +311,25 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "coffer-start":
             {
+                var territory = Scanner.ActiveTerritoryData;
+                if (territory == null)
+                {
+                    ChatGui.Print("Overworld coffer route requires a supported Occult Crescent territory.");
+                    break;
+                }
+
+                if (!Scanner.Snapshot.CanRunVisibleCofferRoute)
+                {
+                    ChatGui.Print($"Overworld coffer route data is unavailable in {territory.DisplayName}.");
+                    break;
+                }
+
+                var routeCount = territory.VisibleCofferFarmRoute.Count;
                 int? startRouteIndex = null;
                 var oneBasedRouteIndex = 0;
-                if (tokens.Length > 2 || (tokens.Length == 2 && (!int.TryParse(tokens[1], out oneBasedRouteIndex) || oneBasedRouteIndex < 1 || oneBasedRouteIndex > OccultCrescentData.VisibleCofferFarmRoute.Count)))
+                if (tokens.Length > 2 || (tokens.Length == 2 && (!int.TryParse(tokens[1], out oneBasedRouteIndex) || oneBasedRouteIndex < 1 || oneBasedRouteIndex > routeCount)))
                 {
-                    ChatGui.Print($"Coffer route index must be between 1 and {OccultCrescentData.VisibleCofferFarmRoute.Count}.");
+                    ChatGui.Print($"Coffer route index must be between 1 and {routeCount}.");
                     break;
                 }
 
@@ -419,7 +432,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var productionReason = reason;
-        if (!Scanner.Snapshot.IsInSouthHorn)
+        if (!Scanner.Snapshot.IsInSupportedTerritory || !Scanner.Snapshot.CanRunPotTreasure)
         {
             reason = productionReason;
             return false;
@@ -562,7 +575,7 @@ public sealed class Plugin : IDalamudPlugin
             ? "unavailable"
             : $"<{position.Value.X:0.0}, {position.Value.Y:0.0}, {position.Value.Z:0.0}>";
 
-        Logger.Info($"[Plugin] op=magical-elixir-debug label={label} time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} hp={player?.CurrentHp ?? 0}");
+        Logger.Info($"[Plugin] op=magical-elixir-debug label={label} time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} playerPos={positionText} hp={player?.CurrentHp ?? 0}");
         Logger.Info($"[Plugin] op=magical-elixir-debug-conditions label={label} inCombat={Condition[ConditionFlag.InCombat]} casting={Condition[ConditionFlag.Casting]} betweenAreas={Condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={Condition[ConditionFlag.OccupiedInQuestEvent]} mounted={Condition[ConditionFlag.Mounted]} occupied={Condition[ConditionFlag.Occupied]}");
         Logger.Info($"[Plugin] op=magical-elixir-debug-treasure label={label} buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s");
         Logger.Info($"[Plugin] op=magical-elixir-debug-logmessages label={label} capture={TreasureHintTracker.GetDebugLogMessageCaptureSummary()}");
@@ -585,7 +598,7 @@ public sealed class Plugin : IDalamudPlugin
             ? $"<{activeCandidatePosition.X:0.0}, {activeCandidatePosition.Y:0.0}, {activeCandidatePosition.Z:0.0}>"
             : "unavailable";
 
-        Logger.Info($"[Plugin] op=pot-coffer-debug time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={positionText} activeCandidate={activeCandidate?.Label ?? "none"} candidatePos={candidatePositionText}");
+        Logger.Info($"[Plugin] op=pot-coffer-debug time={DateTimeOffset.UtcNow:O} territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} playerPos={positionText} activeCandidate={activeCandidate?.Label ?? "none"} candidatePos={candidatePositionText}");
         Logger.Info($"[Plugin] op=pot-coffer-debug-treasure buff={snapshot.HasTreasureBuff} remaining={snapshot.TreasureBuffRemainingSeconds:0.0}s treasureSessionState={treasureSnapshot.SessionState} sessionId={treasureSnapshot.SessionId} revision={treasureSnapshot.Revision} searchState={TreasureSearchController.State} searchTransition=\"{TreasureSearchController.LastTransition}\" visibleCoffers={snapshot.VisibleCoffers.Count}");
 
         foreach (var visibleCoffer in snapshot.VisibleCoffers)
@@ -668,7 +681,7 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
-        Logger.Info($"[Plugin] op=probe-foray-player territory={ClientState.TerritoryType} southHorn={snapshot.IsInSouthHorn} playerPos={playerPositionText} hp={player?.CurrentHp ?? 0} forayLevel={(snapshot.PlayerForayLevel?.ToString() ?? "unavailable")} ocState={stateAvailable} knowledge={currentKnowledge} neededKnowledge={neededKnowledge} knowledgeSync={knowledgeLevelSync} supportJob={currentSupportJob} supportJobLevel={supportJobLevel}");
+        Logger.Info($"[Plugin] op=probe-foray-player territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} playerPos={playerPositionText} hp={player?.CurrentHp ?? 0} forayLevel={(snapshot.PlayerForayLevel?.ToString() ?? "unavailable")} ocState={stateAvailable} knowledge={currentKnowledge} neededKnowledge={neededKnowledge} knowledgeSync={knowledgeLevelSync} supportJob={currentSupportJob} supportJobLevel={supportJobLevel}");
 
         var target = TargetManager.Target;
         if (target == null)
@@ -771,39 +784,41 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        var leavingSouthHorn = wasInSouthHorn && territoryType != SouthHornTerritoryTypeId;
-        wasInSouthHorn = territoryType == SouthHornTerritoryTypeId;
+        var territory = OccultCrescentData.GetTerritoryOrNull(territoryType);
+        var newTerritoryKey = territory?.Key ?? string.Empty;
+        var territoryChanged = !string.Equals(lastTerritoryKey, newTerritoryKey, StringComparison.OrdinalIgnoreCase);
 
-        if (territoryType == SouthHornTerritoryTypeId)
+        if (territory != null)
         {
             if (!MainWindow.IsOpen)
             {
                 MainWindow.IsOpen = true;
-                Logger.Info("[Plugin] op=main-window-auto-open state=open reason=south-horn-entry");
+                Logger.Info($"[Plugin] op=main-window-auto-open state=open reason=territory-entry territoryKey={territory.Key} territoryId={territory.TerritoryTypeId}");
             }
-
-            return;
         }
-
-        if (MainWindow.IsOpen)
+        else if (MainWindow.IsOpen)
         {
             MainWindow.IsOpen = false;
             Logger.Info($"[Plugin] op=main-window-auto-open state=closed territory={territoryType}");
         }
 
-        if (leavingSouthHorn)
+        if (territoryChanged && (!string.IsNullOrWhiteSpace(lastTerritoryKey) || territory != null))
         {
-            ResetInstanceStateForTerritoryExit(territoryType);
+            ResetInstanceStateForTerritoryChange(lastTerritoryKey, newTerritoryKey, territoryType);
         }
+
+        lastTerritoryKey = newTerritoryKey;
     }
 
-    private void ResetInstanceStateForTerritoryExit(uint territoryType)
+    private void ResetInstanceStateForTerritoryChange(string previousTerritoryKey, string newTerritoryKey, uint territoryType)
     {
-        var reason = $"Left South Horn for territory {territoryType}; resetting instance state.";
+        var previousKey = string.IsNullOrWhiteSpace(previousTerritoryKey) ? "unsupported" : previousTerritoryKey;
+        var nextKey = string.IsNullOrWhiteSpace(newTerritoryKey) ? "unsupported" : newTerritoryKey;
+        var reason = $"Changed supported territory from {previousKey} to {nextKey} (territory {territoryType}); resetting instance state.";
 
         if (Configuration.StartingPotFate != StartingPotFateMode.Auto)
         {
-            Logger.Info($"[Plugin] op=setting-change key=StartingPotFate old={Configuration.StartingPotFate} new={StartingPotFateMode.Auto} reason=south-horn-exit territory={territoryType}");
+            Logger.Info($"[Plugin] op=setting-change key=StartingPotFate old={Configuration.StartingPotFate} new={StartingPotFateMode.Auto} reason=territory-change territory={territoryType} previous={previousKey} next={nextKey}");
             Configuration.StartingPotFate = StartingPotFateMode.Auto;
             Configuration.Save();
         }
@@ -813,6 +828,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void ResetAutomationState(string reason)
     {
+        if (ManualCurrencyShoppingController.IsRunning)
+        {
+            ManualCurrencyShoppingController.Stop(reason);
+        }
+
         if (FarmSessionController.IsRunning)
         {
             FarmSessionController.Stop(reason);
@@ -933,6 +953,12 @@ public sealed class Plugin : IDalamudPlugin
         {
             Logger.Info("[Plugin] op=panic-stop component=CofferFarm action=stop");
             TreasureCofferFarmController.Stop(reason);
+        }
+
+        if (ManualCurrencyShoppingController.IsRunning)
+        {
+            Logger.Info("[Plugin] op=panic-stop component=CurrencyShopping action=stop");
+            ManualCurrencyShoppingController.Stop(reason);
         }
 
         if (BuffRotationController.IsRunning)

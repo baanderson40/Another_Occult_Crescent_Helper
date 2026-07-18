@@ -241,9 +241,11 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory || !snapshot.CanFarmFates)
         {
-            SetFailure("FATE automation requires South Horn.");
+            SetFailure(snapshot.IsInSupportedTerritory
+                ? $"FATE automation is unavailable in {snapshot.TerritoryDisplayName}."
+                : "FATE automation requires a supported Occult Crescent territory.");
             return false;
         }
 
@@ -356,9 +358,9 @@ public sealed class FateAutomationController : IDisposable
         }
 
         var snapshot = scanner.Snapshot;
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory || !snapshot.CanFarmFates)
         {
-            Stop("Left South Horn while FATE automation was active.");
+            Stop("FATE automation stopped because its territory feature became unavailable.");
             return;
         }
 

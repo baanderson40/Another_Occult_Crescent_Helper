@@ -1,11 +1,56 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
+using AOCCH.Shopping;
 
 namespace AOCCH.Data;
 
-public sealed class OccultCrescentData
+public sealed class OccultCrescentDataCatalog
 {
+    private Dictionary<uint, OccultCrescentTerritoryData>? territoriesByTypeId;
+    private Dictionary<string, OccultCrescentTerritoryData>? territoriesByKey;
+
+    public List<OccultCrescentTerritoryData> Territories { get; init; } = [];
+
+    public bool TryGetTerritory(uint territoryTypeId, out OccultCrescentTerritoryData territory)
+        => GetTerritoriesByTypeId().TryGetValue(territoryTypeId, out territory!);
+
+    public OccultCrescentTerritoryData? GetTerritoryOrNull(uint territoryTypeId)
+        => GetTerritoriesByTypeId().GetValueOrDefault(territoryTypeId);
+
+    public OccultCrescentTerritoryData? GetTerritoryOrNull(string key)
+        => string.IsNullOrWhiteSpace(key)
+            ? null
+            : GetTerritoriesByKey().GetValueOrDefault(key);
+
+    public bool IsSupportedTerritory(uint territoryTypeId)
+        => GetTerritoriesByTypeId().ContainsKey(territoryTypeId);
+
+    public void RebuildLookups()
+    {
+        territoriesByTypeId = Territories.ToDictionary(territory => territory.TerritoryTypeId);
+        territoriesByKey = Territories.ToDictionary(territory => territory.Key, System.StringComparer.OrdinalIgnoreCase);
+    }
+
+    private Dictionary<uint, OccultCrescentTerritoryData> GetTerritoriesByTypeId()
+    {
+        territoriesByTypeId ??= Territories.ToDictionary(territory => territory.TerritoryTypeId);
+        return territoriesByTypeId;
+    }
+
+    private Dictionary<string, OccultCrescentTerritoryData> GetTerritoriesByKey()
+    {
+        territoriesByKey ??= Territories.ToDictionary(territory => territory.Key, System.StringComparer.OrdinalIgnoreCase);
+        return territoriesByKey;
+    }
+}
+
+public sealed class OccultCrescentTerritoryData
+{
+    public string Key { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
     public uint TerritoryTypeId { get; init; }
+    public TerritoryFeatureAvailability Features { get; init; } = new();
     public float AethernetInteractDistanceMin { get; init; }
     public float AethernetInteractDistanceMax { get; init; }
     public float MountedTravelSpeed { get; init; }
@@ -17,7 +62,18 @@ public sealed class OccultCrescentData
     public List<VisibleCofferFarmSpotData> VisibleCofferFarmSpots { get; init; } = [];
     public List<VisibleCofferFarmRouteEntryData> VisibleCofferFarmRoute { get; init; } = [];
     public List<FateAethernetPreference> FateAethernetPreferences { get; init; } = [];
+    public CurrencyShopData Shopping { get; init; } = new();
     public List<DropData> Drops { get; init; } = [];
+}
+
+public sealed class TerritoryFeatureAvailability
+{
+    public bool Fates { get; init; }
+    public bool CriticalEncounters { get; init; }
+    public bool Shopping { get; init; }
+    public bool VisibleCoffers { get; init; }
+    public bool PotTreasure { get; init; }
+    public bool BuffRotation { get; init; }
 }
 
 public sealed class AethernetData
@@ -35,7 +91,6 @@ public sealed class CriticalEncounterData
 {
     public uint Id { get; init; }
     public string Name { get; init; } = string.Empty;
-    public uint TerritoryTypeId { get; init; }
     public string PreferredAethernet { get; init; } = string.Empty;
     public int Priority { get; init; }
     public float EngageRadius { get; init; }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AOCCH.Shopping;
 
@@ -9,14 +10,27 @@ public sealed class ShopCurrencyPageDefinition
     public required string MenuLabel { get; init; }
     public required uint CurrencyItemId { get; init; }
     public required string CurrencyName { get; init; }
-    public required IReadOnlyList<ShopCurrencyTabDefinition> Tabs { get; init; }
+    public List<ShopCurrencyTabDefinition> Tabs { get; init; } = [];
 }
 
 public sealed class ShopCurrencyTabDefinition
 {
     public required int TabId { get; init; }
     public required string TabLabel { get; init; }
-    public required IReadOnlyList<ShopCurrencyItemDefinition> Items { get; init; }
+    public List<ShopCurrencyItemDefinition> Items { get; init; } = [];
+}
+
+public sealed class CurrencyShopData
+{
+    public List<CurrencyShopVendorDefinition> Vendors { get; init; } = [];
+    public List<ShopCurrencyPageDefinition> Pages { get; init; } = [];
+}
+
+public sealed class CurrencyShopVendorDefinition
+{
+    public uint DataId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string PreferredAethernet { get; init; } = string.Empty;
 }
 
 public sealed class ShopCurrencyItemDefinition
@@ -326,4 +340,11 @@ public static class ShopCurrencyCatalog
             ],
         },
     ];
+
+    public static CurrencyShopData CreateSouthHornData(IReadOnlyList<CurrencyShopVendorDefinition> vendors)
+        => new()
+        {
+            Vendors = vendors.ToList(),
+            Pages = Pages.ToList(),
+        };
 }

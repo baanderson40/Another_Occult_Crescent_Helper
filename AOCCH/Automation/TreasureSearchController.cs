@@ -74,8 +74,6 @@ public sealed class TreasureSearchController : IDisposable
     private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
-    private readonly float mountedTravelSpeed;
-    private readonly Dictionary<uint, Dictionary<string, TreasureCofferGroupData>> groupsByFateId;
     private readonly object gate = new();
     private readonly HashSet<string> handledCandidateLabels = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TreasureCofferCandidateData> orderedCandidates = [];
@@ -134,7 +132,6 @@ public sealed class TreasureSearchController : IDisposable
         TreasureHintTracker treasureHintTracker,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         CofferNameResolver cofferNameResolver,
-        OccultCrescentData data,
         CofferPositionOverrideStore cofferPositionOverrideStore,
         Configuration configuration,
         AocchLogger logger)
@@ -149,12 +146,6 @@ public sealed class TreasureSearchController : IDisposable
         this.cofferPositionOverrideStore = cofferPositionOverrideStore;
         this.configuration = configuration;
         this.logger = logger;
-        mountedTravelSpeed = data.MountedTravelSpeed > 0 ? data.MountedTravelSpeed : 14.13f;
-        groupsByFateId = data.TreasureCofferGroups
-            .GroupBy(group => group.FateId)
-            .ToDictionary(
-                group => group.Key,
-                group => group.ToDictionary(entry => entry.GroupKey, StringComparer.OrdinalIgnoreCase));
 
         framework.Update += OnFrameworkUpdate;
     }
@@ -509,9 +500,11 @@ public sealed class TreasureSearchController : IDisposable
     {
         match = null;
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
         {
-            reason = "Pot reveal interaction debugging requires South Horn.";
+            reason = scanner.Snapshot.IsInSupportedTerritory
+                ? $"Pot reveal interaction debugging is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Pot reveal interaction debugging requires a supported Occult Crescent territory.";
             return false;
         }
 
@@ -605,9 +598,9 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
         {
-            SetFailure("Left South Horn while treasure search was active.");
+            SetFailure("Left a pot-supported territory while treasure search was active.");
             return;
         }
 
@@ -1691,6 +1684,7 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryGetGroup(uint fateId, string groupKey, out TreasureCofferGroupData group)
     {
         group = new TreasureCofferGroupData();
+        var groupsByFateId = GetGroupsByFateId();
         if (!groupsByFateId.TryGetValue(fateId, out var groups) || groups == null)
         {
             return false;
@@ -2278,9 +2272,18 @@ public sealed class TreasureSearchController : IDisposable
 
     private TimeSpan GetRefinementMoveTimeout(float step)
     {
+        var mountedTravelSpeed = scanner.ActiveTerritoryData?.MountedTravelSpeed > 0 ? scanner.ActiveTerritoryData.MountedTravelSpeed : 14.13f;
         var timeoutSeconds = ((step / Math.Max(0.1f, mountedTravelSpeed)) * 2f) + 15f;
         return TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 12f, 45f));
     }
+
+    private Dictionary<uint, Dictionary<string, TreasureCofferGroupData>> GetGroupsByFateId()
+        => scanner.ActiveTerritoryData?.TreasureCofferGroups
+            .GroupBy(group => group.FateId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToDictionary(entry => entry.GroupKey, StringComparer.OrdinalIgnoreCase))
+           ?? [];
 
     private static Vector3 GetDirectionVector(TreasureDirection direction)
         => direction switch

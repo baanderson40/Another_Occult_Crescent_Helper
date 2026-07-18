@@ -17,18 +17,17 @@ public sealed class RoutePlanner
     private const float AethernetTransitionPenaltySeconds = 3f;
     private const float BaseDirectThreshold = 120f;
 
-    private readonly OccultCrescentData data;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
 
-    public RoutePlanner(OccultCrescentData data, Configuration configuration, AocchLogger logger)
+    public RoutePlanner(Configuration configuration, AocchLogger logger)
     {
-        this.data = data;
         this.configuration = configuration;
         this.logger = logger;
     }
 
     public bool TryPlan(
+        OccultCrescentTerritoryData territory,
         TargetSelection selection,
         Vector3 playerPosition,
         out PlannedRoute route,
@@ -55,22 +54,22 @@ public sealed class RoutePlanner
         }
 
         var directDistance = CalculateFlatDistance(playerPosition, destination.Value);
-        var travelSpeed = MathF.Max(data.MountedTravelSpeed, 1f);
-        if (data.Aethernets.Count == 0)
+        var travelSpeed = MathF.Max(territory.MountedTravelSpeed, 1f);
+        if (territory.Aethernets.Count == 0)
         {
             route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride, earlyDismountDistance: null, earlyDismountTarget: null);
             logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-aethernet-data");
             return true;
         }
 
-        var preferredAethernet = GetPreferredAethernet(selection, destination.Value);
+        var preferredAethernet = GetPreferredAethernet(territory, selection, destination.Value);
         if (preferredAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride, earlyDismountDistance: null, earlyDismountTarget: null);
             return true;
         }
 
-        var sourceAethernet = GetClosestAethernet(playerPosition);
+        var sourceAethernet = GetClosestAethernet(territory, playerPosition);
         if (sourceAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination.Value, directDistance, finalArrivalToleranceOverride, earlyDismountDistance: null, earlyDismountTarget: null);
@@ -89,13 +88,14 @@ public sealed class RoutePlanner
             returnTime = CalculateReturnTime(preferredAethernet, destination.Value, travelSpeed);
         }
 
-        route = ChooseRoute(targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance: null, earlyDismountTarget: null);
+        route = ChooseRoute(territory, targetDescription, playerPosition, destination.Value, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance: null, earlyDismountTarget: null);
 
         logger.Info($"[RoutePlanner] op=route-selected target=\"{targetDescription}\" routeType={route.RouteType} selectionReason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}");
         return true;
     }
 
     public bool TryPlan(
+        OccultCrescentTerritoryData territory,
         FateRunTarget target,
         Vector3 playerPosition,
         out PlannedRoute route,
@@ -107,6 +107,7 @@ public sealed class RoutePlanner
     {
         var earlyDismountTarget = target.HasLiveTarget ? target.LiveTargetPosition : target.Position;
         var planned = TryPlanToLocation(
+            territory,
             $"FATE {target.Name} ({target.Id})",
             target.PreferredAethernet,
             finalDestinationOverride ?? target.Position,
@@ -127,6 +128,7 @@ public sealed class RoutePlanner
     }
 
     public bool TryPlanToLocation(
+        OccultCrescentTerritoryData territory,
         string targetDescription,
         string preferredAethernetName,
         Vector3 destination,
@@ -148,22 +150,22 @@ public sealed class RoutePlanner
         }
 
         var directDistance = CalculateFlatDistance(playerPosition, destination);
-        var travelSpeed = MathF.Max(data.MountedTravelSpeed, 1f);
-        if (data.Aethernets.Count == 0)
+        var travelSpeed = MathF.Max(territory.MountedTravelSpeed, 1f);
+        if (territory.Aethernets.Count == 0)
         {
             route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget);
             logger.Warning($"[RoutePlanner] op=direct-fallback target=\"{targetDescription}\" reason=no-aethernet-data");
             return true;
         }
 
-        var preferredAethernet = GetPreferredAethernet(preferredAethernetName, destination);
+        var preferredAethernet = GetPreferredAethernet(territory, preferredAethernetName, destination);
         if (preferredAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget);
             return true;
         }
 
-        var sourceAethernet = GetClosestAethernet(playerPosition);
+        var sourceAethernet = GetClosestAethernet(territory, playerPosition);
         if (sourceAethernet == null)
         {
             route = CreateDirectRoute(targetDescription, destination, directDistance, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget);
@@ -179,18 +181,18 @@ public sealed class RoutePlanner
             ? CalculateReturnTime(preferredAethernet, destination, travelSpeed)
             : float.MaxValue;
 
-        route = ChooseRoute(targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget);
+        route = ChooseRoute(territory, targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget);
 
         logger.Info($"[RoutePlanner] op=route-selected target=\"{targetDescription}\" routeType={route.RouteType} selectionReason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}");
         return true;
     }
 
-    public bool TryPlanBaseCampRecovery(Vector3 playerPosition, out PlannedRoute route, out string failureReason, bool allowReturn = true)
+    public bool TryPlanBaseCampRecovery(OccultCrescentTerritoryData territory, Vector3 playerPosition, out PlannedRoute route, out string failureReason, bool allowReturn = true)
     {
         route = new PlannedRoute();
         failureReason = string.Empty;
 
-        var baseCamp = GetBaseCampAethernet();
+        var baseCamp = GetBaseCampAethernet(territory);
         if (baseCamp == null)
         {
             failureReason = "Base Camp aethernet data is unavailable.";
@@ -264,6 +266,7 @@ public sealed class RoutePlanner
     }
 
     private PlannedRoute ChooseRoute(
+        OccultCrescentTerritoryData territory,
         string targetDescription,
         Vector3 playerPosition,
         Vector3 destination,
@@ -277,7 +280,7 @@ public sealed class RoutePlanner
         float? earlyDismountDistance,
         Vector3? earlyDismountTarget)
     {
-        var baseCamp = GetBaseCampAethernet();
+        var baseCamp = GetBaseCampAethernet(territory);
         var closeToBaseCamp = baseCamp != null
             && string.Equals(preferredAethernet.Name, baseCamp.Name, StringComparison.OrdinalIgnoreCase)
             && CalculateFlatDistance(playerPosition, baseCamp.Position.ToVector3()) <= BaseDirectThreshold;
@@ -454,12 +457,12 @@ public sealed class RoutePlanner
         };
     }
 
-    private AethernetData? GetClosestAethernet(Vector3 position)
-        => data.Aethernets
+    private AethernetData? GetClosestAethernet(OccultCrescentTerritoryData territory, Vector3 position)
+        => territory.Aethernets
             .OrderBy(aethernet => CalculateFlatDistance(position, aethernet.Position.ToVector3()))
             .FirstOrDefault();
 
-    private AethernetData? GetPreferredAethernet(TargetSelection selection, Vector3 destination)
+    private AethernetData? GetPreferredAethernet(OccultCrescentTerritoryData territory, TargetSelection selection, Vector3 destination)
     {
         var preferredName = selection.Kind switch
         {
@@ -468,21 +471,21 @@ public sealed class RoutePlanner
             _ => string.Empty,
         };
 
-        return GetPreferredAethernet(preferredName, destination);
+        return GetPreferredAethernet(territory, preferredName, destination);
     }
 
-    private AethernetData? GetPreferredAethernet(string? preferredName, Vector3 destination)
+    private AethernetData? GetPreferredAethernet(OccultCrescentTerritoryData territory, string? preferredName, Vector3 destination)
     {
         if (!string.IsNullOrWhiteSpace(preferredName))
         {
-            var explicitMatch = data.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, preferredName, StringComparison.OrdinalIgnoreCase));
+            var explicitMatch = territory.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, preferredName, StringComparison.OrdinalIgnoreCase));
             if (explicitMatch != null)
             {
                 return explicitMatch;
             }
         }
 
-        return data.Aethernets
+        return territory.Aethernets
             .OrderBy(aethernet => CalculateFlatDistance(destination, aethernet.Destination.ToVector3()))
             .FirstOrDefault();
     }
@@ -530,6 +533,6 @@ public sealed class RoutePlanner
             + (string.Equals(preferredAethernet.Name, "BaseCamp", StringComparison.OrdinalIgnoreCase) ? 0f : AethernetTransitionPenaltySeconds)
             + (CalculateFlatDistance(preferredAethernet.Destination.ToVector3(), destination) / travelSpeed);
 
-    private AethernetData? GetBaseCampAethernet()
-        => data.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, "BaseCamp", StringComparison.OrdinalIgnoreCase));
+    private AethernetData? GetBaseCampAethernet(OccultCrescentTerritoryData territory)
+        => territory.Aethernets.FirstOrDefault(aethernet => string.Equals(aethernet.Name, "BaseCamp", StringComparison.OrdinalIgnoreCase));
 }

@@ -11,15 +11,13 @@ using Dalamud.Plugin.Services;
 using AOCCH.Automation;
 using AOCCH.Movement;
 using AOCCH.Logging;
+using AOCCH.Scanning;
 using System.Runtime.InteropServices;
 
 namespace AOCCH.Shopping;
 
 public sealed class ManualCurrencyShoppingController : IDisposable
 {
-    private const uint ExpeditionAntiquarianDataId = 1053614;
-    private const uint EnlightenmentSilverPieceItemId = 45043;
-    private const uint EnlightenmentGoldPieceItemId = 45044;
     private const float VendorInteractionRange = 3.25f;
     private static readonly TimeSpan NavigationRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan NavigationSettleDelay = TimeSpan.FromMilliseconds(250);
@@ -33,6 +31,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private readonly IFramework framework;
     private readonly IGameGui gameGui;
     private readonly ICondition condition;
+    private readonly OccultCrescentScanner scanner;
     private readonly Configuration configuration;
     private readonly GameActionController gameActionController;
     private readonly MovementController movementController;
@@ -47,6 +46,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private readonly AocchLogger logger;
     private readonly object gate = new();
     private readonly HashSet<int> skippedTargetIndices = [];
+    private readonly HashSet<uint> qualifiedCurrencyIds = [];
 
     private bool isRunning;
     private string status = "Idle";
@@ -77,13 +77,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private bool vendorTravelPending;
     private bool vendorRecoveryAttempted;
     private bool vendorRecoveryPending;
-    private bool silverQualifiedForCurrentRun;
-    private bool goldQualifiedForCurrentRun;
 
     public ManualCurrencyShoppingController(
         IFramework framework,
         IGameGui gameGui,
         ICondition condition,
+        OccultCrescentScanner scanner,
         Configuration configuration,
         GameActionController gameActionController,
         MovementController movementController,
@@ -100,6 +99,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         this.framework = framework;
         this.gameGui = gameGui;
         this.condition = condition;
+        this.scanner = scanner;
         this.configuration = configuration;
         this.gameActionController = gameActionController;
         this.movementController = movementController;
@@ -242,6 +242,13 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     public bool Start()
     {
+        if (!TryGetShoppingAvailabilityFailure(out var availabilityFailure))
+        {
+            UpdateStatus(availabilityFailure);
+            logger.Warning($"[ManualCurrencyShopping] op=start-blocked reason=\"{availabilityFailure}\"");
+            return false;
+        }
+
         lock (gate)
         {
             if (isRunning)
@@ -277,8 +284,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
-            silverQualifiedForCurrentRun = false;
-            goldQualifiedForCurrentRun = false;
+            qualifiedCurrencyIds.Clear();
             skippedTargetIndices.Clear();
         }
 
@@ -296,8 +302,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                 return false;
             }
 
-            silverQualifiedForCurrentRun = qualification.SilverQualified;
-            goldQualifiedForCurrentRun = qualification.GoldQualified;
+            qualifiedCurrencyIds.UnionWith(qualification.CurrencyItemIds);
         }
 
         logger.Info("[ManualCurrencyShopping] op=start");
@@ -318,6 +323,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     private void Stop(ShoppingStopKind stopKind, string reason)
     {
+        shopPurchaseController.Cancel(reason);
         lock (gate)
         {
             isRunning = false;
@@ -347,8 +353,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenAttemptCount = 0;
             vendorRecoveryAttempted = false;
             vendorRecoveryPending = false;
-            silverQualifiedForCurrentRun = false;
-            goldQualifiedForCurrentRun = false;
+            qualifiedCurrencyIds.Clear();
             skippedTargetIndices.Clear();
         }
 
@@ -362,6 +367,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         if (!IsRunning)
         {
             RefreshTriggerStatus(allowDuringFarmSession: false);
+            return;
+        }
+
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanUseShopping)
+        {
+            StopFailed(BuildShoppingUnavailableMessage());
             return;
         }
 
@@ -381,7 +392,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return;
         }
 
-        if (!pageMatcher.TryMatch(snapshot, out var match, out var matchReason) || match == null)
+        if (!pageMatcher.TryMatch(GetShoppingPages(), snapshot, out var match, out var matchReason) || match == null)
         {
             StopFailed($"Failed: {matchReason}");
             return;
@@ -431,7 +442,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return;
         }
 
-        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == matchedPage.CurrencyItemId)?.ReserveAmount ?? 0;
+        var reserve = configuration.GetCurrencyShopReserve(GetActiveTerritoryKey(), matchedPage.CurrencyItemId);
         var currentCurrency = GetItemCount(matchedPage.CurrencyItemId);
         var availableCurrency = Math.Max(0, (int)currentCurrency - reserve);
 
@@ -511,6 +522,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     private AutoStartEvaluation EvaluateAutoStart(bool allowDuringFarmSession)
     {
+        if (!TryGetShoppingAvailabilityFailure(out var availabilityFailure))
+        {
+            return new(false, availabilityFailure);
+        }
+
         if (!configuration.EnableManualCurrencyShopping)
         {
             return new(false, "Shopping disabled.");
@@ -623,6 +639,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenPending = false;
             vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
             vendorMenuOpenAttemptCount = 0;
+            if (!snapshot.MenuEntries.Any(entry => entry.Index == desiredGroup.Value.MenuIndex))
+            {
+                StopFailed($"Failed: vendor menu did not expose expected entry index {desiredGroup.Value.MenuIndex}.");
+                return false;
+            }
+
             if (TrySelectMenuEntry(desiredGroup.Value.MenuIndex))
             {
                 nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
@@ -645,7 +667,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             vendorMenuOpenPending = false;
             vendorMenuOpenStartedAt = DateTimeOffset.MinValue;
             vendorMenuOpenAttemptCount = 0;
-            if (!pageMatcher.TryMatch(snapshot, out var match, out var matchReason)
+            if (!pageMatcher.TryMatch(GetShoppingPages(), snapshot, out var match, out var matchReason)
                 || match == null)
             {
                 MaybeLogNavigationVerification(new NavigationVerificationSnapshot(
@@ -725,13 +747,13 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             if (movementController.IsPathBusy
                 || movementController.State is MovementState.UsingReturn or MovementState.Pathfinding or MovementState.UsingAethernet or MovementState.WaitingForArrival)
             {
-                UpdateStatus("Running automatic shopping | Returning to base camp to locate vendor.");
+                UpdateStatus($"Running automatic shopping | Traveling to {GetActiveVendorRecoveryLabel()} to locate vendor.");
                 return false;
             }
 
             if (movementController.State is MovementState.Failed or MovementState.TimedOut)
             {
-                StopFailed($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                StopFailed($"Failed to travel to {GetActiveVendorRecoveryLabel()} for shopping: {movementController.LastError}");
                 return false;
             }
 
@@ -739,7 +761,7 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             {
                 vendorRecoveryPending = false;
                 nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
-                UpdateStatus("Running automatic shopping | Base camp recovery complete; locating vendor.");
+                UpdateStatus($"Running automatic shopping | Arrived at {GetActiveVendorRecoveryLabel()}; locating vendor.");
                 return false;
             }
         }
@@ -748,21 +770,21 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         {
             if (!vendorRecoveryAttempted)
             {
-                if (!movementController.RecoverToBaseCamp())
+                if (!TryStartVendorRecovery())
                 {
-                    StopFailed($"Failed to recover to base camp for shopping: {movementController.LastError}");
+                    StopFailed($"Failed to travel to {GetActiveVendorRecoveryLabel()} for shopping: {movementController.LastError}");
                     return false;
                 }
 
                 vendorRecoveryAttempted = true;
                 vendorRecoveryPending = true;
                 nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
-                UpdateStatus("Running automatic shopping | Returning to base camp to locate vendor.");
-                logger.Info("[ManualCurrencyShopping] op=vendor-recovery-start result=true");
+                UpdateStatus($"Running automatic shopping | Traveling to {GetActiveVendorRecoveryLabel()} to locate vendor.");
+                logger.Info($"[ManualCurrencyShopping] op=vendor-recovery-start preferredAethernet={GetActiveVendorPreferredAethernet()} result=true");
                 return false;
             }
 
-            StopSkipped("Skipped shopping: vendor unavailable after base camp recovery.");
+            StopSkipped($"Skipped shopping: vendor unavailable after traveling to {GetActiveVendorRecoveryLabel()}.");
             return false;
         }
 
@@ -786,20 +808,20 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
                 if (movementController.State is MovementState.Failed or MovementState.TimedOut)
                 {
-                    StopFailed($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                    StopFailed($"Failed to move to {GetActiveVendorDisplayName()}: {movementController.LastError}");
                     return false;
                 }
             }
 
-            if (!movementController.StartDirectMove("Approach Expedition Antiquarian", vendor.Position, VendorInteractionRange, shouldMountBeforeStep: true))
+            if (!movementController.StartDirectMove($"Approach {GetActiveVendorDisplayName()}", vendor.Position, VendorInteractionRange, shouldMountBeforeStep: true))
             {
-                StopFailed($"Failed to move to Expedition Antiquarian: {movementController.LastError}");
+                StopFailed($"Failed to move to {GetActiveVendorDisplayName()}: {movementController.LastError}");
                 return false;
             }
 
             vendorTravelPending = true;
             nextNavigationAttemptAt = DateTimeOffset.UtcNow + NavigationRetryDelay;
-            UpdateStatus($"Running automatic shopping | Traveling to Expedition Antiquarian ({vendorDistance:0.0}y).");
+            UpdateStatus($"Running automatic shopping | Traveling to {GetActiveVendorDisplayName()} ({vendorDistance:0.0}y).");
             logger.Info($"[ManualCurrencyShopping] op=vendor-travel-start distance={vendorDistance:0.0}");
             return false;
         }
@@ -898,7 +920,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     {
         var candidateTargets = configuration.CurrencyShopTargets
             .Select((target, index) => (Target: target, Index: index))
-            .Where(entry => entry.Target.MenuIndex == matchedPage.MenuIndex && entry.Target.TabId == matchedTab.TabId)
+            .Where(entry => string.Equals(entry.Target.TerritoryKey, GetActiveTerritoryKey(), StringComparison.OrdinalIgnoreCase)
+                && entry.Target.MenuIndex == matchedPage.MenuIndex && entry.Target.TabId == matchedTab.TabId)
             .OrderBy(entry => entry.Target.Priority)
             .ToList();
 
@@ -909,6 +932,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             if (skippedTargetIndices.Contains(candidate.Index)
                 || itemDefinition == null
                 || liveShopEntry == null
+                || liveShopEntry.RowIndex != itemDefinition.RowIndex
+                || liveShopEntry.Cost != itemDefinition.Cost
+                || liveShopEntry.CurrencyItemId != matchedPage.CurrencyItemId
                 || liveShopEntry.Cost > (uint)availableCurrency)
             {
                 continue;
@@ -980,7 +1006,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
 
         var candidateTargets = configuration.CurrencyShopTargets
-            .Where(target => target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
+            .Where(target => string.Equals(target.TerritoryKey, GetActiveTerritoryKey(), StringComparison.OrdinalIgnoreCase)
+                && target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
             .OrderBy(target => target.Priority);
 
         foreach (var candidate in candidateTargets)
@@ -1005,14 +1032,14 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     private bool TrySelectNextActionableGroup(out CurrencyShopGroup? group, out string reason)
     {
-        foreach (var page in ShopCurrencyCatalog.Pages.OrderBy(page => page.CurrencyItemId).ThenBy(page => page.MenuIndex))
+        foreach (var page in GetShoppingPages().OrderBy(page => page.CurrencyItemId).ThenBy(page => page.MenuIndex))
         {
             if (!IsCurrencyQualifiedForCurrentRun(page.CurrencyItemId))
             {
                 continue;
             }
 
-            var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == page.CurrencyItemId)?.ReserveAmount ?? 0;
+            var reserve = configuration.GetCurrencyShopReserve(GetActiveTerritoryKey(), page.CurrencyItemId);
             var currentCurrency = GetItemCount(page.CurrencyItemId);
             var availableCurrency = Math.Max(0, (int)currentCurrency - reserve);
 
@@ -1034,17 +1061,14 @@ public sealed class ManualCurrencyShoppingController : IDisposable
 
     private QualifiedCurrencyState EvaluateQualifiedCurrencies()
     {
-        var silverQualified = false;
-        var goldQualified = false;
+        var qualifiedCurrencyIds = new HashSet<uint>();
 
-        foreach (var page in ShopCurrencyCatalog.Pages)
+        foreach (var page in GetShoppingPages())
         {
-            var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == page.CurrencyItemId)?.ReserveAmount ?? 0;
+            var reserve = configuration.GetCurrencyShopReserve(GetActiveTerritoryKey(), page.CurrencyItemId);
             var currentCurrency = GetItemCount(page.CurrencyItemId);
             var availableCurrency = Math.Max(0, (int)currentCurrency - reserve);
-            var threshold = page.CurrencyItemId == EnlightenmentGoldPieceItemId
-                ? configuration.GoldStartThreshold
-                : configuration.SilverStartThreshold;
+            var threshold = configuration.GetCurrencyShopThreshold(GetActiveTerritoryKey(), page.CurrencyItemId);
             if (currentCurrency < threshold)
             {
                 continue;
@@ -1057,20 +1081,13 @@ public sealed class ManualCurrencyShoppingController : IDisposable
                     continue;
                 }
 
-                if (page.CurrencyItemId == EnlightenmentGoldPieceItemId)
-                {
-                    goldQualified = true;
-                }
-                else if (page.CurrencyItemId == EnlightenmentSilverPieceItemId)
-                {
-                    silverQualified = true;
-                }
+                qualifiedCurrencyIds.Add(page.CurrencyItemId);
 
                 break;
             }
         }
 
-        return new QualifiedCurrencyState(silverQualified, goldQualified);
+        return new QualifiedCurrencyState(qualifiedCurrencyIds);
     }
 
     private bool HasActionableTargetForCurrency(ShopCurrencyPageDefinition page, ShopCurrencyTabDefinition tab, int availableCurrency)
@@ -1081,7 +1098,8 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
 
         var candidateTargets = configuration.CurrencyShopTargets
-            .Where(target => target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
+            .Where(target => string.Equals(target.TerritoryKey, GetActiveTerritoryKey(), StringComparison.OrdinalIgnoreCase)
+                && target.MenuIndex == page.MenuIndex && target.TabId == tab.TabId)
             .OrderBy(target => target.Priority);
 
         foreach (var candidate in candidateTargets)
@@ -1105,13 +1123,11 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     }
 
     private bool IsCurrencyQualifiedForCurrentRun(uint currencyItemId)
-        => currencyItemId == EnlightenmentGoldPieceItemId
-            ? goldQualifiedForCurrentRun
-            : currencyItemId == EnlightenmentSilverPieceItemId && silverQualifiedForCurrentRun;
+        => qualifiedCurrencyIds.Contains(currencyItemId);
 
-    private readonly record struct QualifiedCurrencyState(bool SilverQualified, bool GoldQualified)
+    private readonly record struct QualifiedCurrencyState(IReadOnlySet<uint> CurrencyItemIds)
     {
-        public bool HasAnyQualifiedCurrency => SilverQualified || GoldQualified;
+        public bool HasAnyQualifiedCurrency => CurrencyItemIds.Count > 0;
     }
 
     private bool TryFindVendor(out IGameObject? vendor)
@@ -1123,11 +1139,12 @@ public sealed class ManualCurrencyShoppingController : IDisposable
             return false;
         }
 
+        var vendors = scanner.ActiveTerritoryData?.Shopping.Vendors ?? [];
         vendor = Plugin.ObjectTable
             .Where(gameObject => gameObject != null
                 && gameObject.IsValid()
                 && gameObject.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc
-                && gameObject.BaseId == ExpeditionAntiquarianDataId
+                && vendors.Any(definition => definition.DataId == gameObject.BaseId)
                 && gameObject.IsTargetable)
             .OrderBy(gameObject => Vector3.Distance(gameObject.Position, localPlayer.Position))
             .FirstOrDefault();
@@ -1190,18 +1207,18 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     {
         if (!TryFindVendor(out var vendor) || vendor == null)
         {
-            logger.Warning($"[ManualCurrencyShopping] op=vendor-open-failed dataId={ExpeditionAntiquarianDataId} reason=vendor-not-found");
+            logger.Warning($"[ManualCurrencyShopping] op=vendor-open-failed territoryKey={GetActiveTerritoryKey()} reason=vendor-not-found");
             return false;
         }
 
         if (!gameActionController.TrySetTarget(vendor, "currency shop vendor"))
         {
-            logger.Warning($"[ManualCurrencyShopping] op=vendor-open-failed dataId={ExpeditionAntiquarianDataId} reason=set-target-failed");
+            logger.Warning($"[ManualCurrencyShopping] op=vendor-open-failed territoryKey={GetActiveTerritoryKey()} dataId={vendor.BaseId} reason=set-target-failed");
             return false;
         }
 
         var interacted = gameActionController.TryInteractWithObject(vendor, "currency shop vendor");
-        logger.Info($"[ManualCurrencyShopping] op=vendor-open dataId={ExpeditionAntiquarianDataId} name=\"{vendor.Name.TextValue}\" result={interacted}");
+        logger.Info($"[ManualCurrencyShopping] op=vendor-open territoryKey={GetActiveTerritoryKey()} dataId={vendor.BaseId} name=\"{vendor.Name.TextValue}\" result={interacted}");
         return interacted;
     }
 
@@ -1273,6 +1290,78 @@ public sealed class ManualCurrencyShoppingController : IDisposable
         }
 
         logger.Info($"[ManualCurrencyShopping] op=navigation-verify desiredMenuIndex={snapshot.DesiredMenuIndex} desiredTabId={snapshot.DesiredTabId} reportedTabId={snapshot.ReportedTabId} matchedMenuIndex={snapshot.MatchedMenuIndex} matchedTabId={snapshot.MatchedTabId}");
+    }
+
+    private bool TryGetShoppingAvailabilityFailure(out string failure)
+    {
+        var snapshot = scanner.Snapshot;
+        if (!snapshot.IsInSupportedTerritory)
+        {
+            failure = "Shopping requires a supported Occult Crescent territory.";
+            return false;
+        }
+
+        if (!snapshot.CanUseShopping)
+        {
+            failure = $"Shopping is unavailable in {snapshot.TerritoryDisplayName}.";
+            return false;
+        }
+
+        if (GetShoppingPages().Count == 0 || scanner.ActiveTerritoryData?.Shopping.Vendors.Count == 0)
+        {
+            failure = $"Shopping metadata is incomplete in {snapshot.TerritoryDisplayName}.";
+            return false;
+        }
+
+        failure = string.Empty;
+        return true;
+    }
+
+    private string BuildShoppingUnavailableMessage()
+        => TryGetShoppingAvailabilityFailure(out var failure)
+            ? "Shopping availability changed unexpectedly."
+            : failure;
+
+    private IReadOnlyList<ShopCurrencyPageDefinition> GetShoppingPages()
+        => scanner.ActiveTerritoryData?.Shopping.Pages ?? [];
+
+    private string GetActiveTerritoryKey()
+        => scanner.Snapshot.TerritoryKey;
+
+    private string GetActiveVendorDisplayName()
+        => scanner.ActiveTerritoryData?.Shopping.Vendors.FirstOrDefault()?.Name ?? "currency shop vendor";
+
+    private string GetActiveVendorPreferredAethernet()
+        => scanner.ActiveTerritoryData?.Shopping.Vendors.FirstOrDefault()?.PreferredAethernet ?? string.Empty;
+
+    private string GetActiveVendorRecoveryLabel()
+    {
+        var preferredAethernet = GetActiveVendorPreferredAethernet();
+        return string.IsNullOrWhiteSpace(preferredAethernet) ? "Base Camp" : preferredAethernet;
+    }
+
+    private bool TryStartVendorRecovery()
+    {
+        var preferredAethernet = GetActiveVendorPreferredAethernet();
+        if (string.IsNullOrWhiteSpace(preferredAethernet)
+            || string.Equals(preferredAethernet, "BaseCamp", StringComparison.OrdinalIgnoreCase))
+        {
+            return movementController.RecoverToBaseCamp();
+        }
+
+        var aethernet = scanner.ActiveTerritoryData?.Aethernets.FirstOrDefault(candidate => string.Equals(candidate.Name, preferredAethernet, StringComparison.OrdinalIgnoreCase));
+        if (aethernet == null)
+        {
+            logger.Warning($"[ManualCurrencyShopping] op=vendor-recovery-failed territoryKey={GetActiveTerritoryKey()} preferredAethernet={preferredAethernet} reason=unknown-aethernet");
+            return false;
+        }
+
+        return movementController.PlanRouteToLocation(
+                $"Travel to {GetActiveVendorDisplayName()} via {aethernet.Name}",
+                aethernet.Name,
+                aethernet.Destination.ToVector3(),
+                arrivalTolerance: 5f)
+            && movementController.StartPlannedRoute();
     }
 
     public enum ShoppingStopKind

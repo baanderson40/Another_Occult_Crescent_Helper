@@ -81,6 +81,23 @@ public sealed class ShopPurchaseController : IDisposable
         framework.Update -= OnFrameworkUpdate;
     }
 
+    public void Cancel(string reason)
+    {
+        PurchaseAttempt? cancelledAttempt;
+        lock (gate)
+        {
+            cancelledAttempt = activeAttempt;
+            activeAttempt = null;
+            lastStatus = reason;
+            lastCompletionKind = PurchaseCompletionKind.StopShopping;
+        }
+
+        if (cancelledAttempt != null)
+        {
+            logger.Warning($"[ShopPurchase] op=cancel itemId={cancelledAttempt.ItemId} reason=\"{reason}\"");
+        }
+    }
+
     public bool TryBuyCurrencyEntry(LiveShopEntry entry, int quantity)
     {
         if (quantity <= 0)

@@ -4,7 +4,7 @@ public enum FarmSessionState
 {
     Idle,
     Starting,
-    WaitingForSouthHorn,
+    WaitingForSupportedTerritory,
     ValidatingDependencies,
     RunningBuffRotation,
     RecoveringToBase,

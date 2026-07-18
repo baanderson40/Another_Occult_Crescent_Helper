@@ -259,9 +259,11 @@ public sealed class BuffRotationController : IDisposable
             return true;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation)
         {
-            SetFailure("Buff rotation requires South Horn.", critical: false);
+            SetFailure(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Buff rotation is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Buff rotation requires a supported Occult Crescent territory.", critical: false);
             return false;
         }
 
@@ -374,9 +376,9 @@ public sealed class BuffRotationController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation)
         {
-            SetFailure("Buff rotation stopped because the player left South Horn.", critical: false);
+            SetFailure("Buff rotation stopped because its territory feature became unavailable.", critical: false);
             return;
         }
 

@@ -204,6 +204,19 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        var snapshot = scanner.Snapshot;
+        if (!snapshot.IsInSupportedTerritory)
+        {
+            SetFailure("Farm session requires a supported Occult Crescent territory.");
+            return false;
+        }
+
+        if (!CanRunAnyAutomation(snapshot))
+        {
+            SetFailure($"No automation features are available in {snapshot.TerritoryDisplayName}.");
+            return false;
+        }
+
         if (criticalEngagementAutomationController.IsRunning || fateAutomationController.IsRunning || buffRotationController.IsRunning || potFarmController.IsRunning || treasureCofferFarmController.IsRunning)
         {
             SetFailure("Stop CE/FATE automation, pot control, buff rotation, and overworld coffer routing before starting the farm session.");
@@ -393,10 +406,10 @@ public sealed class FarmSessionController : IDisposable
 
         if (currentState == FarmSessionState.WaitingForDeathRecovery)
         {
-            if (!scanner.Snapshot.IsInSouthHorn)
+            if (!scanner.Snapshot.IsInSupportedTerritory)
             {
                 ClearInterruptedActivity();
-                TransitionTo(FarmSessionState.WaitingForSouthHorn, "Death recovery completed outside South Horn.", "Waiting for South Horn");
+                TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Death recovery completed outside a supported territory.", "Waiting for Supported Territory");
                 return;
             }
 
@@ -428,8 +441,8 @@ public sealed class FarmSessionController : IDisposable
             case FarmSessionState.ValidatingDependencies:
                 TickStartup();
                 break;
-            case FarmSessionState.WaitingForSouthHorn:
-                TickWaitingForSouthHorn();
+            case FarmSessionState.WaitingForSupportedTerritory:
+                TickWaitingForSupportedTerritory();
                 break;
             case FarmSessionState.RunningBuffRotation:
                 TickBuffRotation();
@@ -515,24 +528,24 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            TransitionTo(FarmSessionState.WaitingForSouthHorn, "Waiting for South Horn.", "Waiting for South Horn");
+            TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Waiting for a supported territory.", "Waiting for Supported Territory");
             return;
         }
 
         StartStartupBuffRotation();
     }
 
-    private void TickWaitingForSouthHorn()
+    private void TickWaitingForSupportedTerritory()
     {
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            logger.DebugThrottled("farm-waiting-south-horn", WaitLogInterval, "Farm session is still waiting for the player to enter South Horn.");
+            logger.DebugThrottled("farm-waiting-supported-territory", WaitLogInterval, "Farm session is still waiting for the player to enter a supported territory.");
             return;
         }
 
-        logger.ResetThrottle("farm-waiting-south-horn");
+        logger.ResetThrottle("farm-waiting-supported-territory");
         StartStartupBuffRotation();
     }
 
@@ -626,9 +639,9 @@ public sealed class FarmSessionController : IDisposable
 
     private void StartRecoveryToBase(string reason)
     {
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            TransitionTo(FarmSessionState.WaitingForSouthHorn, reason, "Waiting for South Horn");
+            TransitionTo(FarmSessionState.WaitingForSupportedTerritory, reason, "Waiting for Supported Territory");
             return;
         }
 
@@ -696,9 +709,9 @@ public sealed class FarmSessionController : IDisposable
         var potCycleSnapshot = potCycleTracker.Snapshot;
         var now = DateTimeOffset.UtcNow;
         logger.ResetThrottle("farm-idle-waiting");
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
-            TransitionTo(FarmSessionState.WaitingForSouthHorn, "Left South Horn while selecting a target.", "Waiting for South Horn");
+            TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Left a supported territory while selecting a target.", "Waiting for Supported Territory");
             return;
         }
 
@@ -886,10 +899,10 @@ public sealed class FarmSessionController : IDisposable
         var snapshot = scanner.Snapshot;
         var potCycleSnapshot = potCycleTracker.Snapshot;
         var now = DateTimeOffset.UtcNow;
-        if (!snapshot.IsInSouthHorn)
+        if (!snapshot.IsInSupportedTerritory)
         {
             logger.ResetThrottle("farm-idle-waiting");
-            TransitionTo(FarmSessionState.WaitingForSouthHorn, "Left South Horn while idle waiting.", "Waiting for South Horn");
+            TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Left a supported territory while idle waiting.", "Waiting for Supported Territory");
             return;
         }
 
@@ -983,6 +996,11 @@ public sealed class FarmSessionController : IDisposable
 
     private bool TryStartCurrencyShopping(DateTimeOffset now)
     {
+        if (!scanner.Snapshot.CanUseShopping)
+        {
+            return false;
+        }
+
         if (!manualCurrencyShoppingController.NeedsControlNow(now, allowDuringFarmSession: true, out var reason))
         {
             return false;
@@ -1004,6 +1022,14 @@ public sealed class FarmSessionController : IDisposable
         TransitionTo(FarmSessionState.RunningCurrencyShopping, manualCurrencyShoppingController.Status, "Currency Shopping");
         return true;
     }
+
+    private static bool CanRunAnyAutomation(ScannerSnapshot snapshot)
+        => snapshot.CanFarmFates
+            || snapshot.CanFarmCriticalEncounters
+            || snapshot.CanRunPotTreasure
+            || snapshot.CanRunVisibleCofferRoute
+            || snapshot.CanUseShopping
+            || snapshot.CanRunBuffRotation;
 
     private void TickRunningCurrencyShopping()
     {

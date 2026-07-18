@@ -105,9 +105,11 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
             return false;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
         {
-            SetFailure("Automatic coffer debug survey requires South Horn.");
+            SetFailure(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Automatic coffer debug survey is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Automatic coffer debug survey requires a supported Occult Crescent territory.");
             return false;
         }
 
@@ -170,9 +172,9 @@ public sealed class AutomaticTreasureCofferDebugController : IDisposable
         var currentState = State;
         if (IsRunning && currentState != DebugState.RestoringOriginalJob)
         {
-            if (!scanner.Snapshot.IsInSouthHorn)
+            if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
             {
-                FailAndRestore("Automatic coffer debug survey stopped because the player left South Horn.");
+                FailAndRestore("Automatic coffer debug survey stopped because visible coffer data became unavailable.");
                 return;
             }
 

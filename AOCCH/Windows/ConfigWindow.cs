@@ -34,10 +34,8 @@ public class ConfigWindow : Window, IDisposable
 
     private readonly Plugin plugin;
     private readonly Configuration configuration;
-    private readonly OccultCrescentData data;
     private readonly OccultCrescentNameResolver nameResolver;
     private readonly AocchLogger logger;
-    private readonly HashSet<uint> potFateIds;
     private int selectedShoppingPageIndex;
     private int selectedShoppingTabIndex;
     private int selectedShoppingItemIndex;
@@ -49,7 +47,6 @@ public class ConfigWindow : Window, IDisposable
     public ConfigWindow(
         Plugin plugin,
         Configuration configuration,
-        OccultCrescentData data,
         OccultCrescentNameResolver nameResolver,
         AocchLogger logger) : base("AOCCH Configuration###AOCCHConfig")
     {
@@ -58,10 +55,8 @@ public class ConfigWindow : Window, IDisposable
 
         this.plugin = plugin;
         this.configuration = configuration;
-        this.data = data;
         this.nameResolver = nameResolver;
         this.logger = logger;
-        potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
     }
 
     public void Dispose() { }
@@ -74,6 +69,11 @@ public class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
+        var snapshot = plugin.Scanner.Snapshot;
+        ImGui.TextUnformatted(snapshot.IsInSupportedTerritory
+            ? $"Active territory: {snapshot.TerritoryDisplayName} ({snapshot.TerritoryTypeId})"
+            : $"Active territory: Unsupported ({snapshot.TerritoryTypeId})");
+
         if (!ImGui.BeginTabBar("AOCCHConfigTabs"))
         {
             return;
@@ -132,6 +132,11 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawCriticalEngagementsTab()
     {
+        if (!RequireFeature(plugin.Scanner.Snapshot.CanFarmCriticalEncounters, "CE data"))
+        {
+            return;
+        }
+
         var enableCeFarming = configuration.EnableCriticalEngagementFarming;
         if (ImGui.Checkbox("Enable CE Farming", ref enableCeFarming))
         {
@@ -155,6 +160,11 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawFatesTab()
     {
+        if (!RequireFeature(plugin.Scanner.Snapshot.CanFarmFates, "FATE data"))
+        {
+            return;
+        }
+
         var enableFateFarming = configuration.EnableFateFarming;
         if (ImGui.Checkbox("Enable FATE Farming", ref enableFateFarming))
         {
@@ -188,6 +198,11 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawPotsTab()
     {
+        if (!RequireFeature(plugin.Scanner.Snapshot.CanRunPotTreasure, "Pot treasure data"))
+        {
+            return;
+        }
+
         var enablePotFarming = configuration.EnablePotFarming;
         if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
         {
@@ -336,6 +351,11 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawTreasureCoffersTab()
     {
+        if (!RequireFeature(plugin.Scanner.Snapshot.CanRunVisibleCofferRoute || plugin.Scanner.Snapshot.CanRunPotTreasure, "Treasure coffer data"))
+        {
+            return;
+        }
+
         var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
         if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
         {
@@ -554,6 +574,20 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawShoppingTab()
     {
+        if (!RequireFeature(plugin.Scanner.Snapshot.CanUseShopping, "Shopping data"))
+        {
+            return;
+        }
+
+        var territory = plugin.Scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            ImGui.TextUnformatted("Shopping metadata is unavailable.");
+            return;
+        }
+
+        var territoryKey = territory.Key;
+        var shoppingPages = territory.Shopping.Pages.Where(page => page.Tabs.Any(tab => tab.Items.Count > 0)).ToList();
         var enableManualCurrencyShopping = configuration.EnableManualCurrencyShopping;
         if (ImGui.Checkbox("Enable Shopping", ref enableManualCurrencyShopping))
         {
@@ -573,15 +607,16 @@ public class ConfigWindow : Window, IDisposable
             ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableHeadersRow();
 
-            DrawCurrencySettingsRow(45043, "Silver", configuration.SilverStartThreshold, value => configuration.SilverStartThreshold = value);
-            DrawCurrencySettingsRow(45044, "Gold", configuration.GoldStartThreshold, value => configuration.GoldStartThreshold = value);
+            foreach (var currency in shoppingPages.GroupBy(page => page.CurrencyItemId).Select(group => group.First()))
+            {
+                DrawCurrencySettingsRow(territoryKey, currency.CurrencyItemId, currency.CurrencyName, configuration.GetCurrencyShopThreshold(territoryKey, currency.CurrencyItemId));
+            }
 
             ImGui.EndTable();
         }
 
         ImGui.Separator();
         ImGui.TextUnformatted("Add Item");
-        var shoppingPages = ShopCurrencyCatalog.Pages.Where(page => page.Tabs.Any(tab => tab.Items.Count > 0)).ToList();
         if (shoppingPages.Count == 0)
         {
             ImGui.TextUnformatted("No supported shopping catalog items are defined.");
@@ -629,17 +664,18 @@ public class ConfigWindow : Window, IDisposable
                 if (ImGui.Button("Add Item"))
                 {
                     var selectedItem = shoppingItems[selectedShoppingItemIndex];
-                    if (!configuration.CurrencyShopTargets.Any(target => target.ItemId == selectedItem.ItemId && target.MenuIndex == selectedPage.MenuIndex && target.TabId == selectedTab.TabId))
+                    if (!configuration.CurrencyShopTargets.Any(target => string.Equals(target.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase) && target.ItemId == selectedItem.ItemId && target.MenuIndex == selectedPage.MenuIndex && target.TabId == selectedTab.TabId))
                     {
                         configuration.CurrencyShopTargets.Add(new CurrencyShopTarget
                         {
+                            TerritoryKey = territoryKey,
                             ItemId = selectedItem.ItemId,
                             MenuIndex = selectedPage.MenuIndex,
                             TabId = selectedTab.TabId,
                             KeepAmount = 1,
                             BuyAmount = 0,
                             KeepBuying = false,
-                            Priority = configuration.CurrencyShopTargets.Count,
+                            Priority = configuration.CurrencyShopTargets.Count(target => string.Equals(target.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase)),
                         });
                         NormalizeShoppingTargetPriorities();
                         configuration.Save();
@@ -656,7 +692,12 @@ public class ConfigWindow : Window, IDisposable
         {
             ImGui.SetTooltip("Keep maintains stock. Buy is one-off. Per item priority is Keep, then Buy, then Keep Buying. Only one item can be marked Keep Buying at a time.");
         }
-        if (configuration.CurrencyShopTargets.Count == 0)
+        var activeTargetIndices = configuration.CurrencyShopTargets
+            .Select((target, index) => (Target: target, Index: index))
+            .Where(entry => string.Equals(entry.Target.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.Index)
+            .ToList();
+        if (activeTargetIndices.Count == 0)
         {
             ImGui.TextUnformatted("No shopping items configured.");
         }
@@ -675,14 +716,15 @@ public class ConfigWindow : Window, IDisposable
                     ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 90f);
                     ImGui.TableHeadersRow();
 
-                    for (var i = 0; i < configuration.CurrencyShopTargets.Count; i++)
+                    for (var displayIndex = 0; displayIndex < activeTargetIndices.Count; displayIndex++)
                     {
+                        var i = activeTargetIndices[displayIndex];
                         var target = configuration.CurrencyShopTargets[i];
-                        var targetPage = ShopCurrencyCatalog.Pages.FirstOrDefault(page => page.MenuIndex == target.MenuIndex);
+                        var targetPage = shoppingPages.FirstOrDefault(page => page.MenuIndex == target.MenuIndex);
                         var targetTab = targetPage?.Tabs.FirstOrDefault(tab => tab.TabId == target.TabId);
                         var targetItem = targetTab?.Items.FirstOrDefault(item => item.ItemId == target.ItemId);
                         var targetItemName = targetItem == null
-                            ? $"Item {target.ItemId}"
+                            ? $"[{target.TerritoryKey}] Item {target.ItemId}"
                             : ShoppingItemNameResolver.ResolveItemName(targetItem.ItemId, targetItem.Name);
 
                         ImGui.PushID($"shopping-target-{i}");
@@ -697,18 +739,20 @@ public class ConfigWindow : Window, IDisposable
                         var centeredX = cellStartX + MathF.Max(0f, (cellWidth - iconButtonGroupWidth) * 0.5f);
                         ImGui.SetCursorPosX(centeredX);
 
-                        if (DrawIconButton(FontAwesomeIcon.AngleUp, $"shopping-up-{i}", "Move Up", i > 0, iconButtonSize) && i > 0)
+                        if (DrawIconButton(FontAwesomeIcon.AngleUp, $"shopping-up-{i}", "Move Up", displayIndex > 0, iconButtonSize) && displayIndex > 0)
                         {
-                            (configuration.CurrencyShopTargets[i - 1], configuration.CurrencyShopTargets[i]) = (configuration.CurrencyShopTargets[i], configuration.CurrencyShopTargets[i - 1]);
+                            var previousIndex = activeTargetIndices[displayIndex - 1];
+                            (configuration.CurrencyShopTargets[previousIndex], configuration.CurrencyShopTargets[i]) = (configuration.CurrencyShopTargets[i], configuration.CurrencyShopTargets[previousIndex]);
                             NormalizeShoppingTargetPriorities();
                             configuration.Save();
                             ImGui.PopID();
                             break;
                         }
                         ImGui.SameLine();
-                        if (DrawIconButton(FontAwesomeIcon.AngleDown, $"shopping-down-{i}", "Move Down", i < configuration.CurrencyShopTargets.Count - 1, iconButtonSize) && i < configuration.CurrencyShopTargets.Count - 1)
+                        if (DrawIconButton(FontAwesomeIcon.AngleDown, $"shopping-down-{i}", "Move Down", displayIndex < activeTargetIndices.Count - 1, iconButtonSize) && displayIndex < activeTargetIndices.Count - 1)
                         {
-                            (configuration.CurrencyShopTargets[i + 1], configuration.CurrencyShopTargets[i]) = (configuration.CurrencyShopTargets[i], configuration.CurrencyShopTargets[i + 1]);
+                            var nextIndex = activeTargetIndices[displayIndex + 1];
+                            (configuration.CurrencyShopTargets[nextIndex], configuration.CurrencyShopTargets[i]) = (configuration.CurrencyShopTargets[i], configuration.CurrencyShopTargets[nextIndex]);
                             NormalizeShoppingTargetPriorities();
                             configuration.Save();
                             ImGui.PopID();
@@ -742,7 +786,7 @@ public class ConfigWindow : Window, IDisposable
                         {
                             if (keepBuying)
                             {
-                                foreach (var existingTarget in configuration.CurrencyShopTargets)
+                                foreach (var existingTarget in configuration.CurrencyShopTargets.Where(existingTarget => string.Equals(existingTarget.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase)))
                                 {
                                     existingTarget.KeepBuying = false;
                                 }
@@ -772,9 +816,9 @@ public class ConfigWindow : Window, IDisposable
         }
     }
 
-    private void DrawCurrencySettingsRow(uint currencyItemId, string label, int threshold, Action<int> applyThreshold)
+    private void DrawCurrencySettingsRow(string territoryKey, uint currencyItemId, string label, int threshold)
     {
-        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => entry.CurrencyItemId == currencyItemId);
+        var reserve = configuration.CurrencyShopReserves.FirstOrDefault(entry => string.Equals(entry.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase) && entry.CurrencyItemId == currencyItemId);
         var reserveAmount = reserve?.ReserveAmount ?? 0;
 
         ImGui.TableNextRow();
@@ -788,6 +832,7 @@ public class ConfigWindow : Window, IDisposable
             var clampedReserveAmount = Math.Clamp(reserveAmount, 0, 9999);
             reserve ??= new CurrencyShopReserveSetting
             {
+                TerritoryKey = territoryKey,
                 CurrencyItemId = currencyItemId,
                 ReserveAmount = 0,
             };
@@ -806,16 +851,29 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SetNextItemWidth(90f);
         if (ImGui.InputInt($"##threshold_{currencyItemId}", ref thresholdValue))
         {
-            applyThreshold(Math.Clamp(thresholdValue, 0, 9999));
+            var thresholdSetting = configuration.CurrencyShopThresholds.FirstOrDefault(entry => string.Equals(entry.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase) && entry.CurrencyItemId == currencyItemId);
+            thresholdSetting ??= new CurrencyShopThresholdSetting { TerritoryKey = territoryKey, CurrencyItemId = currencyItemId };
+            if (!configuration.CurrencyShopThresholds.Contains(thresholdSetting))
+            {
+                configuration.CurrencyShopThresholds.Add(thresholdSetting);
+            }
+
+            thresholdSetting.StartThreshold = Math.Clamp(thresholdValue, 0, 9999);
             configuration.Save();
         }
     }
 
     private void NormalizeShoppingTargetPriorities()
     {
-        for (var i = 0; i < configuration.CurrencyShopTargets.Count; i++)
+        foreach (var territoryKey in configuration.CurrencyShopTargets
+                     .Select(target => target.TerritoryKey)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            configuration.CurrencyShopTargets[i].Priority = i;
+            var priority = 0;
+            foreach (var target in configuration.CurrencyShopTargets.Where(target => string.Equals(target.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                target.Priority = priority++;
+            }
         }
     }
 
@@ -934,22 +992,36 @@ public class ConfigWindow : Window, IDisposable
     }
 
     private List<(uint Id, string Label)> GetCriticalEncounterEntries()
-        => data.CriticalEncounters
+        => (plugin.Scanner.ActiveTerritoryData?.CriticalEncounters ?? [])
             .Select(criticalEncounter => (
                 criticalEncounter.Id,
-                nameResolver.GetCriticalEncounterName(criticalEncounter.Id, criticalEncounter.Name)))
+                nameResolver.GetCriticalEncounterName(plugin.Scanner.Snapshot.TerritoryTypeId, criticalEncounter.Id, criticalEncounter.Name)))
             .OrderBy(entry => entry.Item2, StringComparer.Ordinal)
             .ToList();
 
     private List<(uint Id, string Label)> GetDirectFarmFateEntries()
-        => data.Fates
+        => (plugin.Scanner.ActiveTerritoryData?.Fates ?? [])
             .Where(fate => !IsPotFate(fate.Id))
             .Select(fate => (
                 fate.Id,
-                nameResolver.GetFateName(fate.Id, fate.Name)))
+                nameResolver.GetFateName(plugin.Scanner.Snapshot.TerritoryTypeId, fate.Id, fate.Name)))
             .OrderBy(entry => entry.Item2, StringComparer.Ordinal)
             .ToList();
 
     private bool IsPotFate(uint fateId)
-        => potFateIds.Contains(fateId);
+        => plugin.Scanner.ActiveTerritoryData?.PotFates.Any(potFate => potFate.FateId == fateId) == true;
+
+    private bool RequireFeature(bool available, string featureName)
+    {
+        if (available)
+        {
+            return true;
+        }
+
+        var snapshot = plugin.Scanner.Snapshot;
+        ImGui.TextWrapped(snapshot.IsInSupportedTerritory
+            ? $"{featureName} is unavailable in {snapshot.TerritoryDisplayName}."
+            : $"{featureName} requires a supported Occult Crescent territory.");
+        return false;
+    }
 }

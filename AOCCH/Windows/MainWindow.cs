@@ -151,7 +151,7 @@ public sealed class MainWindow : Window, IDisposable
     }
 
     private string? GetPanicStopBlocker()
-        => scanner.Snapshot.IsInSouthHorn ? null : "Panic Stop requires South Horn.";
+        => scanner.Snapshot.IsInSupportedTerritory ? null : "Panic Stop requires a supported territory.";
 
     private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null, Action? disabledClick = null)
     {
@@ -233,9 +233,15 @@ public sealed class MainWindow : Window, IDisposable
             return "Farm session is already running.";
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            return "Farm session start requires South Horn.";
+            return "Farm session requires a supported Occult Crescent territory.";
+        }
+
+        var snapshot = scanner.Snapshot;
+        if (!CanRunAnyAutomation(snapshot))
+        {
+            return $"No automation features are available in {snapshot.TerritoryDisplayName}.";
         }
 
         var dependencyReport = plugin.GetNormalAutomationDependencyReport();
@@ -512,12 +518,25 @@ public sealed class MainWindow : Window, IDisposable
             return "Overworld coffer route start is blocked while the farm session is running.";
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            return "Overworld coffer route start requires South Horn.";
+            return "Overworld coffer route requires a supported Occult Crescent territory.";
+        }
+
+        if (!scanner.Snapshot.CanRunVisibleCofferRoute)
+        {
+            return $"Overworld coffer route data is unavailable in {scanner.Snapshot.TerritoryDisplayName}.";
         }
 
         var dependencyReport = plugin.GetNormalAutomationDependencyReport();
         return dependencyReport.IsReady ? null : dependencyReport.FailureSummary;
     }
+
+    private static bool CanRunAnyAutomation(ScannerSnapshot snapshot)
+        => snapshot.CanFarmFates
+            || snapshot.CanFarmCriticalEncounters
+            || snapshot.CanRunPotTreasure
+            || snapshot.CanRunVisibleCofferRoute
+            || snapshot.CanUseShopping
+            || snapshot.CanRunBuffRotation;
 }

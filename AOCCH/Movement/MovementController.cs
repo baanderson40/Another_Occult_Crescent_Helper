@@ -51,7 +51,6 @@ public sealed class MovementController : IDisposable
     private readonly RoutePlanner routePlanner;
     private readonly GameActionController gameActionController;
     private readonly Configuration configuration;
-    private readonly OccultCrescentData data;
     private readonly AocchLogger logger;
     private readonly object gate = new();
 
@@ -99,7 +98,6 @@ public sealed class MovementController : IDisposable
         RoutePlanner routePlanner,
         GameActionController gameActionController,
         Configuration configuration,
-        OccultCrescentData data,
         AocchLogger logger)
     {
         this.framework = framework;
@@ -112,7 +110,6 @@ public sealed class MovementController : IDisposable
         this.routePlanner = routePlanner;
         this.gameActionController = gameActionController;
         this.configuration = configuration;
-        this.data = data;
         this.logger = logger;
 
         framework.Update += OnFrameworkUpdate;
@@ -247,7 +244,14 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlan(target, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride, earlyDismountDistance))
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            SetFailure(MovementState.Failed, "A supported Occult Crescent territory is required for route planning.");
+            return false;
+        }
+
+        if (!routePlanner.TryPlan(territory, target, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride, earlyDismountDistance))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -275,7 +279,14 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlanToLocation(description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance, earlyDismountDistance, earlyDismountTarget))
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            SetFailure(MovementState.Failed, "A supported Occult Crescent territory is required for route planning.");
+            return false;
+        }
+
+        if (!routePlanner.TryPlanToLocation(territory, description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance, earlyDismountDistance, earlyDismountTarget))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -300,7 +311,14 @@ public sealed class MovementController : IDisposable
         }
 
         SetState(MovementState.Planning);
-        if (!routePlanner.TryPlan(selection, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride))
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            SetFailure(MovementState.Failed, "A supported Occult Crescent territory is required for route planning.");
+            return false;
+        }
+
+        if (!routePlanner.TryPlan(territory, selection, playerPosition.Value, out var route, out var failureReason, allowReturn, finalDestinationOverride, finalArrivalToleranceOverride))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -363,7 +381,14 @@ public sealed class MovementController : IDisposable
         vnavmesh.Stop();
         BeginStopVerification();
 
-        if (!routePlanner.TryPlanBaseCampRecovery(playerPosition.Value, out var route, out var failureReason, allowReturn))
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            SetFailure(MovementState.Failed, "A supported Occult Crescent territory is required for base camp recovery.");
+            return false;
+        }
+
+        if (!routePlanner.TryPlanBaseCampRecovery(territory, playerPosition.Value, out var route, out var failureReason, allowReturn))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
@@ -516,9 +541,9 @@ public sealed class MovementController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory)
         {
-            Stop("Left South Horn while moving.");
+            Stop("Left a supported Occult Crescent territory while moving.");
             return;
         }
 
@@ -1866,7 +1891,7 @@ public sealed class MovementController : IDisposable
         AethernetData? closest = null;
         var closestDistance = float.MaxValue;
 
-        foreach (var aethernet in data.Aethernets)
+        foreach (var aethernet in scanner.ActiveTerritoryData?.Aethernets ?? [])
         {
             var distance = CalculateFlatDistance(playerPosition, aethernet.Position.ToVector3());
             if (distance >= closestDistance)

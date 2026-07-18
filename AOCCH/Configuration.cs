@@ -25,6 +25,7 @@ public enum StartingPotFateMode
 [Serializable]
 public sealed class CurrencyShopReserveSetting
 {
+    public string TerritoryKey { get; set; } = string.Empty;
     public uint CurrencyItemId { get; set; }
     public int ReserveAmount { get; set; }
 }
@@ -32,6 +33,7 @@ public sealed class CurrencyShopReserveSetting
 [Serializable]
 public sealed class CurrencyShopTarget
 {
+    public string TerritoryKey { get; set; } = string.Empty;
     public uint ItemId { get; set; }
     public int MenuIndex { get; set; }
     public int TabId { get; set; } = -1;
@@ -39,6 +41,14 @@ public sealed class CurrencyShopTarget
     public int BuyAmount { get; set; }
     public bool KeepBuying { get; set; }
     public int Priority { get; set; }
+}
+
+[Serializable]
+public sealed class CurrencyShopThresholdSetting
+{
+    public string TerritoryKey { get; set; } = string.Empty;
+    public uint CurrencyItemId { get; set; }
+    public int StartThreshold { get; set; }
 }
 
 [Serializable]
@@ -53,7 +63,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -113,6 +123,7 @@ public class Configuration : IPluginConfiguration
     public int SilverStartThreshold { get; set; }
     public int GoldStartThreshold { get; set; }
     public List<CurrencyShopReserveSetting> CurrencyShopReserves { get; set; } = [];
+    public List<CurrencyShopThresholdSetting> CurrencyShopThresholds { get; set; } = [];
     public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
 
     public bool IsCriticalEncounterEnabled(uint id)
@@ -143,6 +154,15 @@ public class Configuration : IPluginConfiguration
         return changed;
     }
 
+    public int GetCurrencyShopReserve(string territoryKey, uint currencyItemId)
+        => CurrencyShopReserves.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.CurrencyItemId == currencyItemId)?.ReserveAmount ?? 0;
+
+    public int GetCurrencyShopThreshold(string territoryKey, uint currencyItemId)
+        => CurrencyShopThresholds.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.CurrencyItemId == currencyItemId)?.StartThreshold ?? 0;
+
+    private static bool MatchesTerritory(string configuredKey, string territoryKey)
+        => string.Equals(configuredKey, territoryKey, StringComparison.OrdinalIgnoreCase);
+
     [JsonPropertyName("FarmingMode")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? LegacyFarmingMode { get; set; }
@@ -168,8 +188,9 @@ public class Configuration : IPluginConfiguration
         logger?.Debug("Configuration saved.");
     }
 
-    public bool Migrate(OccultCrescentData data)
+    public bool Migrate(OccultCrescentDataCatalog catalog)
     {
+        var southHorn = catalog.GetTerritoryOrNull("southHorn");
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
@@ -178,7 +199,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 3)
+        if (Version >= 4)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -210,9 +231,9 @@ public class Configuration : IPluginConfiguration
             var excludedNames = LegacyExcludedFates
                 .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
+            var potFateIds = southHorn?.PotFates.Select(potFate => potFate.FateId).ToHashSet() ?? [];
 
-            foreach (var fate in data.Fates.Where(fate => !potFateIds.Contains(fate.Id)))
+            foreach (var fate in southHorn?.Fates.Where(fate => !potFateIds.Contains(fate.Id)) ?? [])
             {
                 if (excludedNames.Contains(fate.Name))
                 {
@@ -241,10 +262,29 @@ public class Configuration : IPluginConfiguration
             logger?.Info("[Configuration] op=migration-clear legacy autorotation default=Occult");
         }
 
+        if (Version < 4)
+        {
+            foreach (var reserve in CurrencyShopReserves.Where(reserve => string.IsNullOrWhiteSpace(reserve.TerritoryKey)))
+            {
+                reserve.TerritoryKey = "southHorn";
+            }
+
+            foreach (var target in CurrencyShopTargets.Where(target => string.IsNullOrWhiteSpace(target.TerritoryKey)))
+            {
+                target.TerritoryKey = "southHorn";
+            }
+
+            if (!CurrencyShopThresholds.Any(setting => string.Equals(setting.TerritoryKey, "southHorn", StringComparison.OrdinalIgnoreCase)))
+            {
+                CurrencyShopThresholds.Add(new CurrencyShopThresholdSetting { TerritoryKey = "southHorn", CurrencyItemId = 45043, StartThreshold = SilverStartThreshold });
+                CurrencyShopThresholds.Add(new CurrencyShopThresholdSetting { TerritoryKey = "southHorn", CurrencyItemId = 45044, StartThreshold = GoldStartThreshold });
+            }
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 3;
-        logger?.Info("[Configuration] op=migration-complete version=3");
+        Version = 4;
+        logger?.Info("[Configuration] op=migration-complete version=4");
         return true;
     }
 
@@ -305,11 +345,19 @@ public class Configuration : IPluginConfiguration
     private void ClampCurrencyShopSettings()
     {
         CurrencyShopReserves ??= [];
+        CurrencyShopThresholds ??= [];
         CurrencyShopTargets ??= [];
 
         foreach (var reserve in CurrencyShopReserves)
         {
+            reserve.TerritoryKey ??= string.Empty;
             reserve.ReserveAmount = Math.Clamp(reserve.ReserveAmount, 0, 9999);
+        }
+
+        foreach (var threshold in CurrencyShopThresholds)
+        {
+            threshold.TerritoryKey ??= string.Empty;
+            threshold.StartThreshold = Math.Clamp(threshold.StartThreshold, 0, 9999);
         }
 
         SilverStartThreshold = Math.Clamp(SilverStartThreshold, 0, 9999);
@@ -317,6 +365,7 @@ public class Configuration : IPluginConfiguration
 
         foreach (var target in CurrencyShopTargets)
         {
+            target.TerritoryKey ??= string.Empty;
             target.TabId = Math.Max(-1, target.TabId);
 
             target.KeepAmount = Math.Max(0, target.KeepAmount);

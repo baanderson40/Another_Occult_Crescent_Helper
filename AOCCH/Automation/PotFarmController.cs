@@ -48,7 +48,6 @@ public sealed class PotFarmController : IDisposable
     private readonly PotInstanceTimeEvaluator potInstanceTimeEvaluator;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
-    private readonly Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
 
     private PotFarmState state = PotFarmState.Idle;
@@ -99,7 +98,6 @@ public sealed class PotFarmController : IDisposable
         CofferInteractionController cofferInteractionController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         PotInstanceTimeEvaluator potInstanceTimeEvaluator,
-        OccultCrescentData data,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -118,7 +116,6 @@ public sealed class PotFarmController : IDisposable
         this.potInstanceTimeEvaluator = potInstanceTimeEvaluator;
         this.configuration = configuration;
         this.logger = logger;
-        potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
 
         framework.Update += OnFrameworkUpdate;
     }
@@ -248,10 +245,12 @@ public sealed class PotFarmController : IDisposable
         }
 
         var scannerSnapshot = scanner.Snapshot;
-        if (!scannerSnapshot.IsInSouthHorn)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
             controlReason = PotControlReason.None;
-            reason = "Pot farming requires South Horn.";
+            reason = scannerSnapshot.IsInSupportedTerritory
+                ? $"Pot farming is unavailable in {scannerSnapshot.TerritoryDisplayName}."
+                : "Pot farming requires a supported Occult Crescent territory.";
             return false;
         }
 
@@ -343,9 +342,11 @@ public sealed class PotFarmController : IDisposable
             return true;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
         {
-            SetFailure("Pot farming requires South Horn.");
+            SetFailure(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Pot farming is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Pot farming requires a supported Occult Crescent territory.");
             return false;
         }
 
@@ -513,10 +514,10 @@ public sealed class PotFarmController : IDisposable
         var scannerSnapshot = scanner.Snapshot;
         if (leavePending)
         {
-            if (!scannerSnapshot.IsInSouthHorn)
+            if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
             {
                 ClearLeavePending();
-                TransitionTo(PotFarmState.Completed, "Left South Horn after an instance-time leave request.", result: PotFarmRunResult.LeftContent);
+                TransitionTo(PotFarmState.Completed, "Left pot-supported territory after an instance-time leave request.", result: PotFarmRunResult.LeftContent);
                 return;
             }
 
@@ -531,9 +532,9 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        if (!scannerSnapshot.IsInSouthHorn)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
-            SetFailure("Left South Horn while pot farm control was active.");
+            SetFailure("Left a pot-supported territory while pot farm control was active.");
             return;
         }
 
@@ -1145,8 +1146,8 @@ public sealed class PotFarmController : IDisposable
     {
         var configuredPot = configuration.StartingPotFate switch
         {
-            StartingPotFateMode.PersistentPots => potFatesById.Values.FirstOrDefault(pot => string.Equals(pot.Name, "Persistent Pots", StringComparison.OrdinalIgnoreCase)),
-            StartingPotFateMode.PleadingPots => potFatesById.Values.FirstOrDefault(pot => string.Equals(pot.Name, "Pleading Pots", StringComparison.OrdinalIgnoreCase)),
+            StartingPotFateMode.PersistentPots => GetPotFatesById().Values.FirstOrDefault(pot => string.Equals(pot.Name, "Persistent Pots", StringComparison.OrdinalIgnoreCase)),
+            StartingPotFateMode.PleadingPots => GetPotFatesById().Values.FirstOrDefault(pot => string.Equals(pot.Name, "Pleading Pots", StringComparison.OrdinalIgnoreCase)),
             _ => null,
         };
 
@@ -1160,7 +1161,7 @@ public sealed class PotFarmController : IDisposable
 
     private void BeginPredictedStaging(PotCycleSnapshot snapshot)
     {
-        if (!potFatesById.TryGetValue(snapshot.PredictedNextPotFateId, out var potFate))
+        if (!GetPotFatesById().TryGetValue(snapshot.PredictedNextPotFateId, out var potFate))
         {
             SetFailure($"Predicted pot FATE {snapshot.PredictedNextPotFateId} is missing from data.");
             return;
@@ -1224,6 +1225,9 @@ public sealed class PotFarmController : IDisposable
 
         return true;
     }
+
+    private Dictionary<uint, PotFateData> GetPotFatesById()
+        => scanner.ActiveTerritoryData?.PotFates.ToDictionary(potFate => potFate.FateId) ?? [];
 
     private bool StartActivePotFate(ActivePotFate activePotFate)
     {

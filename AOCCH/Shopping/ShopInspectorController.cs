@@ -188,10 +188,6 @@ public sealed class ShopInspectorController : IDisposable
         {
             menuIndex = currentMenuIndex;
             menuLabel = ResolveMenuLabel(currentMenuIndex, lastSeenMenuEntries);
-            if (string.IsNullOrEmpty(menuLabel))
-            {
-                menuLabel = ResolveStaticMenuLabel(currentMenuIndex);
-            }
 
             latchedMenuIndex = menuIndex;
             latchedMenuLabel = menuLabel;
@@ -393,11 +389,6 @@ public sealed class ShopInspectorController : IDisposable
         if (string.IsNullOrEmpty(menuLabel))
         {
             menuLabel = ResolveMenuLabel(selectedMenuIndex, lastSeenMenuEntries);
-        }
-
-        if (string.IsNullOrEmpty(menuLabel))
-        {
-            menuLabel = ResolveStaticMenuLabel(selectedMenuIndex);
         }
 
         if (string.IsNullOrEmpty(menuLabel))
@@ -686,22 +677,8 @@ public sealed class ShopInspectorController : IDisposable
     private static string ResolveMenuLabel(int menuIndex, IReadOnlyList<LiveShopMenuEntry> menuEntries)
     {
         var menuEntry = menuEntries.FirstOrDefault(entry => entry.Index == menuIndex);
-        return menuEntry?.Label ?? ResolveStaticMenuLabel(menuIndex);
+        return menuEntry?.Label ?? string.Empty;
     }
-
-    private static string ResolveStaticMenuLabel(int menuIndex)
-        => menuIndex switch
-        {
-            0 => "Enlightenment Silver Piece Exchange (IL 745)",
-            1 => "Enlightenment Silver Piece Exchange (Battlecraft Items)",
-            2 => "Enlightenment Silver Piece Exchange (Other)",
-            3 => "Enlightenment Gold Piece Exchange (Battlecraft Items)",
-            4 => "Enlightenment Gold Piece Exchange (Other)",
-            5 => "Sanguinite Exchange",
-            6 => "Cipher Exchange",
-            7 => "Nothing",
-            _ => string.Empty,
-        };
 
     private string ResolveItemName(uint itemId)
     {

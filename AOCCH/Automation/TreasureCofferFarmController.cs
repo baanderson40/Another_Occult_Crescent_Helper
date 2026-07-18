@@ -51,12 +51,10 @@ public sealed class TreasureCofferFarmController : IDisposable
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly CofferInteractionController cofferInteractionController;
-    private readonly OccultCrescentData data;
     private readonly VisibleCofferPositionOverrideStore overrideStore;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
-    private readonly Dictionary<string, VisibleCofferFarmSpotData> spotsByKey;
 
     private TreasureCofferFarmState state = TreasureCofferFarmState.Idle;
     private TreasureCofferFarmResult lastResult;
@@ -95,7 +93,6 @@ public sealed class TreasureCofferFarmController : IDisposable
         DeathRecoveryController deathRecoveryController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         CofferInteractionController cofferInteractionController,
-        OccultCrescentData data,
         VisibleCofferPositionOverrideStore overrideStore,
         Configuration configuration,
         AocchLogger logger)
@@ -109,11 +106,9 @@ public sealed class TreasureCofferFarmController : IDisposable
         this.deathRecoveryController = deathRecoveryController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.cofferInteractionController = cofferInteractionController;
-        this.data = data;
         this.overrideStore = overrideStore;
         this.configuration = configuration;
         this.logger = logger;
-        spotsByKey = data.VisibleCofferFarmSpots.ToDictionary(spot => BuildKey(spot.Area, spot.Label), StringComparer.OrdinalIgnoreCase);
 
         framework.Update += OnFrameworkUpdate;
     }
@@ -251,9 +246,18 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
         {
-            SetFailure("Overworld coffer route start requires South Horn.");
+            SetFailure(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Overworld coffer route data is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Overworld coffer route requires a supported Occult Crescent territory.");
+            return false;
+        }
+
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            SetFailure("Overworld coffer route requires a supported Occult Crescent territory.");
             return false;
         }
 
@@ -265,20 +269,20 @@ public sealed class TreasureCofferFarmController : IDisposable
             return false;
         }
 
-        if (data.VisibleCofferFarmRoute.Count == 0 || data.VisibleCofferFarmSpots.Count == 0)
+        if (territory.VisibleCofferFarmRoute.Count == 0 || territory.VisibleCofferFarmSpots.Count == 0)
         {
             SetFailure("Overworld coffer route data is missing route or spot entries.");
             return false;
         }
 
         var validatedStartRouteIndex = startRouteIndex ?? 0;
-        if (validatedStartRouteIndex < 0 || validatedStartRouteIndex >= data.VisibleCofferFarmRoute.Count)
+        if (validatedStartRouteIndex < 0 || validatedStartRouteIndex >= territory.VisibleCofferFarmRoute.Count)
         {
-            SetFailure($"Overworld coffer route start index {validatedStartRouteIndex} is out of range for {data.VisibleCofferFarmRoute.Count} entries.");
+            SetFailure($"Overworld coffer route start index {validatedStartRouteIndex} is out of range for {territory.VisibleCofferFarmRoute.Count} entries.");
             return false;
         }
 
-        var startingRouteEntry = data.VisibleCofferFarmRoute[validatedStartRouteIndex];
+        var startingRouteEntry = territory.VisibleCofferFarmRoute[validatedStartRouteIndex];
 
         lock (gate)
         {
@@ -302,10 +306,10 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         movementController.SetLogOwner(currentRunId);
-        logger.Info($"{BuildLogTag()} op=start territorySouthHorn={scanner.Snapshot.IsInSouthHorn} routeEntries={data.VisibleCofferFarmRoute.Count} spotEntries={data.VisibleCofferFarmSpots.Count} startIndex={validatedStartRouteIndex} startSpot={startingRouteEntry.Area}:{startingRouteEntry.Label} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} inventoryRequiredFreeSlots={RequiredInventoryFreeSlots} startedByFarmSession={startedByFarmSession}");
+        logger.Info($"{BuildLogTag()} op=start territoryKey={scanner.Snapshot.TerritoryKey} supported={scanner.Snapshot.IsInSupportedTerritory} routeEntries={territory.VisibleCofferFarmRoute.Count} spotEntries={territory.VisibleCofferFarmSpots.Count} startIndex={validatedStartRouteIndex} startSpot={startingRouteEntry.Area}:{startingRouteEntry.Label} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} inventoryRequiredFreeSlots={RequiredInventoryFreeSlots} startedByFarmSession={startedByFarmSession}");
         TransitionTo(TreasureCofferFarmState.Starting, startedByFarmSession
-            ? $"Starting automatic overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}."
-            : $"Starting overworld coffer route with {data.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}.");
+            ? $"Starting automatic overworld coffer route with {territory.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}."
+            : $"Starting overworld coffer route with {territory.VisibleCofferFarmRoute.Count} entries at {startingRouteEntry.Area}:{startingRouteEntry.Label}.");
         return true;
     }
 
@@ -389,9 +393,9 @@ public sealed class TreasureCofferFarmController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
         {
-            SetFailure("Left South Horn while the overworld coffer route was active.");
+            SetFailure("Left a visible-coffer-supported territory while the overworld coffer route was active.");
             return;
         }
 
@@ -430,14 +434,21 @@ public sealed class TreasureCofferFarmController : IDisposable
         while (true)
         {
             var nextIndex = CurrentRouteIndex + 1;
-            if (nextIndex >= data.VisibleCofferFarmRoute.Count)
+            var territory = scanner.ActiveTerritoryData;
+            if (territory == null)
+            {
+                SetFailure("Overworld coffer route lost its active territory data.");
+                return;
+            }
+
+            if (nextIndex >= territory.VisibleCofferFarmRoute.Count)
             {
                 BeginReturnToBase();
                 return;
             }
 
-            var routeEntry = data.VisibleCofferFarmRoute[nextIndex];
-            if (!spotsByKey.TryGetValue(BuildKey(routeEntry.Area, routeEntry.Label), out var spot))
+            var routeEntry = territory.VisibleCofferFarmRoute[nextIndex];
+            if (!GetSpotsByKey().TryGetValue(BuildKey(routeEntry.Area, routeEntry.Label), out var spot))
             {
                 SetFailure($"Overworld coffer route entry {routeEntry.Area}:{routeEntry.Label} is missing spot data.");
                 return;
@@ -1545,8 +1556,14 @@ public sealed class TreasureCofferFarmController : IDisposable
             return null;
         }
 
-        var previousRouteEntry = data.VisibleCofferFarmRoute[routeIndex - 1];
-        if (!spotsByKey.TryGetValue(BuildKey(previousRouteEntry.Area, previousRouteEntry.Label), out var previousSpot))
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            return null;
+        }
+
+        var previousRouteEntry = territory.VisibleCofferFarmRoute[routeIndex - 1];
+        if (!GetSpotsByKey().TryGetValue(BuildKey(previousRouteEntry.Area, previousRouteEntry.Label), out var previousSpot))
         {
             return null;
         }
@@ -1910,4 +1927,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             "The Wanderer's Haven" => "TheWanderersHaven",
             _ => string.Empty,
         };
+
+    private Dictionary<string, VisibleCofferFarmSpotData> GetSpotsByKey()
+        => scanner.ActiveTerritoryData?.VisibleCofferFarmSpots.ToDictionary(spot => BuildKey(spot.Area, spot.Label), StringComparer.OrdinalIgnoreCase) ?? [];
 }

@@ -29,11 +29,11 @@ public sealed class OccultCrescentScanner : IDisposable
     private readonly IFateTable fateTable;
     private readonly IFramework framework;
     private readonly IObjectTable objectTable;
-    private readonly OccultCrescentData data;
+    private readonly OccultCrescentDataCatalog catalog;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
-    private readonly HashSet<uint> potFateIds;
-    private readonly Dictionary<uint, PotFateData> potFatesById;
+    private HashSet<uint> potFateIds;
+    private Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
 
     private ScannerSnapshot snapshot = new()
@@ -42,7 +42,8 @@ public sealed class OccultCrescentScanner : IDisposable
     };
 
     private DateTimeOffset lastScanAt = DateTimeOffset.MinValue;
-    private bool? lastSouthHornState;
+    private bool? lastSupportedTerritoryState;
+    private string lastTerritoryKey = string.Empty;
     private string lastSelectionKey = string.Empty;
     private bool? lastTreasureBuffState;
     private int? lastPlayerForayLevel;
@@ -54,7 +55,7 @@ public sealed class OccultCrescentScanner : IDisposable
         IFateTable fateTable,
         IFramework framework,
         IObjectTable objectTable,
-        OccultCrescentData data,
+        OccultCrescentDataCatalog catalog,
         Configuration configuration,
         CofferNameResolver cofferNameResolver,
         AocchLogger logger)
@@ -63,11 +64,11 @@ public sealed class OccultCrescentScanner : IDisposable
         this.fateTable = fateTable;
         this.framework = framework;
         this.objectTable = objectTable;
-        this.data = data;
+        this.catalog = catalog;
         this.configuration = configuration;
         this.logger = logger;
-        potFateIds = data.PotFates.Select(potFate => potFate.FateId).ToHashSet();
-        potFatesById = data.PotFates.ToDictionary(potFate => potFate.FateId);
+        potFateIds = [];
+        potFatesById = [];
 
         framework.Update += OnFrameworkUpdate;
         clientState.TerritoryChanged += OnTerritoryChanged;
@@ -86,6 +87,9 @@ public sealed class OccultCrescentScanner : IDisposable
         }
     }
 
+    public OccultCrescentTerritoryData? ActiveTerritoryData
+        => catalog.GetTerritoryOrNull(clientState.TerritoryType);
+
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
@@ -102,10 +106,10 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private void OnTerritoryChanged(uint territoryType)
     {
-        var isInSouthHorn = territoryType == data.TerritoryTypeId;
-        logger.Info(isInSouthHorn
-            ? $"[Scanner] op=territory-change territory={territoryType} state=entered-south-horn"
-            : $"[Scanner] op=territory-change territory={territoryType} state=idle-outside-south-horn");
+        var territory = catalog.GetTerritoryOrNull(territoryType);
+        logger.Info(territory != null
+            ? $"[Scanner] op=territory-change territoryId={territoryType} territoryKey={territory.Key} supported=true state=entered"
+            : $"[Scanner] op=territory-change territoryId={territoryType} territoryKey=unsupported supported=false state=unsupported");
 
         pendingForceRefresh = true;
     }
@@ -123,16 +127,26 @@ public sealed class OccultCrescentScanner : IDisposable
         try
         {
             var territoryTypeId = clientState.TerritoryType;
-            var isInSouthHorn = territoryTypeId == data.TerritoryTypeId;
+            var territory = catalog.GetTerritoryOrNull(territoryTypeId);
+            var isInSupportedTerritory = territory != null;
+            var territoryKey = territory?.Key ?? string.Empty;
             var playerPosition = objectTable.LocalPlayer?.Position;
-            var playerForayLevel = TryGetForayLevel(objectTable.LocalPlayer);
+            var playerForayLevel = isInSupportedTerritory ? TryGetForayLevel(objectTable.LocalPlayer) : null;
 
-            if (lastSouthHornState != isInSouthHorn)
+            if (!string.Equals(lastTerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase))
             {
-                lastSouthHornState = isInSouthHorn;
-                logger.Debug(isInSouthHorn
-                    ? "South Horn scanner is active."
-                    : "South Horn scanner is waiting for the player to enter the zone.");
+                lastTerritoryKey = territoryKey;
+                RebuildTerritoryCaches(territory);
+                lastSelectionKey = string.Empty;
+                lastTreasureBuffState = null;
+            }
+
+            if (lastSupportedTerritoryState != isInSupportedTerritory)
+            {
+                lastSupportedTerritoryState = isInSupportedTerritory;
+                logger.Debug(isInSupportedTerritory
+                    ? $"{territory!.DisplayName} scanner is active."
+                    : "Occult Crescent scanner is waiting for the player to enter a supported territory.");
             }
 
             var criticalEncounters = new List<ActiveCriticalEncounter>();
@@ -150,20 +164,51 @@ public sealed class OccultCrescentScanner : IDisposable
             var treasureBuffRemainingSeconds = 0f;
             var effectiveTarget = TargetSelection.None;
 
-            if (isInSouthHorn)
+            var canFarmCriticalEncounters = territory?.Features.CriticalEncounters == true;
+            var canFarmFates = territory?.Features.Fates == true;
+            var canRunPotTreasure = territory?.Features.PotTreasure == true;
+            var canRunVisibleCofferRoute = territory?.Features.VisibleCoffers == true;
+            var canUseShopping = territory?.Features.Shopping == true;
+            var canRunBuffRotation = territory?.Features.BuffRotation == true;
+
+            if (isInSupportedTerritory)
             {
-                currentCriticalEncounterId = ScanCriticalEncounters(criticalEncounters, unknownCriticalEncounters);
-                ScanFates(fates, potFates, out activePotFate);
-                currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
-                    ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
-                selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
-                selectedFate = SelectFate(fates);
+                if (canFarmCriticalEncounters)
+                {
+                    currentCriticalEncounterId = ScanCriticalEncounters(territory!, criticalEncounters, unknownCriticalEncounters);
+                    currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
+                        ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
+                    selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
+                }
+
+                if (canFarmFates || canRunPotTreasure)
+                {
+                    ScanFates(territory!, canFarmFates, canRunPotTreasure, fates, potFates, out activePotFate);
+                    selectedFate = canFarmFates ? SelectFate(fates) : null;
+                }
+
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
-                ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
-                ScanVisibleCoffers(visibleCoffers);
-                ScanNearbyForayEntities(nearbyForayEntities, playerPosition);
-                LogNearbyFateEntityDiagnostics(selectedFate, playerPosition);
-                LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
+
+                if (canRunPotTreasure)
+                {
+                    ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
+                    ScanNearbyForayEntities(nearbyForayEntities, playerPosition);
+                    LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
+                }
+                else
+                {
+                    TrackTreasureBuffState(false);
+                }
+
+                if (canRunVisibleCofferRoute)
+                {
+                    ScanVisibleCoffers(visibleCoffers);
+                }
+
+                if (canFarmFates)
+                {
+                    LogNearbyFateEntityDiagnostics(selectedFate, playerPosition);
+                }
             }
             else
             {
@@ -174,9 +219,17 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var nextSnapshot = new ScannerSnapshot
             {
-                IsInSouthHorn = isInSouthHorn,
+                IsInSupportedTerritory = isInSupportedTerritory,
                 IsInCriticalEncounter = currentCriticalEncounterId != 0,
                 TerritoryTypeId = territoryTypeId,
+                TerritoryKey = territoryKey,
+                TerritoryDisplayName = territory?.DisplayName ?? string.Empty,
+                CanFarmFates = canFarmFates,
+                CanFarmCriticalEncounters = canFarmCriticalEncounters,
+                CanRunVisibleCofferRoute = canRunVisibleCofferRoute,
+                CanRunPotTreasure = canRunPotTreasure,
+                CanUseShopping = canUseShopping,
+                CanRunBuffRotation = canRunBuffRotation,
                 CurrentCriticalEncounterId = currentCriticalEncounterId,
                 LastUpdated = now,
                 CriticalEncounters = criticalEncounters,
@@ -209,6 +262,7 @@ public sealed class OccultCrescentScanner : IDisposable
     }
 
     private unsafe uint ScanCriticalEncounters(
+        OccultCrescentTerritoryData territory,
         List<ActiveCriticalEncounter> criticalEncounters,
         List<ActiveCriticalEncounter> unknownCriticalEncounters)
     {
@@ -227,7 +281,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 continue;
             }
 
-            var metadata = data.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == dynamicEvent.DynamicEventId);
+            var metadata = territory.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == dynamicEvent.DynamicEventId);
             var stateCode = (int)dynamicEvent.State;
             var isCandidate = metadata != null
                 && configuration.EnableCriticalEngagementFarming
@@ -264,6 +318,9 @@ public sealed class OccultCrescentScanner : IDisposable
     }
 
     private void ScanFates(
+        OccultCrescentTerritoryData territory,
+        bool canFarmFates,
+        bool canRunPotTreasure,
         List<ActiveFate> fates,
         List<ActivePotFate> potFates,
         out ActivePotFate? activePotFate)
@@ -287,12 +344,18 @@ public sealed class OccultCrescentScanner : IDisposable
                 continue;
             }
 
-            var metadata = data.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
+            var metadata = territory.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
             var (fateLocation, locationSource) = ResolveFateLocation(fate, metadata);
-            var isPotFate = IsPotFate(fate.FateId);
+            var isPotFate = canRunPotTreasure && IsPotFate(fate.FateId);
+            if (!canFarmFates && !isPotFate)
+            {
+                continue;
+            }
+
             var isExcluded = metadata == null
                 || isPotFate
+                || !canFarmFates
                 || !configuration.EnableFateFarming
                 || !configuration.IsFateEnabled(fate.FateId);
 
@@ -904,6 +967,19 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private bool IsPotFate(uint fateId)
         => potFateIds.Contains(fateId);
+
+    private void RebuildTerritoryCaches(OccultCrescentTerritoryData? territory)
+    {
+        if (territory == null)
+        {
+            potFateIds = [];
+            potFatesById = [];
+            return;
+        }
+
+        potFateIds = territory.PotFates.Select(potFate => potFate.FateId).ToHashSet();
+        potFatesById = territory.PotFates.ToDictionary(potFate => potFate.FateId);
+    }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

@@ -282,11 +282,11 @@ public sealed class TreasureHintTracker : IDisposable
 
         lastProcessedScannerUpdate = scannerSnapshot.LastUpdated;
 
-        if (!scannerSnapshot.IsInSouthHorn)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
             if (Snapshot.HasActiveSession)
             {
-                CompleteCurrentTreasureSession("Left South Horn during treasure tracking.", TreasureSessionState.Abandoned);
+                CompleteCurrentTreasureSession("Pot treasure became unavailable during treasure tracking.", TreasureSessionState.Abandoned);
             }
 
             lastTreasureBuffState = false;

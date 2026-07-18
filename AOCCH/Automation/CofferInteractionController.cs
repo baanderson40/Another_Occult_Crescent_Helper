@@ -280,9 +280,9 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSouthHorn)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
         {
-            SetFailure("Left South Horn while coffer interaction was active.");
+            SetFailure("Coffer interaction stopped because pot treasure became unavailable.");
             return;
         }
 

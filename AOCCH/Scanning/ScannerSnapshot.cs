@@ -6,9 +6,17 @@ namespace AOCCH.Scanning;
 
 public sealed class ScannerSnapshot
 {
-    public bool IsInSouthHorn { get; init; }
+    public bool IsInSupportedTerritory { get; init; }
     public bool IsInCriticalEncounter { get; init; }
     public uint TerritoryTypeId { get; init; }
+    public string TerritoryKey { get; init; } = string.Empty;
+    public string TerritoryDisplayName { get; init; } = string.Empty;
+    public bool CanFarmFates { get; init; }
+    public bool CanFarmCriticalEncounters { get; init; }
+    public bool CanRunVisibleCofferRoute { get; init; }
+    public bool CanRunPotTreasure { get; init; }
+    public bool CanUseShopping { get; init; }
+    public bool CanRunBuffRotation { get; init; }
     public uint CurrentCriticalEncounterId { get; init; }
     public DateTimeOffset LastUpdated { get; init; }
     public IReadOnlyList<ActiveCriticalEncounter> CriticalEncounters { get; init; } = [];
