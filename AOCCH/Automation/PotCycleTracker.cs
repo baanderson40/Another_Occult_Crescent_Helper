@@ -96,7 +96,7 @@ public sealed class PotCycleTracker : IDisposable
     {
         if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
-            return ClearCurrentActivePot(previous, now);
+            return ClearCurrentActivePot(previous, now, scannerSnapshot);
         }
 
         var activePotFate = scannerSnapshot.ActivePotFate;
@@ -105,15 +105,19 @@ public sealed class PotCycleTracker : IDisposable
             logger.DebugThrottled("pot-cycle-no-active-pot", WaitLogInterval, previous.HasKnownAnchor
                 ? $"Pot cycle tracker is waiting for the predicted pot window. nextPot={previous.PredictedNextPotFateName} nextSpawnAt={previous.PredictedNextSpawnAt:O}."
                 : "Pot cycle tracker is waiting for the first observed pot anchor.");
-            return ClearCurrentActivePot(previous, now);
+            return ClearCurrentActivePot(previous, now, scannerSnapshot);
         }
 
         logger.ResetThrottle("pot-cycle-no-active-pot");
-        if (previous.CurrentActivePotFateId == activePotFate.Id)
+        var sameTerritory = string.Equals(previous.TerritoryKey, scannerSnapshot.TerritoryKey, StringComparison.OrdinalIgnoreCase)
+            && previous.TerritoryTypeId == scannerSnapshot.TerritoryTypeId;
+        if (sameTerritory && previous.CurrentActivePotFateId == activePotFate.Id)
         {
             return new PotCycleSnapshot
             {
                 LastUpdated = now,
+                TerritoryKey = scannerSnapshot.TerritoryKey,
+                TerritoryTypeId = scannerSnapshot.TerritoryTypeId,
                 HasKnownAnchor = previous.HasKnownAnchor,
                 LastObservedPotFateId = previous.LastObservedPotFateId,
                 LastObservedPotFateName = previous.LastObservedPotFateName,
@@ -133,6 +137,8 @@ public sealed class PotCycleTracker : IDisposable
         return new PotCycleSnapshot
         {
             LastUpdated = now,
+            TerritoryKey = scannerSnapshot.TerritoryKey,
+            TerritoryTypeId = scannerSnapshot.TerritoryTypeId,
             HasKnownAnchor = true,
             LastObservedPotFateId = activePotFate.Id,
             LastObservedPotFateName = activePotFate.Name,
@@ -146,18 +152,24 @@ public sealed class PotCycleTracker : IDisposable
         };
     }
 
-    private PotCycleSnapshot ClearCurrentActivePot(PotCycleSnapshot previous, DateTimeOffset now)
-        => new()
+    private static PotCycleSnapshot ClearCurrentActivePot(PotCycleSnapshot previous, DateTimeOffset now, ScannerSnapshot scannerSnapshot)
+    {
+        var sameTerritory = string.Equals(previous.TerritoryKey, scannerSnapshot.TerritoryKey, StringComparison.OrdinalIgnoreCase)
+            && previous.TerritoryTypeId == scannerSnapshot.TerritoryTypeId;
+        return new PotCycleSnapshot
         {
             LastUpdated = now,
-            HasKnownAnchor = previous.HasKnownAnchor,
-            LastObservedPotFateId = previous.LastObservedPotFateId,
-            LastObservedPotFateName = previous.LastObservedPotFateName,
-            LastObservedSpawnAt = previous.LastObservedSpawnAt,
-            PredictedNextPotFateId = previous.PredictedNextPotFateId,
-            PredictedNextPotFateName = previous.PredictedNextPotFateName,
-            PredictedNextSpawnAt = previous.PredictedNextSpawnAt,
+            TerritoryKey = scannerSnapshot.TerritoryKey,
+            TerritoryTypeId = scannerSnapshot.TerritoryTypeId,
+            HasKnownAnchor = sameTerritory && previous.HasKnownAnchor,
+            LastObservedPotFateId = sameTerritory ? previous.LastObservedPotFateId : 0,
+            LastObservedPotFateName = sameTerritory ? previous.LastObservedPotFateName : string.Empty,
+            LastObservedSpawnAt = sameTerritory ? previous.LastObservedSpawnAt : DateTimeOffset.MinValue,
+            PredictedNextPotFateId = sameTerritory ? previous.PredictedNextPotFateId : 0,
+            PredictedNextPotFateName = sameTerritory ? previous.PredictedNextPotFateName : string.Empty,
+            PredictedNextSpawnAt = sameTerritory ? previous.PredictedNextSpawnAt : DateTimeOffset.MinValue,
         };
+    }
 
     private PotFateData? GetOppositePotFate(uint fateId)
         => scanner.ActiveTerritoryData?.PotFates.FirstOrDefault(potFate => potFate.FateId != fateId);

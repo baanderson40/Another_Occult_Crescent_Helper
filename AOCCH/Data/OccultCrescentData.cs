@@ -65,6 +65,7 @@ public sealed class OccultCrescentTerritoryData
     public CurrencyShopData Shopping { get; init; } = new();
     public List<DropData> Drops { get; init; } = [];
     public VisibleCofferData VisibleCoffers { get; init; } = new();
+    public PotTreasureBehaviorData PotTreasure { get; init; } = new();
 }
 
 public sealed class TerritoryFeatureAvailability
@@ -131,6 +132,20 @@ public sealed class PotFateData
     public string PreferredAethernet { get; init; } = string.Empty;
     public Vector3Data CenterPosition { get; init; } = new();
     public Vector3Data? StagingPosition { get; init; }
+}
+
+public sealed class PotTreasureBehaviorData
+{
+    public uint TreasureBuffStatusId { get; init; }
+    public uint CofferRevealLogMessageId { get; init; }
+    public uint HintImmediateLogMessageId { get; init; }
+    public uint HintCloseLogMessageId { get; init; }
+    public uint HintFarLogMessageId { get; init; }
+    public uint HintBeyondFarLogMessageId { get; init; }
+    public uint ElixirPromptLogMessageId { get; init; }
+    public uint BonusOfferLogMessageId { get; init; }
+    public uint CofferSurveyCountsLogMessageId { get; init; }
+    public uint CofferSurveyEmptyLogMessageId { get; init; }
 }
 
 public sealed class TreasureCofferGroupData

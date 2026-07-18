@@ -52,6 +52,20 @@ public sealed class CurrencyShopThresholdSetting
 }
 
 [Serializable]
+public sealed class TerritoryEventSetting
+{
+    public string TerritoryKey { get; set; } = string.Empty;
+    public uint EventId { get; set; }
+}
+
+[Serializable]
+public sealed class TerritoryPotStartingSetting
+{
+    public string TerritoryKey { get; set; } = string.Empty;
+    public uint FateId { get; set; }
+}
+
+[Serializable]
 public class Configuration : IPluginConfiguration
 {
     [JsonIgnore]
@@ -63,7 +77,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -74,12 +88,15 @@ public class Configuration : IPluginConfiguration
     public FatePriority FatePriority { get; set; } = FatePriority.LowestProgress;
     public List<uint> DisabledCriticalEncounterIds { get; set; } = [];
     public List<uint> DisabledFateIds { get; set; } = [];
+    public List<TerritoryEventSetting> DisabledTerritoryCriticalEncounterIds { get; set; } = [];
+    public List<TerritoryEventSetting> DisabledTerritoryFateIds { get; set; } = [];
     public bool UseReturn { get; set; } = true;
     public bool EnableBuffRotation { get; set; } = true;
     public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
     public bool EnablePotFarming { get; set; } = true;
     public StartingPotFateMode StartingPotFate { get; set; } = StartingPotFateMode.Auto;
+    public List<TerritoryPotStartingSetting> StartingPotFates { get; set; } = [];
     public int SpawnLeadMinutes { get; set; } = 5;
     public bool ManageInstanceTime { get; set; } = true;
     public int FateCompletionBudgetMinutes { get; set; } = 5;
@@ -126,15 +143,22 @@ public class Configuration : IPluginConfiguration
     public List<CurrencyShopThresholdSetting> CurrencyShopThresholds { get; set; } = [];
     public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
 
-    public bool IsCriticalEncounterEnabled(uint id)
-        => !DisabledCriticalEncounterIds.Contains(id);
-
-    public bool IsFateEnabled(uint id)
-        => !DisabledFateIds.Contains(id);
-
-    public bool SetCriticalEncounterEnabled(uint id, bool enabled)
+    public bool IsCriticalEncounterEnabled(string territoryKey, uint id)
     {
-        var changed = SetIdEnabled(DisabledCriticalEncounterIds, id, enabled);
+        NormalizeTerritorySettings();
+        return !IsEventDisabled(DisabledTerritoryCriticalEncounterIds, territoryKey, id);
+    }
+
+    public bool IsFateEnabled(string territoryKey, uint id)
+    {
+        NormalizeTerritorySettings();
+        return !IsEventDisabled(DisabledTerritoryFateIds, territoryKey, id);
+    }
+
+    public bool SetCriticalEncounterEnabled(string territoryKey, uint id, bool enabled)
+    {
+        NormalizeTerritorySettings();
+        var changed = SetEventEnabled(DisabledTerritoryCriticalEncounterIds, territoryKey, id, enabled);
         if (changed)
         {
             logger?.Debug($"Configuration updated CE {id}: enabled={enabled}.");
@@ -143,15 +167,41 @@ public class Configuration : IPluginConfiguration
         return changed;
     }
 
-    public bool SetFateEnabled(uint id, bool enabled)
+    public bool SetFateEnabled(string territoryKey, uint id, bool enabled)
     {
-        var changed = SetIdEnabled(DisabledFateIds, id, enabled);
+        NormalizeTerritorySettings();
+        var changed = SetEventEnabled(DisabledTerritoryFateIds, territoryKey, id, enabled);
         if (changed)
         {
             logger?.Debug($"Configuration updated FATE {id}: enabled={enabled}.");
         }
 
         return changed;
+    }
+
+    public uint GetStartingPotFateId(string territoryKey)
+    {
+        NormalizeTerritorySettings();
+        return StartingPotFates.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey))?.FateId ?? 0u;
+    }
+
+    public bool SetStartingPotFateId(string territoryKey, uint fateId)
+    {
+        NormalizeTerritorySettings();
+        var setting = StartingPotFates.FirstOrDefault(entry => MatchesTerritory(entry.TerritoryKey, territoryKey));
+        if (setting == null)
+        {
+            StartingPotFates.Add(new TerritoryPotStartingSetting { TerritoryKey = territoryKey, FateId = fateId });
+            return true;
+        }
+
+        if (setting.FateId == fateId)
+        {
+            return false;
+        }
+
+        setting.FateId = fateId;
+        return true;
     }
 
     public int GetCurrencyShopReserve(string territoryKey, uint currencyItemId)
@@ -162,6 +212,26 @@ public class Configuration : IPluginConfiguration
 
     private static bool MatchesTerritory(string configuredKey, string territoryKey)
         => string.Equals(configuredKey, territoryKey, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEventDisabled(IEnumerable<TerritoryEventSetting> settings, string territoryKey, uint id)
+        => settings.Any(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.EventId == id);
+
+    private static bool SetEventEnabled(List<TerritoryEventSetting> settings, string territoryKey, uint id, bool enabled)
+    {
+        var existing = settings.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.EventId == id);
+        if (enabled)
+        {
+            return existing != null && settings.Remove(existing);
+        }
+
+        if (existing != null)
+        {
+            return false;
+        }
+
+        settings.Add(new TerritoryEventSetting { TerritoryKey = territoryKey, EventId = id });
+        return true;
+    }
 
     [JsonPropertyName("FarmingMode")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -177,6 +247,7 @@ public class Configuration : IPluginConfiguration
 
     public void Save()
     {
+        NormalizeTerritorySettings();
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
@@ -190,6 +261,7 @@ public class Configuration : IPluginConfiguration
 
     public bool Migrate(OccultCrescentDataCatalog catalog)
     {
+        NormalizeTerritorySettings();
         var southHorn = catalog.GetTerritoryOrNull("southHorn");
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
@@ -199,7 +271,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 4)
+        if (Version >= 5)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -237,7 +309,7 @@ public class Configuration : IPluginConfiguration
             {
                 if (excludedNames.Contains(fate.Name))
                 {
-                    SetFateEnabled(fate.Id, enabled: false);
+                    SetFateEnabled("southHorn", fate.Id, enabled: false);
                 }
             }
         }
@@ -281,10 +353,34 @@ public class Configuration : IPluginConfiguration
             }
         }
 
+        if (Version < 5)
+        {
+            foreach (var id in DisabledCriticalEncounterIds)
+            {
+                SetCriticalEncounterEnabled("southHorn", id, enabled: false);
+            }
+
+            foreach (var id in DisabledFateIds)
+            {
+                SetFateEnabled("southHorn", id, enabled: false);
+            }
+
+            var legacyStartingPotId = StartingPotFate switch
+            {
+                StartingPotFateMode.PersistentPots => southHorn?.PotFates.FirstOrDefault(pot => string.Equals(pot.Name, "Persistent Pots", StringComparison.OrdinalIgnoreCase))?.FateId ?? 0u,
+                StartingPotFateMode.PleadingPots => southHorn?.PotFates.FirstOrDefault(pot => string.Equals(pot.Name, "Pleading Pots", StringComparison.OrdinalIgnoreCase))?.FateId ?? 0u,
+                _ => 0u,
+            };
+            SetStartingPotFateId("southHorn", legacyStartingPotId);
+            DisabledCriticalEncounterIds.Clear();
+            DisabledFateIds.Clear();
+            StartingPotFate = StartingPotFateMode.Auto;
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 4;
-        logger?.Info("[Configuration] op=migration-complete version=4");
+        Version = 5;
+        logger?.Info("[Configuration] op=migration-complete version=5");
         return true;
     }
 
@@ -319,29 +415,6 @@ public class Configuration : IPluginConfiguration
         }
     }
 
-    private static bool SetIdEnabled(List<uint> disabledIds, uint id, bool enabled)
-    {
-        var wasDisabled = disabledIds.Contains(id);
-        if (enabled)
-        {
-            if (!wasDisabled)
-            {
-                return false;
-            }
-
-            disabledIds.RemoveAll(existingId => existingId == id);
-            return true;
-        }
-
-        if (wasDisabled)
-        {
-            return false;
-        }
-
-        disabledIds.Add(id);
-        return true;
-    }
-
     private void ClampCurrencyShopSettings()
     {
         CurrencyShopReserves ??= [];
@@ -371,6 +444,28 @@ public class Configuration : IPluginConfiguration
             target.KeepAmount = Math.Max(0, target.KeepAmount);
             target.BuyAmount = Math.Max(0, target.BuyAmount);
             target.Priority = Math.Max(0, target.Priority);
+        }
+    }
+
+    private void NormalizeTerritorySettings()
+    {
+        DisabledTerritoryCriticalEncounterIds ??= [];
+        DisabledTerritoryFateIds ??= [];
+        StartingPotFates ??= [];
+
+        foreach (var setting in DisabledTerritoryCriticalEncounterIds)
+        {
+            setting.TerritoryKey ??= string.Empty;
+        }
+
+        foreach (var setting in DisabledTerritoryFateIds)
+        {
+            setting.TerritoryKey ??= string.Empty;
+        }
+
+        foreach (var setting in StartingPotFates)
+        {
+            setting.TerritoryKey ??= string.Empty;
         }
     }
 

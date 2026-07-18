@@ -23,7 +23,6 @@ public sealed class OccultCrescentScanner : IDisposable
     private const int MaxFateEntityDiagnosticEntries = 8;
     private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(5);
-    private const uint TreasureBuffStatusId = 1531;
 
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
@@ -284,7 +283,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var stateCode = (int)dynamicEvent.State;
             var isCandidate = metadata != null
                 && configuration.EnableCriticalEngagementFarming
-                && configuration.IsCriticalEncounterEnabled(dynamicEvent.DynamicEventId)
+                && configuration.IsCriticalEncounterEnabled(territory.Key, dynamicEvent.DynamicEventId)
                 && IsPreBattleCeState(stateCode);
             var activeEncounter = new ActiveCriticalEncounter
             {
@@ -356,7 +355,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 || isPotFate
                 || !canFarmFates
                 || !configuration.EnableFateFarming
-                || !configuration.IsFateEnabled(fate.FateId);
+                || !configuration.IsFateEnabled(territory.Key, fate.FateId);
 
             switch (locationSource)
             {
@@ -452,9 +451,16 @@ public sealed class OccultCrescentScanner : IDisposable
             return;
         }
 
+        var statusId = ActiveTerritoryData?.PotTreasure.TreasureBuffStatusId ?? 0;
+        if (statusId == 0)
+        {
+            TrackTreasureBuffState(false);
+            return;
+        }
+
         foreach (var status in player.StatusList)
         {
-            if (status.StatusId != TreasureBuffStatusId)
+            if (status.StatusId != statusId)
             {
                 continue;
             }
@@ -656,8 +662,8 @@ public sealed class OccultCrescentScanner : IDisposable
 
         lastTreasureBuffState = hasTreasureBuff;
         logger.Info(hasTreasureBuff
-            ? "[Scanner] op=treasure-buff state=detected statusId=1531"
-            : "[Scanner] op=treasure-buff state=cleared statusId=1531");
+            ? $"[Scanner] op=treasure-buff state=detected statusId={ActiveTerritoryData?.PotTreasure.TreasureBuffStatusId ?? 0}"
+            : $"[Scanner] op=treasure-buff state=cleared statusId={ActiveTerritoryData?.PotTreasure.TreasureBuffStatusId ?? 0}");
     }
 
     private void LogNearbyFateEntityDiagnostics(ActiveFate? selectedFate, Vector3? playerPosition)

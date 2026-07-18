@@ -311,7 +311,7 @@ public sealed class PotFarmController : IDisposable
             }
         }
 
-        if (!potCycleSnapshot.HasKnownAnchor && configuration.StartingPotFate != StartingPotFateMode.Auto)
+        if (!potCycleSnapshot.HasKnownAnchor && configuration.GetStartingPotFateId(scannerSnapshot.TerritoryKey) != 0)
         {
             if (!TryVerifyPotControlInventory(out reason))
             {
@@ -1144,12 +1144,9 @@ public sealed class PotFarmController : IDisposable
 
     private bool TryBeginConfiguredBootstrapStaging()
     {
-        var configuredPot = configuration.StartingPotFate switch
-        {
-            StartingPotFateMode.PersistentPots => GetPotFatesById().Values.FirstOrDefault(pot => string.Equals(pot.Name, "Persistent Pots", StringComparison.OrdinalIgnoreCase)),
-            StartingPotFateMode.PleadingPots => GetPotFatesById().Values.FirstOrDefault(pot => string.Equals(pot.Name, "Pleading Pots", StringComparison.OrdinalIgnoreCase)),
-            _ => null,
-        };
+        var territoryKey = scanner.Snapshot.TerritoryKey;
+        var configuredPotId = configuration.GetStartingPotFateId(territoryKey);
+        var configuredPot = GetPotFatesById().GetValueOrDefault(configuredPotId);
 
         if (configuredPot == null)
         {

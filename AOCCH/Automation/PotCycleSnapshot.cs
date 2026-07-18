@@ -7,6 +7,8 @@ namespace AOCCH.Automation;
 public sealed class PotCycleSnapshot
 {
     public DateTimeOffset LastUpdated { get; init; }
+    public string TerritoryKey { get; init; } = string.Empty;
+    public uint TerritoryTypeId { get; init; }
     public bool HasKnownAnchor { get; init; }
     public uint LastObservedPotFateId { get; init; }
     public string LastObservedPotFateName { get; init; } = string.Empty;

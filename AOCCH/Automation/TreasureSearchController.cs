@@ -323,6 +323,14 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        var scannerSnapshot = scanner.Snapshot;
+        if (!string.Equals(hintSnapshot.TerritoryKey, scannerSnapshot.TerritoryKey, StringComparison.OrdinalIgnoreCase)
+            || hintSnapshot.TerritoryTypeId != scannerSnapshot.TerritoryTypeId)
+        {
+            SetFailure("Treasure search cannot use a treasure session from a different territory.");
+            return false;
+        }
+
         // Item 12 starts from the first parsed hint; later revisions may hand off.
         var groupKey = GetGroupKey(hintSnapshot.InitialHintEvent?.Direction ?? TreasureDirection.Unknown);
         if (groupKey.Length == 0)

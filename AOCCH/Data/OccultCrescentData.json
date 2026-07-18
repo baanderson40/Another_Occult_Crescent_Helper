@@ -30,6 +30,18 @@
         ],
         "unsafeWeatherIds": [7, 62, 64, 192]
       },
+      "potTreasure": {
+        "treasureBuffStatusId": 1531,
+        "cofferRevealLogMessageId": 10985,
+        "hintImmediateLogMessageId": 10986,
+        "hintCloseLogMessageId": 10987,
+        "hintFarLogMessageId": 10988,
+        "hintBeyondFarLogMessageId": 10989,
+        "elixirPromptLogMessageId": 10990,
+        "bonusOfferLogMessageId": 10994,
+        "cofferSurveyCountsLogMessageId": 10965,
+        "cofferSurveyEmptyLogMessageId": 10966
+      },
       "shopping": {
         "vendors": [
           {

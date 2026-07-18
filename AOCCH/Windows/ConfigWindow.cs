@@ -25,7 +25,6 @@ public class ConfigWindow : Window, IDisposable
     }
 
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
-    private static readonly string[] StartingPotFateLabels = ["Auto", "Persistent Pots (North)", "Pleading Pots (South)"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
     private const float PotsNumericInputWidth = 60f;
     private const float SettingsNumericInputWidth = 60f;
@@ -214,12 +213,17 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.TextUnformatted("Pot Cycle");
 
-        var startingPotFate = (int)configuration.StartingPotFate;
+        var territory = plugin.Scanner.ActiveTerritoryData;
+        var potFates = territory?.PotFates.OrderBy(pot => pot.Name, StringComparer.Ordinal).ToArray() ?? [];
+        var startingPotFateId = territory == null ? 0 : configuration.GetStartingPotFateId(territory.Key);
+        var startingPotFate = Array.FindIndex(potFates, pot => pot.FateId == startingPotFateId) + 1;
+        var startingPotFateLabels = new[] { "Auto" }.Concat(potFates.Select(pot => $"{pot.Name} ({pot.FateId})")).ToArray();
         ImGui.SetNextItemWidth(220);
-        if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, StartingPotFateLabels, StartingPotFateLabels.Length))
+        if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, startingPotFateLabels, startingPotFateLabels.Length) && territory != null)
         {
-            logger.Info($"[Config] op=setting-change key=StartingPotFate old={configuration.StartingPotFate} new={(StartingPotFateMode)startingPotFate}");
-            configuration.StartingPotFate = (StartingPotFateMode)startingPotFate;
+            var nextFateId = startingPotFate == 0 ? 0 : potFates[startingPotFate - 1].FateId;
+            logger.Info($"[Config] op=setting-change key=StartingPotFate territoryKey={territory.Key} old={startingPotFateId} new={nextFateId}");
+            configuration.SetStartingPotFateId(territory.Key, nextFateId);
             configuration.Save();
         }
 
@@ -914,21 +918,23 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawCriticalEncounterCheckboxList()
     {
+        var territoryKey = plugin.Scanner.Snapshot.TerritoryKey;
         DrawScrollableCheckboxList(
             "AOCCHCeCheckboxes",
             GetCriticalEncounterEntries(),
-            configuration.IsCriticalEncounterEnabled,
-            (id, enabled) => configuration.SetCriticalEncounterEnabled(id, enabled),
+            id => configuration.IsCriticalEncounterEnabled(territoryKey, id),
+            (id, enabled) => configuration.SetCriticalEncounterEnabled(territoryKey, id, enabled),
             "CriticalEncounter");
     }
 
     private void DrawFateCheckboxList()
     {
+        var territoryKey = plugin.Scanner.Snapshot.TerritoryKey;
         DrawScrollableCheckboxList(
             "AOCCHFateCheckboxes",
             GetDirectFarmFateEntries(),
-            configuration.IsFateEnabled,
-            (id, enabled) => configuration.SetFateEnabled(id, enabled),
+            id => configuration.IsFateEnabled(territoryKey, id),
+            (id, enabled) => configuration.SetFateEnabled(territoryKey, id, enabled),
             "FATE");
     }
 

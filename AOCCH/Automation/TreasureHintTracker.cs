@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 
+using AOCCH.Data;
 using AOCCH.Logging;
 using AOCCH.Scanning;
 using Dalamud.Game.Chat;
@@ -11,27 +12,6 @@ namespace AOCCH.Automation;
 public sealed class TreasureHintTracker : IDisposable
 {
     private static readonly TimeSpan PostBuffGraceDuration = TimeSpan.FromSeconds(1.5);
-    private const uint TreasureCofferRevealLogMessageId = 10985u;
-    private const uint TreasureHintImmediateLogMessageId = 10986u;
-    private const uint TreasureHintCloseLogMessageId = 10987u;
-    private const uint TreasureHintFarLogMessageId = 10988u;
-    private const uint TreasureHintBeyondFarLogMessageId = 10989u;
-    private const uint TreasureElixirPromptLogMessageId = 10990u;
-    private const uint TreasureBonusOfferLogMessageId = 10994u;
-    private const uint TreasureCofferSurveyCountsLogMessageId = 10965u;
-    private const uint TreasureCofferSurveyEmptyLogMessageId = 10966u;
-    private static readonly HashSet<uint> DebugTreasureLogMessageIds =
-    [
-        TreasureCofferSurveyCountsLogMessageId,
-        TreasureCofferSurveyEmptyLogMessageId,
-        TreasureCofferRevealLogMessageId,
-        TreasureHintImmediateLogMessageId,
-        TreasureHintCloseLogMessageId,
-        TreasureHintFarLogMessageId,
-        TreasureHintBeyondFarLogMessageId,
-        TreasureElixirPromptLogMessageId,
-        TreasureBonusOfferLogMessageId,
-    ];
 
     private readonly IFramework framework;
     private readonly IChatGui chatGui;
@@ -110,7 +90,7 @@ public sealed class TreasureHintTracker : IDisposable
             latestDebugLogMessageSummary = string.Empty;
         }
 
-        logger.Info($"[TreasureHintTracker] op=debug-logmessage-capture-arm attempt={attemptId} reason=\"{SanitizeLogText(reason)}\" duration={duration.TotalSeconds:0.0}s ids={string.Join(",", DebugTreasureLogMessageIds)}");
+        logger.Info($"[TreasureHintTracker] op=debug-logmessage-capture-arm attempt={attemptId} reason=\"{SanitizeLogText(reason)}\" duration={duration.TotalSeconds:0.0}s ids={string.Join(",", GetDebugTreasureLogMessageIds())}");
         return attemptId;
     }
 
@@ -224,6 +204,8 @@ public sealed class TreasureHintTracker : IDisposable
             {
                 SessionState = TreasureSessionState.Active,
                 SessionId = previous.SessionId + 1,
+                TerritoryKey = scanner.Snapshot.TerritoryKey,
+                TerritoryTypeId = scanner.Snapshot.TerritoryTypeId,
                 StartedAt = DateTimeOffset.UtcNow,
                 LastTransition = reason,
                 LastResetReason = reason,
@@ -249,6 +231,8 @@ public sealed class TreasureHintTracker : IDisposable
             {
                 SessionState = terminalState,
                 SessionId = snapshot.SessionId,
+                TerritoryKey = snapshot.TerritoryKey,
+                TerritoryTypeId = snapshot.TerritoryTypeId,
                 StartedAt = snapshot.StartedAt,
                 CompletedAt = DateTimeOffset.UtcNow,
                 CompletionReason = reason,
@@ -289,6 +273,15 @@ public sealed class TreasureHintTracker : IDisposable
                 CompleteCurrentTreasureSession("Pot treasure became unavailable during treasure tracking.", TreasureSessionState.Abandoned);
             }
 
+            lastTreasureBuffState = false;
+            return;
+        }
+
+        if (Snapshot.HasActiveSession
+            && (!string.Equals(Snapshot.TerritoryKey, scannerSnapshot.TerritoryKey, StringComparison.OrdinalIgnoreCase)
+                || Snapshot.TerritoryTypeId != scannerSnapshot.TerritoryTypeId))
+        {
+            CompleteCurrentTreasureSession("Treasure tracking territory changed.", TreasureSessionState.Abandoned);
             lastTreasureBuffState = false;
             return;
         }
@@ -399,6 +392,8 @@ public sealed class TreasureHintTracker : IDisposable
             {
                 SessionState = snapshot.SessionState,
                 SessionId = snapshot.SessionId,
+                TerritoryKey = snapshot.TerritoryKey,
+                TerritoryTypeId = snapshot.TerritoryTypeId,
                 StartedAt = snapshot.StartedAt,
                 CompletedAt = snapshot.CompletedAt,
                 CompletionReason = snapshot.CompletionReason,
@@ -446,6 +441,8 @@ public sealed class TreasureHintTracker : IDisposable
             {
                 SessionState = snapshot.SessionState,
                 SessionId = snapshot.SessionId,
+                TerritoryKey = snapshot.TerritoryKey,
+                TerritoryTypeId = snapshot.TerritoryTypeId,
                 StartedAt = snapshot.StartedAt,
                 CompletedAt = snapshot.CompletedAt,
                 CompletionReason = snapshot.CompletionReason,
@@ -493,7 +490,7 @@ public sealed class TreasureHintTracker : IDisposable
                 return string.Empty;
             }
 
-            if (!DebugTreasureLogMessageIds.Contains(message.LogMessageId))
+            if (!GetDebugTreasureLogMessageIds().Contains(message.LogMessageId))
             {
                 return string.Empty;
             }
@@ -508,98 +505,130 @@ public sealed class TreasureHintTracker : IDisposable
     private bool TryClassifyTreasureLogMessage(ILogMessage message, out TreasureHintEvent parsedEvent)
     {
         parsedEvent = null!;
-
-        switch (message.LogMessageId)
+        var behavior = scanner.ActiveTerritoryData?.PotTreasure;
+        if (behavior == null)
         {
-            case TreasureCofferRevealLogMessageId:
-                parsedEvent = new TreasureHintEvent
-                {
-                    Kind = TreasureHintKind.CofferReveal,
-                    RawText = $"LogMessageId={message.LogMessageId}",
-                    NormalizedText = $"logmessage:{message.LogMessageId}",
-                };
-                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
-                return true;
-            case TreasureElixirPromptLogMessageId:
-                parsedEvent = new TreasureHintEvent
-                {
-                    Kind = TreasureHintKind.ElixirPrompt,
-                    RawText = $"LogMessageId={message.LogMessageId}",
-                    NormalizedText = $"logmessage:{message.LogMessageId}",
-                };
-                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
-                return true;
-            case TreasureBonusOfferLogMessageId:
-                parsedEvent = new TreasureHintEvent
-                {
-                    Kind = TreasureHintKind.BonusOffer,
-                    RawText = $"LogMessageId={message.LogMessageId}",
-                    NormalizedText = $"logmessage:{message.LogMessageId}",
-                };
-                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} summary={BuildDebugLogMessageSummary(message)}");
-                return true;
-            case TreasureHintImmediateLogMessageId:
-            case TreasureHintCloseLogMessageId:
-            case TreasureHintFarLogMessageId:
-            case TreasureHintBeyondFarLogMessageId:
-                if (!message.TryGetIntParameter(0, out var directionValue))
-                {
-                    logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=missing-direction-param");
-                    return false;
-                }
-
-                var direction = MapDirection(directionValue);
-                if (direction == TreasureDirection.Unknown)
-                {
-                    logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=unknown-direction value={directionValue}");
-                }
-
-                parsedEvent = new TreasureHintEvent
-                {
-                    Kind = TreasureHintKind.Hint,
-                    RawText = $"LogMessageId={message.LogMessageId}",
-                    NormalizedText = $"logmessage:{message.LogMessageId}",
-                    Direction = direction,
-                    DistanceBucket = MapDistanceBucket(message.LogMessageId),
-                    DistanceText = MapDistanceBucket(message.LogMessageId),
-                };
-                logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} direction={parsedEvent.Direction} distance={parsedEvent.DistanceBucket} summary={BuildDebugLogMessageSummary(message)}");
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        if (message.LogMessageId == behavior.CofferRevealLogMessageId)
+        {
+            parsedEvent = CreateEvent(TreasureHintKind.CofferReveal, message.LogMessageId);
+            return LogClassifiedEvent(message, parsedEvent);
+        }
+
+        if (message.LogMessageId == behavior.ElixirPromptLogMessageId || message.LogMessageId == behavior.BonusOfferLogMessageId)
+        {
+            parsedEvent = CreateEvent(message.LogMessageId == behavior.ElixirPromptLogMessageId ? TreasureHintKind.ElixirPrompt : TreasureHintKind.BonusOffer, message.LogMessageId);
+            return LogClassifiedEvent(message, parsedEvent);
+        }
+
+        var distanceBucket = MapDistanceBucket(message.LogMessageId, behavior);
+        if (distanceBucket.Length == 0)
+        {
+            return false;
+        }
+
+        if (!message.TryGetIntParameter(0, out var directionValue))
+        {
+            logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=missing-direction-param");
+            return false;
+        }
+
+        var direction = MapDirection(directionValue);
+        if (direction == TreasureDirection.Unknown)
+        {
+            logger.Warning($"[TreasureHintTracker] op=hint-logmessage-parse-failed id={message.LogMessageId} reason=unknown-direction value={directionValue}");
+            return false;
+        }
+
+        parsedEvent = new TreasureHintEvent
+        {
+            Kind = TreasureHintKind.Hint,
+            RawText = $"LogMessageId={message.LogMessageId}",
+            NormalizedText = $"logmessage:{message.LogMessageId}",
+            Direction = direction,
+            DistanceBucket = distanceBucket,
+            DistanceText = distanceBucket,
+        };
+        return LogClassifiedEvent(message, parsedEvent);
+    }
+
+    private static TreasureHintEvent CreateEvent(TreasureHintKind kind, uint logMessageId)
+        => new()
+        {
+            Kind = kind,
+            RawText = $"LogMessageId={logMessageId}",
+            NormalizedText = $"logmessage:{logMessageId}",
+        };
+
+    private bool LogClassifiedEvent(ILogMessage message, TreasureHintEvent parsedEvent)
+    {
+        logger.Info($"[TreasureHintTracker] op=event-classified logMessageId={message.LogMessageId} kind={parsedEvent.Kind} direction={parsedEvent.Direction} distance={parsedEvent.DistanceBucket} summary={BuildDebugLogMessageSummary(message)}");
+        return true;
+    }
+
+    private HashSet<uint> GetDebugTreasureLogMessageIds()
+    {
+        var behavior = scanner.ActiveTerritoryData?.PotTreasure;
+        var ids = new HashSet<uint>();
+        if (behavior != null)
+        {
+            ids.UnionWith(
+            [
+                behavior.CofferRevealLogMessageId,
+                behavior.HintImmediateLogMessageId,
+                behavior.HintCloseLogMessageId,
+                behavior.HintFarLogMessageId,
+                behavior.HintBeyondFarLogMessageId,
+                behavior.ElixirPromptLogMessageId,
+                behavior.BonusOfferLogMessageId,
+                behavior.CofferSurveyCountsLogMessageId,
+                behavior.CofferSurveyEmptyLogMessageId,
+            ]);
+        }
+
+        ids.Remove(0);
+        return ids;
     }
 
     private bool TryParseCofferSurveyLogMessage(ILogMessage message, out TreasureCofferSurveySnapshot parsedSurvey)
     {
         parsedSurvey = null!;
-
-        switch (message.LogMessageId)
+        var behavior = scanner.ActiveTerritoryData?.PotTreasure;
+        if (behavior == null)
         {
-            case TreasureCofferSurveyCountsLogMessageId:
-                if (TryParseCofferSurveyCounts(message, out var silverCount, out var bronzeCount))
-                {
-                    parsedSurvey = new TreasureCofferSurveySnapshot
-                    {
-                        LogMessageId = message.LogMessageId,
-                        SilverCount = Math.Max(0, silverCount),
-                        BronzeCount = Math.Max(0, bronzeCount),
-                    };
-                    return true;
-                }
-
-                return false;
-            case TreasureCofferSurveyEmptyLogMessageId:
-                parsedSurvey = new TreasureCofferSurveySnapshot
-                {
-                    LogMessageId = message.LogMessageId,
-                    SilverCount = 0,
-                    BronzeCount = 0,
-                };
-                return true;
-            default:
-                return false;
+            return false;
         }
+
+        if (message.LogMessageId == behavior.CofferSurveyCountsLogMessageId)
+        {
+            if (!TryParseCofferSurveyCounts(message, out var silverCount, out var bronzeCount))
+            {
+                return false;
+            }
+
+            parsedSurvey = new TreasureCofferSurveySnapshot
+            {
+                LogMessageId = message.LogMessageId,
+                SilverCount = Math.Max(0, silverCount),
+                BronzeCount = Math.Max(0, bronzeCount),
+            };
+            return true;
+        }
+
+        if (message.LogMessageId != behavior.CofferSurveyEmptyLogMessageId)
+        {
+            return false;
+        }
+
+        parsedSurvey = new TreasureCofferSurveySnapshot
+        {
+            LogMessageId = message.LogMessageId,
+            SilverCount = 0,
+            BronzeCount = 0,
+        };
+        return true;
     }
 
     private bool TryParseCofferSurveyCounts(ILogMessage message, out int silverCount, out int bronzeCount)
@@ -670,13 +699,13 @@ public sealed class TreasureHintTracker : IDisposable
             _ => TreasureDirection.Unknown,
         };
 
-    private static string MapDistanceBucket(uint logMessageId)
+    private static string MapDistanceBucket(uint logMessageId, PotTreasureBehaviorData behavior)
         => logMessageId switch
         {
-            TreasureHintImmediateLogMessageId => "immediate",
-            TreasureHintCloseLogMessageId => "close",
-            TreasureHintFarLogMessageId => "far",
-            TreasureHintBeyondFarLogMessageId => "beyond_far",
+            var id when id == behavior.HintImmediateLogMessageId => "immediate",
+            var id when id == behavior.HintCloseLogMessageId => "close",
+            var id when id == behavior.HintFarLogMessageId => "far",
+            var id when id == behavior.HintBeyondFarLogMessageId => "beyond_far",
             _ => string.Empty,
         };
 

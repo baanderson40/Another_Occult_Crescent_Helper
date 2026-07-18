@@ -120,6 +120,7 @@ public static class OccultCrescentDataLoader
             Shopping = ShopCurrencyCatalog.CreateSouthHornData(territory.Shopping.Vendors),
             Drops = territory.Drops,
             VisibleCoffers = territory.VisibleCoffers,
+            PotTreasure = territory.PotTreasure,
         };
     }
 
@@ -161,6 +162,7 @@ public static class OccultCrescentDataLoader
         ValidateNonzeroIds(territory.PotFates.Select(fate => fate.FateId), "pot fate", errors);
         ValidateAethernetNames(territory, errors);
         ValidateTreasureGroups(territory, errors);
+        ValidatePotTreasure(territory, errors);
         ValidateVisibleCofferSpots(territory, errors);
         ValidateVisibleCoffers(territory, errors);
         ValidateAethernetReferences(territory, errors);
@@ -317,6 +319,11 @@ public static class OccultCrescentDataLoader
                 errors.Add($"treasure group fateId={group.FateId} is missing a group key");
             }
 
+            if (group.Candidates.Count == 0)
+            {
+                errors.Add($"treasure group fateId={group.FateId} groupKey='{group.GroupKey}' has no candidates");
+            }
+
             foreach (var duplicateKey in group.Candidates
                          .Where(candidate => !string.IsNullOrWhiteSpace(candidate.CandidateKey))
                          .GroupBy(candidate => candidate.CandidateKey, StringComparer.OrdinalIgnoreCase)
@@ -342,9 +349,94 @@ public static class OccultCrescentDataLoader
                 {
                     errors.Add($"treasure candidate fateId={group.FateId} groupKey='{group.GroupKey}' is missing a candidate key");
                 }
+
+                if (candidate.Position.X == 0f && candidate.Position.Y == 0f && candidate.Position.Z == 0f)
+                {
+                    errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid zero position");
+                }
+
+                if (candidate.AggroLevel < 0 || candidate.HideThresholdDistance < 0)
+                {
+                    errors.Add($"treasure candidate key='{candidate.CandidateKey}' has invalid safety values");
+                }
             }
         }
     }
+
+    private static void ValidatePotTreasure(OccultCrescentTerritoryData territory, List<string> errors)
+    {
+        if (!territory.Features.PotTreasure)
+        {
+            return;
+        }
+
+        if (territory.PotFates.Count < 2)
+        {
+            errors.Add("pot treasure is enabled but fewer than two pot FATEs are defined for cycle prediction");
+        }
+
+        var fateIds = territory.Fates.Select(fate => fate.Id).ToHashSet();
+        foreach (var potFate in territory.PotFates)
+        {
+            if (!fateIds.Contains(potFate.FateId))
+            {
+                errors.Add($"pot FATE {potFate.FateId} is missing from the territory FATE catalog");
+            }
+
+            if (potFate.CenterPosition.X == 0f && potFate.CenterPosition.Y == 0f && potFate.CenterPosition.Z == 0f)
+            {
+                errors.Add($"pot FATE {potFate.FateId} has an invalid zero center position");
+            }
+
+            if (!territory.TreasureCofferGroups.Any(group => group.FateId == potFate.FateId))
+            {
+                errors.Add($"pot FATE {potFate.FateId} has no treasure coffer groups");
+            }
+
+            var groupKeys = territory.TreasureCofferGroups
+                .Where(group => group.FateId == potFate.FateId)
+                .Select(group => group.GroupKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var requiredGroupKey in RequiredTreasureGroupKeys)
+            {
+                if (!groupKeys.Contains(requiredGroupKey))
+                {
+                    errors.Add($"pot FATE {potFate.FateId} is missing treasure group '{requiredGroupKey}'");
+                }
+            }
+        }
+
+        if (territory.PotTreasure.TreasureBuffStatusId == 0)
+        {
+            errors.Add("pot treasure behavior is missing a treasure buff status ID");
+        }
+
+        var logMessageIds = new[]
+        {
+            territory.PotTreasure.CofferRevealLogMessageId,
+            territory.PotTreasure.HintImmediateLogMessageId,
+            territory.PotTreasure.HintCloseLogMessageId,
+            territory.PotTreasure.HintFarLogMessageId,
+            territory.PotTreasure.HintBeyondFarLogMessageId,
+            territory.PotTreasure.ElixirPromptLogMessageId,
+            territory.PotTreasure.BonusOfferLogMessageId,
+            territory.PotTreasure.CofferSurveyCountsLogMessageId,
+            territory.PotTreasure.CofferSurveyEmptyLogMessageId,
+        };
+        if (logMessageIds.Any(id => id == 0))
+        {
+            errors.Add("pot treasure behavior is missing one or more log message IDs");
+        }
+        else if (logMessageIds.GroupBy(id => id).Any(group => group.Count() > 1))
+        {
+            errors.Add("pot treasure behavior has duplicate log message IDs");
+        }
+    }
+
+    private static readonly string[] RequiredTreasureGroupKeys =
+    [
+        "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest",
+    ];
 
     private static void ValidateVisibleCofferSpots(OccultCrescentTerritoryData territory, List<string> errors)
     {

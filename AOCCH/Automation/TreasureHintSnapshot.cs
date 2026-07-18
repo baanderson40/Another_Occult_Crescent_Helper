@@ -6,6 +6,8 @@ public sealed class TreasureHintSnapshot
 {
     public TreasureSessionState SessionState { get; init; }
     public int SessionId { get; init; }
+    public string TerritoryKey { get; init; } = string.Empty;
+    public uint TerritoryTypeId { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset CompletedAt { get; init; }
     public string CompletionReason { get; init; } = string.Empty;
