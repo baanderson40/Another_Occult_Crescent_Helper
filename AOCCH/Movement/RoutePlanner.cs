@@ -192,7 +192,7 @@ public sealed class RoutePlanner
         route = new PlannedRoute();
         failureReason = string.Empty;
 
-        var baseCamp = GetBaseCampAethernet(territory);
+        var baseCamp = territory.GetBaseCampAethernet();
         if (baseCamp == null)
         {
             failureReason = "Base Camp aethernet data is unavailable.";
@@ -280,7 +280,7 @@ public sealed class RoutePlanner
         float? earlyDismountDistance,
         Vector3? earlyDismountTarget)
     {
-        var baseCamp = GetBaseCampAethernet(territory);
+        var baseCamp = territory.GetBaseCampAethernet();
         var closeToBaseCamp = baseCamp != null
             && string.Equals(preferredAethernet.Name, baseCamp.Name, StringComparison.OrdinalIgnoreCase)
             && CalculateFlatDistance(playerPosition, baseCamp.Position.ToVector3()) <= BaseDirectThreshold;
@@ -533,6 +533,4 @@ public sealed class RoutePlanner
             + (preferredAethernet.IsBaseCamp ? 0f : AethernetTransitionPenaltySeconds)
             + (CalculateFlatDistance(preferredAethernet.Destination.ToVector3(), destination) / travelSpeed);
 
-    private AethernetData? GetBaseCampAethernet(OccultCrescentTerritoryData territory)
-        => territory.Aethernets.FirstOrDefault(aethernet => aethernet.IsBaseCamp);
 }

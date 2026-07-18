@@ -355,6 +355,8 @@ public class Configuration : IPluginConfiguration
 
         if (Version < 5)
         {
+            // Legacy selections predate territory profiles and therefore belong to South Horn.
+            logger?.Info("[Configuration] op=migration-scope-legacy-events territoryKey=southHorn");
             foreach (var id in DisabledCriticalEncounterIds)
             {
                 SetCriticalEncounterEnabled("southHorn", id, enabled: false);

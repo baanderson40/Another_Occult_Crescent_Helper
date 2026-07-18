@@ -453,7 +453,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             }
 
-            if (ShouldSkipForRouteRules(spot, out var routeRuleSkipReason))
+            if (ShouldSkipForSafetyRules(spot, out var routeRuleSkipReason))
             {
                 lock (gate)
                 {
@@ -1479,7 +1479,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         return "none";
     }
 
-    private bool ShouldSkipForRouteRules(VisibleCofferFarmSpotData spot, out string reason)
+    private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
     {
         var weather = GetWeatherCondition();
         if (configuration.SkipUnsafeWeatherRoutes && spot.SkipDuringUnsafeWeather && weather.IsUnsafe)
@@ -1502,12 +1502,6 @@ public sealed class TreasureCofferFarmController : IDisposable
             && IsAshkinTime())
         {
             reason = "ashkin-route-skip";
-            return true;
-        }
-
-        if (spot.SpecialBranch is { Length: > 0 } branch && !IsSpecialBranchActive(branch))
-        {
-            reason = $"special-branch-inactive:{branch}";
             return true;
         }
 
@@ -1540,18 +1534,20 @@ public sealed class TreasureCofferFarmController : IDisposable
     private static string FormatWeatherId(byte? weatherId)
         => weatherId.HasValue ? weatherId.Value.ToString() : "unavailable";
 
-    private bool IsSpecialBranchActive(string branch)
-        => branch switch
-        {
-            "ascent5_only" => true,
-            _ => true,
-        };
-
-    private static bool IsAshkinTime()
+    private bool IsAshkinTime()
     {
-        var eorzeaSecondsToday = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() * 3600L / 175L) % 86400L;
-        return eorzeaSecondsToday >= (22 * 3600 + 30 * 60)
-            || eorzeaSecondsToday < (4 * 3600);
+        var cofferData = scanner.ActiveTerritoryData?.VisibleCoffers;
+        if (cofferData?.AshkinStartEorzeaMinute is not { } startMinute
+            || cofferData.AshkinEndEorzeaMinute is not { } endMinute)
+        {
+            return false;
+        }
+
+        var eorzeaSecondsToday = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() * 3600L / 175L) % (24 * 60 * 60);
+        var currentMinute = (int)(eorzeaSecondsToday / 60);
+        return startMinute <= endMinute
+            ? currentMinute >= startMinute && currentMinute < endMinute
+            : currentMinute >= startMinute || currentMinute < endMinute;
     }
 
     private VisibleCofferFarmSpotData? GetPreviousThresholdSpot(int routeIndex)

@@ -28,7 +28,9 @@
           { "area": "Vanishing Slope", "aethernet": "TheWanderersHaven" },
           { "area": "The Wanderer's Haven", "aethernet": "TheWanderersHaven" }
         ],
-        "unsafeWeatherIds": [7, 62, 64, 192]
+        "unsafeWeatherIds": [7, 62, 64, 192],
+        "ashkinStartEorzeaMinute": 1350,
+        "ashkinEndEorzeaMinute": 240
       },
       "potTreasure": {
         "treasureBuffStatusId": 1531,

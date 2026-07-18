@@ -217,8 +217,19 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"FATE Farming: {(configuration.EnableFateFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
         ImGui.TextUnformatted($"In Supported Territory: {(snapshot.IsInSupportedTerritory ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Territory Key: {(snapshot.TerritoryKey.Length == 0 ? "Unsupported" : snapshot.TerritoryKey)}");
+        ImGui.TextUnformatted($"Territory Name: {(snapshot.TerritoryDisplayName.Length == 0 ? "Unsupported" : snapshot.TerritoryDisplayName)}");
+        ImGui.TextUnformatted($"FATE Data: {FormatFeatureAvailability(snapshot.CanFarmFates)}");
+        ImGui.TextUnformatted($"CE Data: {FormatFeatureAvailability(snapshot.CanFarmCriticalEncounters)}");
+        ImGui.TextUnformatted($"Shopping Data: {FormatFeatureAvailability(snapshot.CanUseShopping)}");
+        ImGui.TextUnformatted($"Visible Coffer Data: {FormatFeatureAvailability(snapshot.CanRunVisibleCofferRoute)}");
+        ImGui.TextUnformatted($"Pot Treasure Data: {FormatFeatureAvailability(snapshot.CanRunPotTreasure)}");
+        ImGui.TextUnformatted($"Buff Rotation Data: {FormatFeatureAvailability(snapshot.CanRunBuffRotation)}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
     }
+
+    private static string FormatFeatureAvailability(bool available)
+        => available ? "Ready" : "Unavailable";
 
     private void DrawDebugActions()
     {

@@ -512,7 +512,14 @@ public sealed class BuffRotationController : IDisposable
         var destination = moveTargets[moveAttemptIndex++];
         currentAction = "Moving to buff zone";
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.PlanRouteToLocation(currentAction, "BaseCamp", destination, 1f))
+        var baseCamp = scanner.ActiveTerritoryData?.GetBaseCampAethernet();
+        if (baseCamp == null)
+        {
+            SetFailure("Buff rotation requires Base Camp aethernet data in the active territory profile.", critical: false);
+            return;
+        }
+
+        if (!movementController.PlanRouteToLocation(currentAction, baseCamp.Name, destination, 1f))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Buff rotation could not plan movement into the buff zone."

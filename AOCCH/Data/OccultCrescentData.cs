@@ -66,6 +66,9 @@ public sealed class OccultCrescentTerritoryData
     public List<DropData> Drops { get; init; } = [];
     public VisibleCofferData VisibleCoffers { get; init; } = new();
     public PotTreasureBehaviorData PotTreasure { get; init; } = new();
+
+    public AethernetData? GetBaseCampAethernet()
+        => Aethernets.FirstOrDefault(aethernet => aethernet.IsBaseCamp);
 }
 
 public sealed class TerritoryFeatureAvailability
@@ -97,6 +100,8 @@ public sealed class VisibleCofferData
     public List<string> LocalizedNames { get; init; } = [];
     public List<VisibleCofferAreaAethernetData> AreaAethernetMappings { get; init; } = [];
     public List<byte> UnsafeWeatherIds { get; init; } = [];
+    public int? AshkinStartEorzeaMinute { get; init; }
+    public int? AshkinEndEorzeaMinute { get; init; }
 }
 
 public sealed class VisibleCofferAreaAethernetData
@@ -182,7 +187,6 @@ public sealed class VisibleCofferFarmSpotData
     public bool HideOnArrival { get; init; }
     public bool DisableExitHideThreshold { get; init; }
     public bool MountOnArrival { get; init; }
-    public string? SpecialBranch { get; init; }
     public bool SkipDuringAshkin { get; init; }
     public bool SkipDuringUnsafeWeather { get; init; }
     public bool RecheckAscentSafetyOnArrival { get; init; }

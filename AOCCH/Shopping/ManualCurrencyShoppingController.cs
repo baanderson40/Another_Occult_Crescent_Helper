@@ -1343,8 +1343,9 @@ public sealed class ManualCurrencyShoppingController : IDisposable
     private bool TryStartVendorRecovery()
     {
         var preferredAethernet = GetActiveVendorPreferredAethernet();
+        var baseCamp = scanner.ActiveTerritoryData?.GetBaseCampAethernet();
         if (string.IsNullOrWhiteSpace(preferredAethernet)
-            || string.Equals(preferredAethernet, "BaseCamp", StringComparison.OrdinalIgnoreCase))
+            || (baseCamp != null && string.Equals(preferredAethernet, baseCamp.Name, StringComparison.OrdinalIgnoreCase)))
         {
             return movementController.RecoverToBaseCamp();
         }

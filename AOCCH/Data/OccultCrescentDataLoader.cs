@@ -165,6 +165,7 @@ public static class OccultCrescentDataLoader
         ValidatePotTreasure(territory, errors);
         ValidateVisibleCofferSpots(territory, errors);
         ValidateVisibleCoffers(territory, errors);
+        ValidateVisibleCofferSafety(territory, errors);
         ValidateAethernetReferences(territory, errors);
         ValidateShopping(territory, errors);
 
@@ -591,6 +592,43 @@ public static class OccultCrescentDataLoader
         }
     }
 
+    private static void ValidateVisibleCofferSafety(OccultCrescentTerritoryData territory, List<string> errors)
+    {
+        var data = territory.VisibleCoffers;
+        if (territory.VisibleCofferFarmSpots.Any(spot => spot.SkipDuringAshkin)
+            && (!data.AshkinStartEorzeaMinute.HasValue || !data.AshkinEndEorzeaMinute.HasValue))
+        {
+            errors.Add("visible coffer Ashkin timing is missing for spots that use Ashkin rules");
+        }
+
+        if (data.AshkinStartEorzeaMinute is { } ashkinStart
+            && (ashkinStart < 0 || ashkinStart >= 24 * 60))
+        {
+            errors.Add("visible coffer Ashkin start minute must be between 0 and 1439");
+        }
+
+        if (data.AshkinEndEorzeaMinute is { } ashkinEnd
+            && (ashkinEnd < 0 || ashkinEnd >= 24 * 60))
+        {
+            errors.Add("visible coffer Ashkin end minute must be between 0 and 1439");
+        }
+
+        if (data.AshkinStartEorzeaMinute.HasValue
+            && data.AshkinStartEorzeaMinute == data.AshkinEndEorzeaMinute)
+        {
+            errors.Add("visible coffer Ashkin start and end minutes must differ");
+        }
+
+        foreach (var spot in territory.VisibleCofferFarmSpots)
+        {
+            if (spot.AggroLevel < 0 || spot.HideThresholdDistance < 0)
+            {
+                errors.Add($"visible coffer spot '{spot.Area}:{spot.Label}' has invalid safety values");
+            }
+
+        }
+    }
+
     private static void ValidateAethernetReferences(OccultCrescentTerritoryData territory, List<string> errors)
     {
         var aethernetNames = territory.Aethernets
@@ -626,6 +664,23 @@ public static class OccultCrescentDataLoader
             ValidateAethernetReference(preferredAethernet, aethernetNames, errors);
         }
 
+        var fateIds = territory.Fates.Select(fate => fate.Id).ToHashSet();
+        foreach (var duplicateFateId in territory.FateAethernetPreferences
+                     .GroupBy(preference => preference.FateId)
+                     .Where(group => group.Count() > 1)
+                     .Select(group => group.Key))
+        {
+            errors.Add($"duplicate fate aethernet preference for FATE {duplicateFateId}");
+        }
+
+        foreach (var preference in territory.FateAethernetPreferences)
+        {
+            if (preference.FateId == 0 || !fateIds.Contains(preference.FateId))
+            {
+                errors.Add($"fate aethernet preference references unknown FATE {preference.FateId}");
+            }
+        }
+
         foreach (var preferredAethernet in territory.Shopping.Vendors
                      .Where(vendor => !string.IsNullOrWhiteSpace(vendor.PreferredAethernet))
                      .Select(vendor => $"shopping vendor {vendor.DataId}:{vendor.PreferredAethernet}"))
@@ -656,7 +711,7 @@ public static class OccultCrescentDataLoader
         foreach (var territory in catalog.Territories)
         {
             logger.Info(
-                $"[OccultCrescentDataLoader] op=load key={territory.Key} territoryId={territory.TerritoryTypeId} displayName=\"{territory.DisplayName}\" features=fates:{territory.Features.Fates},ces:{territory.Features.CriticalEncounters},shopping:{territory.Features.Shopping},visibleCoffers:{territory.Features.VisibleCoffers},potTreasure:{territory.Features.PotTreasure},buffRotation:{territory.Features.BuffRotation} aethernets={territory.Aethernets.Count} criticalEncounters={territory.CriticalEncounters.Count} fates={territory.Fates.Count} potFates={territory.PotFates.Count} shoppingVendors={territory.Shopping.Vendors.Count} shoppingPages={territory.Shopping.Pages.Count} treasureCofferGroups={territory.TreasureCofferGroups.Count} visibleCofferBaseIds={territory.VisibleCoffers.BaseIds.Count} visibleCofferAreas={territory.VisibleCoffers.AreaAethernetMappings.Count} visibleCofferUnsafeWeatherIds={territory.VisibleCoffers.UnsafeWeatherIds.Count} visibleCofferSpots={territory.VisibleCofferFarmSpots.Count} visibleCofferRouteEntries={territory.VisibleCofferFarmRoute.Count}");
+                $"[OccultCrescentDataLoader] op=load key={territory.Key} territoryId={territory.TerritoryTypeId} displayName=\"{territory.DisplayName}\" features=fates:{territory.Features.Fates},ces:{territory.Features.CriticalEncounters},shopping:{territory.Features.Shopping},visibleCoffers:{territory.Features.VisibleCoffers},potTreasure:{territory.Features.PotTreasure},buffRotation:{territory.Features.BuffRotation} aethernets={territory.Aethernets.Count} criticalEncounters={territory.CriticalEncounters.Count} fates={territory.Fates.Count} potFates={territory.PotFates.Count} shoppingVendors={territory.Shopping.Vendors.Count} shoppingPages={territory.Shopping.Pages.Count} treasureCofferGroups={territory.TreasureCofferGroups.Count} visibleCofferBaseIds={territory.VisibleCoffers.BaseIds.Count} visibleCofferAreas={territory.VisibleCoffers.AreaAethernetMappings.Count} visibleCofferUnsafeWeatherIds={territory.VisibleCoffers.UnsafeWeatherIds.Count} ashkinWindow={territory.VisibleCoffers.AshkinStartEorzeaMinute?.ToString() ?? "none"}-{territory.VisibleCoffers.AshkinEndEorzeaMinute?.ToString() ?? "none"} visibleCofferSpots={territory.VisibleCofferFarmSpots.Count} visibleCofferRouteEntries={territory.VisibleCofferFarmRoute.Count}");
         }
     }
 
