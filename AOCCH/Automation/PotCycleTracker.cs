@@ -102,7 +102,7 @@ public sealed class PotCycleTracker : IDisposable
         var activePotFate = scannerSnapshot.ActivePotFate;
         if (activePotFate == null)
         {
-            logger.DebugThrottled("pot-cycle-no-active-pot", WaitLogInterval, previous.HasKnownAnchor
+            logger.VerboseThrottled("pot-cycle-no-active-pot", WaitLogInterval, previous.HasKnownAnchor
                 ? $"Pot cycle tracker is waiting for the predicted pot window. nextPot={previous.PredictedNextPotFateName} nextSpawnAt={previous.PredictedNextSpawnAt:O}."
                 : "Pot cycle tracker is waiting for the first observed pot anchor.");
             return ClearCurrentActivePot(previous, now, scannerSnapshot);

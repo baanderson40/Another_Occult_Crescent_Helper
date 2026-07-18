@@ -22,7 +22,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private const float FateEntityDiagnosticPadding = 15f;
     private const int MaxFateEntityDiagnosticEntries = 8;
     private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(30);
 
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
@@ -599,7 +599,7 @@ public sealed class OccultCrescentScanner : IDisposable
     {
         if (!playerForayLevel.HasValue)
         {
-            logger.InfoThrottled(
+            logger.VerboseThrottled(
                 "foray-threat-scan",
                 ForayThreatDiagnosticLogInterval,
                 "[Scanner] op=foray-threat-scan playerLevel=unavailable entities=0 reason=player-foray-unavailable");
@@ -614,7 +614,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 " | ",
                 entities.Select(entity =>
                     $"name='{entity.Name}' objectId={entity.ObjectId:X} level={entity.KnowledgeLevel} distance={entity.DistanceToPlayer:0.0}y potThreat={entity.KnowledgeLevel >= potHideAtOrAbove} overworldThreat={entity.KnowledgeLevel >= visibleHideAtOrAbove}"));
-        logger.InfoThrottled(
+        logger.VerboseThrottled(
             "foray-threat-scan",
             ForayThreatDiagnosticLogInterval,
             $"[Scanner] op=foray-threat-scan playerLevel={playerForayLevel.Value} potOffset={configuration.PotKnowledgeHideOffset} potHideAtOrAbove={potHideAtOrAbove} overworldOffset={configuration.VisibleCofferKnowledgeHideOffset} overworldHideAtOrAbove={visibleHideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0}y exitRange={configuration.KnowledgeThreatExitDistance:0.0}y entities={entities.Count} entries={entitySummary}");
