@@ -131,9 +131,10 @@ public sealed class GameActionController
 
     public unsafe bool TryExecuteGeneralAction(uint actionId, string description)
     {
-        if (!CanUseGeneralAction(actionId))
+        var actionStatus = ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, actionId);
+        if (actionStatus != 0)
         {
-            logger.Warning($"[GameAction] op=general-action-failed actionId={actionId} description=\"{description}\" reason=unavailable");
+            logger.Warning($"[GameAction] op=general-action-failed actionId={actionId} actionType={ActionType.GeneralAction} statusCode={actionStatus} description=\"{description}\" reason=unavailable");
             return false;
         }
 
@@ -150,9 +151,10 @@ public sealed class GameActionController
 
     public unsafe bool TryExecuteAction(uint actionId, string description)
     {
-        if (!CanUseAction(actionId))
+        var actionStatus = ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId);
+        if (actionStatus != 0)
         {
-            logger.Warning($"[GameAction] op=action-failed actionId={actionId} description=\"{description}\" reason=unavailable");
+            logger.Warning($"[GameAction] op=action-failed actionId={actionId} actionType={ActionType.Action} statusCode={actionStatus} description=\"{description}\" reason=unavailable");
             return false;
         }
 

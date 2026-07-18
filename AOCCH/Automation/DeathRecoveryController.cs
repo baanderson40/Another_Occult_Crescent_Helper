@@ -281,6 +281,7 @@ public sealed class DeathRecoveryController : IDisposable
         }
 
         const string reason = "Player died; stopping automation and cleanup.";
+        logger.Info($"{BuildLogTag()} op=cleanup-ownership-snapshot ceRunning={criticalEngagementAutomationController.IsRunning} ceState={criticalEngagementAutomationController.State} fateRunning={fateAutomationController.IsRunning} fateState={fateAutomationController.State} buffRunning={buffRotationController.IsRunning} buffState={buffRotationController.State} movementState={movementController.State} movementDistanceRemaining={movementController.DistanceRemaining:0.0} autorotationOwned={autorotationController.HasOwnership}");
         if (criticalEngagementAutomationController.IsRunning)
         {
             criticalEngagementAutomationController.Stop(reason);

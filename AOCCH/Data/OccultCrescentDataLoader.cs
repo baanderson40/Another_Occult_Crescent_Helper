@@ -74,7 +74,7 @@ public static class OccultCrescentDataLoader
 
         foreach (var territory in catalog.Territories)
         {
-            var normalizedTerritory = NormalizeTerritory(territory);
+            var normalizedTerritory = NormalizeTerritory(territory, logger);
             var errors = ValidateTerritory(normalizedTerritory, duplicateKeys, duplicateTerritoryIds);
             if (errors.Count > 0)
             {
@@ -85,13 +85,19 @@ public static class OccultCrescentDataLoader
             validTerritories.Add(normalizedTerritory);
         }
 
+        var removedTerritoryCount = catalog.Territories.Count - validTerritories.Count;
+        if (removedTerritoryCount > 0)
+        {
+            logger.Warning($"[OccultCrescentDataLoader] op=validation-removals removedTerritories={removedTerritoryCount} retainedTerritories={validTerritories.Count} totalTerritories={catalog.Territories.Count}");
+        }
+
         return new OccultCrescentDataCatalog
         {
             Territories = validTerritories,
         };
     }
 
-    private static OccultCrescentTerritoryData NormalizeTerritory(OccultCrescentTerritoryData territory)
+    private static OccultCrescentTerritoryData NormalizeTerritory(OccultCrescentTerritoryData territory, AocchLogger logger)
     {
         if (!string.Equals(territory.Key, "southHorn", StringComparison.OrdinalIgnoreCase)
             || territory.Shopping.Pages.Count > 0)
@@ -100,6 +106,8 @@ public static class OccultCrescentDataLoader
         }
 
         // South Horn's established catalog remains the migration source until it is exported to JSON.
+        var shopping = ShopCurrencyCatalog.CreateSouthHornData(territory.Shopping.Vendors);
+        logger.Info($"[OccultCrescentDataLoader] op=shopping-pages-generated key={territory.Key} source=legacy vendors={shopping.Vendors.Count} pages={shopping.Pages.Count}");
         return new OccultCrescentTerritoryData
         {
             Key = territory.Key,
@@ -117,7 +125,7 @@ public static class OccultCrescentDataLoader
             VisibleCofferFarmSpots = territory.VisibleCofferFarmSpots,
             VisibleCofferFarmRoute = territory.VisibleCofferFarmRoute,
             FateAethernetPreferences = territory.FateAethernetPreferences,
-            Shopping = ShopCurrencyCatalog.CreateSouthHornData(territory.Shopping.Vendors),
+            Shopping = shopping,
             Drops = territory.Drops,
             VisibleCoffers = territory.VisibleCoffers,
             PotTreasure = territory.PotTreasure,

@@ -103,6 +103,7 @@ public sealed class ShopPurchaseController : IDisposable
         if (quantity <= 0)
         {
             SetImmediateOutcome("Failed: quantity must be greater than zero.", PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=purchase-rejected reason=invalid-quantity addon=ShopExchangeCurrency itemId={entry.ItemId} itemName=\"{entry.ItemName}\" quantity={quantity}");
             return false;
         }
 
@@ -144,6 +145,7 @@ public sealed class ShopPurchaseController : IDisposable
         if (quantity <= 0)
         {
             SetImmediateOutcome("Failed: quantity must be greater than zero.", PurchaseCompletionKind.StopShopping);
+            logger.Warning($"[ShopPurchase] op=purchase-rejected reason=invalid-quantity addon=ShopExchangeItem itemId={entry.ItemId} itemName=\"{entry.ItemName}\" quantity={quantity}");
             return false;
         }
 
@@ -204,6 +206,7 @@ public sealed class ShopPurchaseController : IDisposable
             var completionKind = timedOutWhilePolling
                 ? PurchaseCompletionKind.SkipTarget
                 : PurchaseCompletionKind.StopShopping;
+            LogTimeoutDiagnostic(attempt);
             CompleteAttempt($"{statusPrefix}: timeout while {attempt.StateDescription}.", completionKind);
             return;
         }
@@ -287,6 +290,7 @@ public sealed class ShopPurchaseController : IDisposable
             {
                 lastStatus = $"Failed: already purchasing {activeAttempt.ItemName}.";
                 lastCompletionKind = PurchaseCompletionKind.StopShopping;
+                logger.Warning($"[ShopPurchase] op=purchase-rejected reason=already-active requestedItemId={attempt.ItemId} requestedItemName=\"{attempt.ItemName}\" activeItemId={activeAttempt.ItemId} activeItemName=\"{activeAttempt.ItemName}\"");
                 return false;
             }
 
@@ -303,6 +307,22 @@ public sealed class ShopPurchaseController : IDisposable
         }
 
         return true;
+    }
+
+    private void LogTimeoutDiagnostic(PurchaseAttempt attempt)
+    {
+        var currentTargetCount = GetItemCount(attempt.ItemId);
+        var currencyCounts = attempt.CurrencyItemId == 0
+            ? string.Empty
+            : $" currencyItemId={attempt.CurrencyItemId} baselineCurrencyCount={attempt.PrePurchaseCurrencyCount} currentCurrencyCount={GetItemCount(attempt.CurrencyItemId)}";
+        var requiredItemCounts = string.Join(",", attempt.ExpectedRequiredItems.Select(requiredItem =>
+        {
+            var baselineCount = attempt.PrePurchaseRequiredItemCounts.GetValueOrDefault(requiredItem.ItemId);
+            return $"{requiredItem.ItemId}:{baselineCount}->{GetItemCount(requiredItem.ItemId)}";
+        }));
+        var elapsed = DateTimeOffset.UtcNow - attempt.StartedAt;
+
+        logger.Warning($"[ShopPurchase] op=timeout-diagnostic itemId={attempt.ItemId} addon={attempt.AddonName} state={attempt.State} baselineTargetCount={attempt.PrePurchaseTargetCount} currentTargetCount={currentTargetCount}{currencyCounts} requiredItemCounts=\"{requiredItemCounts}\" confirmationCount={attempt.ConfirmationCount} confirmationSent={attempt.ConfirmationSent} elapsedMs={elapsed.TotalMilliseconds:0}");
     }
 
     private void CompleteAttempt(string status, PurchaseCompletionKind completionKind, uint? logMessageId = null)

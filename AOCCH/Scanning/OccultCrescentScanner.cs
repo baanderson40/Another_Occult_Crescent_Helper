@@ -21,8 +21,10 @@ public sealed class OccultCrescentScanner : IDisposable
     private const float FateEntityDiagnosticPlayerRadius = 40f;
     private const float FateEntityDiagnosticPadding = 15f;
     private const int MaxFateEntityDiagnosticEntries = 8;
+    private const int MaxSelectionCandidateDescriptions = 6;
     private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan UnknownMetadataWarningInterval = TimeSpan.FromSeconds(60);
 
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
@@ -44,6 +46,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private bool? lastSupportedTerritoryState;
     private string lastTerritoryKey = string.Empty;
     private string lastSelectionKey = string.Empty;
+    private string lastEffectiveTargetKey = "none";
     private bool? lastTreasureBuffState;
     private int? lastPlayerForayLevel;
     private bool hasLastPlayerForayLevel;
@@ -136,6 +139,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 lastTerritoryKey = territoryKey;
                 RebuildTerritoryCaches(territory);
                 lastSelectionKey = string.Empty;
+                lastEffectiveTargetKey = "none";
                 lastTreasureBuffState = null;
             }
 
@@ -186,6 +190,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 }
 
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
+                LogUnknownActiveMetadata(territory!, unknownCriticalEncounters, fates);
 
                 if (canRunPotTreasure)
                 {
@@ -793,6 +798,7 @@ public sealed class OccultCrescentScanner : IDisposable
         }
 
         lastSelectionKey = key;
+        LogSelectionCompetitionIfEffectiveTargetChanged(snapshot);
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter:
@@ -817,6 +823,67 @@ public sealed class OccultCrescentScanner : IDisposable
                 logger.Info($"[Scanner] op=no-target {BuildNoSelectionReason(snapshot)}");
                 break;
         }
+    }
+
+    private void LogUnknownActiveMetadata(
+        OccultCrescentTerritoryData territory,
+        IReadOnlyList<ActiveCriticalEncounter> unknownCriticalEncounters,
+        IReadOnlyList<ActiveFate> fates)
+    {
+        var unknownFates = fates.Where(fate => !fate.HasKnownMetadata).ToArray();
+        if (unknownCriticalEncounters.Count == 0 && unknownFates.Length == 0)
+        {
+            return;
+        }
+
+        var encounters = unknownCriticalEncounters
+            .Take(MaxSelectionCandidateDescriptions / 2)
+            .Select(encounter => $"CE:{encounter.Name} ({encounter.Id}) state={encounter.State}");
+        var fateDescriptions = unknownFates
+            .Take(MaxSelectionCandidateDescriptions / 2)
+            .Select(fate => $"FATE:{fate.Name} ({fate.Id}) state={fate.State}");
+        var descriptions = string.Join(" | ", encounters.Concat(fateDescriptions));
+        logger.WarningThrottled(
+            $"unknown-active-metadata-{territory.Key}",
+            UnknownMetadataWarningInterval,
+            $"[Scanner] op=unknown-active-metadata territoryKey={territory.Key} unknownCes={unknownCriticalEncounters.Count} unknownFates={unknownFates.Length} entries={descriptions}");
+    }
+
+    private void LogSelectionCompetitionIfEffectiveTargetChanged(ScannerSnapshot snapshot)
+    {
+        var effectiveTargetKey = BuildEffectiveTargetKey(snapshot.EffectiveTarget);
+        if (effectiveTargetKey == lastEffectiveTargetKey)
+        {
+            return;
+        }
+
+        lastEffectiveTargetKey = effectiveTargetKey;
+        var ceCandidates = snapshot.CriticalEncounters
+            .Where(encounter => encounter.IsCandidate)
+            .OrderByDescending(encounter => encounter.Priority)
+            .ThenBy(encounter => encounter.StartTimestamp <= 0 ? long.MaxValue : encounter.StartTimestamp)
+            .ThenBy(encounter => encounter.Name, StringComparer.Ordinal)
+            .ThenBy(encounter => encounter.Id)
+            .Take(MaxSelectionCandidateDescriptions / 2)
+            .Select(encounter => $"CE:{encounter.Name} ({encounter.Id}) priority={encounter.Priority}");
+        var fateCandidates = snapshot.Fates
+            .Where(fate => fate.IsCandidate)
+            .OrderBy(fate => configuration.FatePriority == FatePriority.Nearest ? fate.DistanceToPlayer : fate.Progress)
+            .ThenBy(fate => configuration.FatePriority == FatePriority.Nearest ? fate.Progress : fate.DistanceToPlayer)
+            .ThenBy(fate => fate.Name, StringComparer.Ordinal)
+            .ThenBy(fate => fate.Id)
+            .Take(MaxSelectionCandidateDescriptions / 2)
+            .Select(fate => $"FATE:{fate.Name} ({fate.Id}) progress={fate.Progress}% distance={fate.DistanceToPlayer:0.0}");
+        var candidates = string.Join(" | ", ceCandidates.Concat(fateCandidates));
+        var target = snapshot.EffectiveTarget.Kind switch
+        {
+            SelectedTargetKind.CriticalEncounter => $"CE:{snapshot.EffectiveTarget.CriticalEncounter?.Id}",
+            SelectedTargetKind.Fate => $"FATE:{snapshot.EffectiveTarget.Fate?.Id}",
+            _ => "none",
+        };
+
+        logger.Debug(
+            $"[Scanner] op=selection-competition effectiveTarget={target} reason={snapshot.EffectiveTarget.Reason} ceCandidates={snapshot.CriticalEncounters.Count(encounter => encounter.IsCandidate)} fateCandidates={snapshot.Fates.Count(fate => fate.IsCandidate)} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} candidates={(string.IsNullOrEmpty(candidates) ? "none" : candidates)}");
     }
 
     private string BuildNoSelectionReason(ScannerSnapshot snapshot)
@@ -994,6 +1061,14 @@ public sealed class OccultCrescentScanner : IDisposable
         {
             SelectedTargetKind.CriticalEncounter => $"ce:{selection.CriticalEncounter?.Id}:{selection.Reason}:{selection.WouldPreemptFate}",
             SelectedTargetKind.Fate => $"fate:{selection.Fate?.Id}:{selection.Reason}:{selection.WouldPreemptFate}",
+            _ => "none",
+        };
+
+    private static string BuildEffectiveTargetKey(TargetSelection selection)
+        => selection.Kind switch
+        {
+            SelectedTargetKind.CriticalEncounter => $"ce:{selection.CriticalEncounter?.Id}",
+            SelectedTargetKind.Fate => $"fate:{selection.Fate?.Id}",
             _ => "none",
         };
 

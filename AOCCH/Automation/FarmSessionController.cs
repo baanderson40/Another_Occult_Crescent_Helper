@@ -1371,6 +1371,7 @@ public sealed class FarmSessionController : IDisposable
         }
 
         var surveySnapshot = treasureHintTracker.CofferSurveySnapshot;
+        logger.Info($"{BuildLogTag()} op=auto-coffer-survey-decision context=\"{context}\" surveyRevision={surveySnapshot.Revision} requiredFreshRevision={requiredFreshCofferSurveyRevision} silver={surveySnapshot.SilverCount}/{configuration.AutomaticTreasureCofferSilverThreshold} bronze={surveySnapshot.BronzeCount}/{configuration.AutomaticTreasureCofferBronzeThreshold} silverRemaining={AutomaticTreasureCofferStatus.RemainingSilverCompletionsUntilRescan} bronzeRemaining={AutomaticTreasureCofferStatus.RemainingBronzeCompletionsUntilRescan} disabledForRun={AutomaticTreasureCofferStatus.DisabledForCurrentRun}");
         if (surveySnapshot.Revision >= requiredFreshCofferSurveyRevision && SurveyMeetsAutomaticTreasureCofferThresholds(surveySnapshot))
         {
             SetAutomaticTreasureCofferStatus($"Survey silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount} met automatic coffer thresholds.");
@@ -1481,6 +1482,7 @@ public sealed class FarmSessionController : IDisposable
 
         if (currentJob == GameActionController.FreelancerSupportJobId)
         {
+            logger.Info($"{BuildLogTag()} op=auto-coffer-survey-job-skip currentSupportJob={currentJob} targetSupportJob={GameActionController.FreelancerSupportJobId} originalSupportJob={automaticTreasureCofferOriginalSupportJob} freelancerLevel={freelancerLevel} surveyRevision={currentSurveyRevision} requiredFreshRevision={requiredFreshCofferSurveyRevision} reason=already-freelancer");
             TransitionTo(FarmSessionState.SwitchingToFreelancerForCofferSurvey, $"Waiting for Occult Treasuresight after {context}.", "Waiting for coffer survey action");
             return true;
         }
@@ -1491,6 +1493,7 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        logger.Info($"{BuildLogTag()} op=auto-coffer-survey-job-switch-request fromSupportJob={currentJob} toSupportJob={GameActionController.FreelancerSupportJobId} originalSupportJob={automaticTreasureCofferOriginalSupportJob} freelancerLevel={freelancerLevel} surveyRevision={currentSurveyRevision} requiredFreshRevision={requiredFreshCofferSurveyRevision} context=\"{context}\"");
         TransitionTo(FarmSessionState.SwitchingToFreelancerForCofferSurvey, $"Switching phantom job to Freelancer before Occult Treasuresight after {context}.", "Switching to Freelancer");
         return true;
     }
@@ -1571,6 +1574,7 @@ public sealed class FarmSessionController : IDisposable
         }
 
         SetAutomaticTreasureCofferStatus($"Survey silver={surveySnapshot.SilverCount} bronze={surveySnapshot.BronzeCount} thresholds={(shouldStartRoute ? "met" : "not-met")} silverRemaining={AutomaticTreasureCofferStatus.RemainingSilverCompletionsUntilRescan} bronzeRemaining={AutomaticTreasureCofferStatus.RemainingBronzeCompletionsUntilRescan}.");
+        logger.Info($"{BuildLogTag()} op=auto-coffer-survey-result revision={surveySnapshot.Revision} logMessageId={surveySnapshot.LogMessageId} silver={surveySnapshot.SilverCount}/{configuration.AutomaticTreasureCofferSilverThreshold} bronze={surveySnapshot.BronzeCount}/{configuration.AutomaticTreasureCofferBronzeThreshold} routeFate={(shouldStartRoute ? "start-after-restore" : "decline")} originalSupportJob={automaticTreasureCofferOriginalSupportJob}");
 
         if (automaticTreasureCofferOriginalSupportJob == GameActionController.FreelancerSupportJobId)
         {
@@ -1596,6 +1600,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
+        logger.Info($"{BuildLogTag()} op=auto-coffer-survey-job-restore-request fromSupportJob={GameActionController.FreelancerSupportJobId} toSupportJob={automaticTreasureCofferOriginalSupportJob} surveyRevision={surveySnapshot.Revision} routeAfterRestore={shouldStartRoute}");
         TransitionTo(FarmSessionState.RestoringOriginalJobAfterCofferSurvey, "Restoring the original phantom job after automatic coffer survey.", "Restoring original phantom job");
     }
 
@@ -1611,6 +1616,7 @@ public sealed class FarmSessionController : IDisposable
                 automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
             }
 
+            logger.Info($"{BuildLogTag()} op=auto-coffer-survey-job-restored currentSupportJob={currentJob} originalSupportJob={automaticTreasureCofferOriginalSupportJob} routeAfterRestore={startRouteAfterRestore} resumeAutomaticCheck={resumeAutomaticCheck} restorePending={automaticTreasureCofferRestorePending}");
             if (startRouteAfterRestore && StartAutomaticVisibleCofferRoute("post-survey restore", treasureHintTracker.CofferSurveySnapshot))
             {
                 return;

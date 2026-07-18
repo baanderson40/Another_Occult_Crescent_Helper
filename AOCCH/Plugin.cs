@@ -90,6 +90,7 @@ public sealed class Plugin : IDalamudPlugin
     private DependencyWindow DependencyWindow { get; init; }
     private bool isDisposing;
     private string lastTerritoryKey = string.Empty;
+    private string lastDependencyState = string.Empty;
 
     public Plugin()
     {
@@ -224,7 +225,29 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     public AutomationDependencyReport GetNormalAutomationDependencyReport()
-        => DependencyChecker.Evaluate();
+    {
+        var report = DependencyChecker.Evaluate();
+        var state = string.Join(
+            ";",
+            report.Statuses.Select(status => $"{status.Key}:installed={status.Installed}:available={status.Available}"));
+        if (!string.Equals(lastDependencyState, state, StringComparison.Ordinal))
+        {
+            lastDependencyState = state;
+            var details = string.Join(
+                " | ",
+                report.Statuses.Select(status => $"{status.Key} installed={status.Installed} available={status.Available} usable={status.IsUsable}"));
+            if (report.IsReady)
+            {
+                Logger.Info($"[Dependencies] op=state-changed ready=true entries={details}");
+            }
+            else
+            {
+                Logger.Warning($"[Dependencies] op=state-changed ready=false entries={details}");
+            }
+        }
+
+        return report;
+    }
 
     public bool TryOpenDependencyWindow()
     {
@@ -311,12 +334,14 @@ public sealed class Plugin : IDalamudPlugin
                 var territory = Scanner.ActiveTerritoryData;
                 if (territory == null)
                 {
+                    Logger.Warning($"[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=unsupported-territory territoryId={ClientState.TerritoryType}");
                     ChatGui.Print("Overworld coffer route requires a supported Occult Crescent territory.");
                     break;
                 }
 
                 if (!Scanner.Snapshot.CanRunVisibleCofferRoute)
                 {
+                    Logger.Warning($"[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=route-unavailable territoryKey={territory.Key} territoryId={territory.TerritoryTypeId}");
                     ChatGui.Print($"Overworld coffer route data is unavailable in {territory.DisplayName}.");
                     break;
                 }
@@ -326,6 +351,7 @@ public sealed class Plugin : IDalamudPlugin
                 var oneBasedRouteIndex = 0;
                 if (tokens.Length > 2 || (tokens.Length == 2 && (!int.TryParse(tokens[1], out oneBasedRouteIndex) || oneBasedRouteIndex < 1 || oneBasedRouteIndex > routeCount)))
                 {
+                    Logger.Warning($"[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=invalid-route-index requested=\"{args.Trim()}\" routeCount={routeCount}");
                     ChatGui.Print($"Coffer route index must be between 1 and {routeCount}.");
                     break;
                 }
@@ -350,9 +376,11 @@ public sealed class Plugin : IDalamudPlugin
 
                 if (!TreasureCofferFarmController.Start(startRouteIndex: startRouteIndex))
                 {
-                    ChatGui.Print(TreasureCofferFarmController.LastError.Length == 0
+                    var failureDetail = TreasureCofferFarmController.LastError.Length == 0
                         ? TreasureCofferFarmController.LastTransition
-                        : TreasureCofferFarmController.LastError);
+                        : TreasureCofferFarmController.LastError;
+                    Logger.Warning($"[Plugin] op=slash-command-action-blocked action=start-visible-coffer-farm reason=controller-start-failed requestedIndex={(startRouteIndex.HasValue ? (startRouteIndex.Value + 1).ToString() : "default")} detail=\"{failureDetail}\"");
+                    ChatGui.Print(failureDetail);
                 }
                 break;
             }

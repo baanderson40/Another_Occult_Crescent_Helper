@@ -68,6 +68,7 @@ public sealed class CofferInteractionController : IDisposable
     private InventorySnapshot? preInteractionInventorySnapshot;
     private bool preInteractionInventorySnapshotValid;
     private bool inventoryFallbackLoggedThisAttempt;
+    private readonly HashSet<string> treasureFlagReadFailureLoggedPhases = new(StringComparer.Ordinal);
     private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
@@ -211,6 +212,7 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
             lastError = string.Empty;
             lastResult = CofferInteractionResult.None;
@@ -224,6 +226,10 @@ public sealed class CofferInteractionController : IDisposable
             {
                 lastObservedTreasureFlags = currentFlags;
             }
+        }
+        else
+        {
+            LogTreasureFlagReadFailureOnce("start", liveObject);
         }
 
         return BeginApproachOrTarget(liveObject, "Starting coffer interaction.");
@@ -258,6 +264,7 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
         }
 
@@ -562,22 +569,28 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         var liveObject = ResolveActiveObject();
-        if (active.Flow != CofferInteractionFlow.PotReveal
-            && liveObject != null
-            && TryReadTreasureFlags(liveObject, out var currentFlags))
+        if (active.Flow != CofferInteractionFlow.PotReveal && liveObject != null)
         {
-            var previousFlags = lastObservedTreasureFlags;
-            lock (gate)
+            if (TryReadTreasureFlags(liveObject, out var currentFlags))
             {
-                lastObservedTreasureFlags = currentFlags;
-            }
+                var previousFlags = lastObservedTreasureFlags;
+                lock (gate)
+                {
+                    lastObservedTreasureFlags = currentFlags;
+                }
 
-            if (!previousFlags.HasFlag(TreasureFlags.Opened) && currentFlags.HasFlag(TreasureFlags.Opened))
+                if (!previousFlags.HasFlag(TreasureFlags.Opened) && currentFlags.HasFlag(TreasureFlags.Opened))
+                {
+                    PersistConfirmedOverride(active);
+                    logger.ResetThrottle("coffer-confirmation");
+                    logger.Info($"{BuildLogTag()} op=open-confirmed method=opened-flag flow={active.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} objectId={active.Coffer.GameObjectId:X}");
+                    TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via the treasure opened flag after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
+                    return;
+                }
+            }
+            else
             {
-                PersistConfirmedOverride(active);
-                logger.ResetThrottle("coffer-confirmation");
-                TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via the treasure opened flag after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
-                return;
+                LogTreasureFlagReadFailureOnce("confirmation", liveObject);
             }
         }
 
@@ -613,6 +626,7 @@ public sealed class CofferInteractionController : IDisposable
 
                 PersistConfirmedOverride(active);
                 logger.ResetThrottle("coffer-confirmation");
+                logger.Info($"{BuildLogTag()} op=open-confirmed method=object-disappeared flow={active.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} requiredMissingConfirmations={RequiredMissingConfirmations} objectId={active.Coffer.GameObjectId:X}");
                 TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
             }
 
@@ -723,6 +737,7 @@ public sealed class CofferInteractionController : IDisposable
         PersistConfirmedOverride(match);
         logger.ResetThrottle("coffer-confirmation");
         logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-confirm attempt={interactionAttemptCount} deltas={string.Join(", ", deltas)}");
+        logger.Info($"{BuildLogTag()} op=open-confirmed method=inventory-delta flow={match.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} objectId={match.Coffer.GameObjectId:X}");
         TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via inventory delta after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
         return true;
     }
@@ -834,6 +849,19 @@ public sealed class CofferInteractionController : IDisposable
         var treasurePointer = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)objectPointer;
         flags = treasurePointer->Flags;
         return true;
+    }
+
+    private void LogTreasureFlagReadFailureOnce(string phase, IGameObject gameObject)
+    {
+        lock (gate)
+        {
+            if (!treasureFlagReadFailureLoggedPhases.Add(phase))
+            {
+                return;
+            }
+        }
+
+        logger.Debug($"{BuildLogTag()} op=treasure-flag-read-failed phase={phase} flow={ActiveMatch?.Flow.ToString() ?? "none"} candidate={DescribeActiveCandidate()} objectId={gameObject.GameObjectId:X} baseId={gameObject.BaseId} address={gameObject.Address}");
     }
 
     private void SetFailure(string reason)

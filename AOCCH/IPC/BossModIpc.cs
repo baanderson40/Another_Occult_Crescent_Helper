@@ -49,19 +49,19 @@ public sealed class BossModIpc
         => Invoke("BossMod.Presets.GetActive", getActivePreset.InvokeFunc, string.Empty, logAvailability: true) ?? string.Empty;
 
     public bool SetActivePreset(string presetName)
-        => Invoke($"BossMod.Presets.SetActive({presetName})", () => setActivePreset.InvokeFunc(presetName), false, logAvailability: true);
+        => InvokeMutating("BossMod.Presets.SetActive", $"BossMod.Presets.SetActive({presetName})", () => setActivePreset.InvokeFunc(presetName));
 
     public bool ClearActivePreset()
-        => Invoke("BossMod.Presets.ClearActive", clearActivePreset.InvokeFunc, false, logAvailability: true);
+        => InvokeMutating("BossMod.Presets.ClearActive", "BossMod.Presets.ClearActive", clearActivePreset.InvokeFunc);
 
     public string GetPreset(string presetName)
         => Invoke($"BossMod.Presets.Get({presetName})", () => getPreset.InvokeFunc(presetName), string.Empty, logAvailability: true) ?? string.Empty;
 
     public bool CreatePreset(string serializedPreset, bool overwrite)
-        => Invoke("BossMod.Presets.Create", () => createPreset.InvokeFunc(serializedPreset, overwrite), false, logAvailability: true);
+        => InvokeMutating("BossMod.Presets.Create", "BossMod.Presets.Create", () => createPreset.InvokeFunc(serializedPreset, overwrite));
 
     public bool DeletePreset(string presetName)
-        => Invoke($"BossMod.Presets.Delete({presetName})", () => deletePreset.InvokeFunc(presetName), false, logAvailability: true);
+        => InvokeMutating("BossMod.Presets.Delete", $"BossMod.Presets.Delete({presetName})", () => deletePreset.InvokeFunc(presetName));
 
     private T Invoke<T>(string operation, Func<T> action, T fallback, bool logAvailability)
     {
@@ -84,6 +84,27 @@ public sealed class BossModIpc
 
             logger.DebugThrottled("bossmod-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
+        }
+    }
+
+    private bool InvokeMutating(string logKey, string operation, Func<bool> action)
+    {
+        try
+        {
+            var result = action();
+            SetAvailability(true);
+            if (!result)
+            {
+                logger.WarningThrottled($"bossmod-ipc-false-{logKey}", IpcFailureLogInterval, $"[BossModIpc] op=mutation-failed request={operation} reason=false-return");
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            SetAvailability(false);
+            logger.DebugThrottled("bossmod-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
+            return false;
         }
     }
 

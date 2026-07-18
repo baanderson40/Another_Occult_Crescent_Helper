@@ -487,6 +487,10 @@ public sealed class FateAutomationController : IDisposable
             return;
         }
 
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        var distance = playerPosition == null ? float.MaxValue : CalculateFlatDistance(playerPosition.Value, target.Position);
+        var elapsed = monitorStartedAt == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - monitorStartedAt;
+        logger.Info($"{BuildLogTag()} op=no-participation-complete target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) progress={target.Progress}% distance={(playerPosition == null ? "unavailable" : $"{distance:0.0}")} radius={target.Radius:0.0} participationRadius={MathF.Max(target.Radius, 1f) + FateParticipationPadding:0.0} inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} elapsed={elapsed:mm\\:ss}");
         FinishFate($"No active FATE participation detected for {target.Name} ({target.Id}).");
     }
 

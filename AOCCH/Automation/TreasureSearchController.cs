@@ -1022,6 +1022,7 @@ public sealed class TreasureSearchController : IDisposable
 
         if (!TryGetGroup(activeFateId, groupKey, out var group) || group.Candidates.Count == 0)
         {
+            logger.Warning($"{BuildLogTag(hintSnapshot.SessionId)} op=hint-handoff-declined revision={hintSnapshot.Revision} direction={hintSnapshot.LastHintEvent?.Direction ?? hintSnapshot.InitialHintEvent?.Direction ?? TreasureDirection.Unknown} priorGroup={ActiveGroupKey} proposedGroup={groupKey} targetFate=\"{activeFateName}\" ({activeFateId}) candidateCount=0 handoff=declined flow=continue reason=missing-mapped-group");
             lock (gate)
             {
                 consumedHintRevision = hintSnapshot.Revision;
@@ -1034,6 +1035,7 @@ public sealed class TreasureSearchController : IDisposable
         var runOrderedCandidates = BuildOrderedCandidates(group, traversalOriginCenter);
         if (runOrderedCandidates.Count == 0)
         {
+            logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=hint-handoff-declined revision={hintSnapshot.Revision} direction={hintSnapshot.LastHintEvent?.Direction ?? hintSnapshot.InitialHintEvent?.Direction ?? TreasureDirection.Unknown} priorGroup={ActiveGroupKey} proposedGroup={groupKey} targetFate=\"{activeFateName}\" ({activeFateId}) candidateCount=0 handoff=declined flow=continue reason=no-eligible-candidates");
             lock (gate)
             {
                 consumedHintRevision = hintSnapshot.Revision;

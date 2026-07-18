@@ -47,8 +47,8 @@ public sealed class LifestreamIpc
     }
 
     public bool TryAethernetTeleportByPlaceNameId(uint placeNameId)
-        => Invoke($"Lifestream.AethernetTeleportByPlaceNameId({placeNameId})",
-            () => aethernetTeleportByPlaceNameId.InvokeFunc(placeNameId), false);
+        => InvokeMutating("Lifestream.AethernetTeleportByPlaceNameId", $"Lifestream.AethernetTeleportByPlaceNameId({placeNameId})",
+            () => aethernetTeleportByPlaceNameId.InvokeFunc(placeNameId));
 
     public uint GetActiveAetheryte()
         => Invoke("Lifestream.GetActiveAetheryte", getActiveAetheryte.InvokeFunc, 0u);
@@ -89,6 +89,25 @@ public sealed class LifestreamIpc
 
             logger.DebugThrottled("lifestream-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
+        }
+    }
+
+    private bool InvokeMutating(string logKey, string operation, Func<bool> action)
+    {
+        try
+        {
+            var result = action();
+            if (!result)
+            {
+                logger.WarningThrottled($"lifestream-ipc-false-{logKey}", IpcFailureLogInterval, $"[LifestreamIpc] op=mutation-failed request={operation} reason=false-return");
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger.DebugThrottled("lifestream-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
+            return false;
         }
     }
 

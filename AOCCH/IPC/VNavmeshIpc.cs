@@ -42,12 +42,12 @@ public sealed class VNavmeshIpc
         => Invoke("vnavmesh.Nav.BuildProgress", buildProgress.InvokeFunc, 0f);
 
     public bool PathfindAndMoveTo(Vector3 destination, bool fly)
-        => Invoke($"vnavmesh.PathfindAndMoveTo({destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0})",
-            () => pathfindAndMoveTo.InvokeFunc(destination, fly), false);
+        => InvokeMutating("vnavmesh.PathfindAndMoveTo", $"vnavmesh.PathfindAndMoveTo({destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0})",
+            () => pathfindAndMoveTo.InvokeFunc(destination, fly));
 
     public bool PathfindAndMoveCloseTo(Vector3 destination, bool fly, float range)
-        => Invoke($"vnavmesh.PathfindAndMoveCloseTo({destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}, range={range:0.0})",
-            () => pathfindAndMoveCloseTo.InvokeFunc(destination, fly, range), false);
+        => InvokeMutating("vnavmesh.PathfindAndMoveCloseTo", $"vnavmesh.PathfindAndMoveCloseTo({destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}, range={range:0.0})",
+            () => pathfindAndMoveCloseTo.InvokeFunc(destination, fly, range));
 
     public bool IsPathRunning()
         => Invoke("vnavmesh.Path.IsRunning", isPathRunning.InvokeFunc, false);
@@ -96,6 +96,25 @@ public sealed class VNavmeshIpc
 
             logger.DebugThrottled("vnavmesh-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
             return fallback;
+        }
+    }
+
+    private bool InvokeMutating(string logKey, string operation, Func<bool> action)
+    {
+        try
+        {
+            var result = action();
+            if (!result)
+            {
+                logger.WarningThrottled($"vnavmesh-ipc-false-{logKey}", IpcFailureLogInterval, $"[VNavmeshIpc] op=mutation-failed request={operation} reason=false-return");
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger.DebugThrottled("vnavmesh-ipc-failure", IpcFailureLogInterval, $"IPC call failed for {operation}: {ex.Message}");
+            return false;
         }
     }
 
