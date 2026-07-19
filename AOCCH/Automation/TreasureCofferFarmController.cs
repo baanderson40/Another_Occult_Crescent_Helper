@@ -27,7 +27,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private static int nextRunSequence;
     private const float MatchConfidenceRadius = 25f;
-    private const float VisibleCofferAcquisitionDistance = 60f;
+    private const float VisibleCofferAcquisitionDistance = 75f;
     private const float VisibleCofferApproachScanTriggerDistance = 40f;
     private const int RequiredInventoryFreeSlots = 3;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
@@ -584,24 +584,22 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool StartNormalTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance, string context)
     {
-        var preferredAethernet = ResolvePreferredAethernetName(spot.Area);
         movementController.SetLogOwner(currentRunId);
-        if (movementController.PlanRouteToLocation($"Overworld coffer route {spot.Label}", preferredAethernet, destination, arrivalDistance)
-            && movementController.StartPlannedRoute())
+        if (movementController.StartDirectMove($"Move directly to overworld coffer route {spot.Label}", destination, arrivalDistance))
         {
-            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling to overworld coffer route spot {spot.Area}:{spot.Label} using territory route planning. context={context}");
+            TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling directly to overworld coffer route spot {spot.Area}:{spot.Label}. context={context}");
             return true;
         }
 
         var failure = movementController.LastError.Length == 0
-            ? $"Failed to start territory route planning for overworld coffer spot {spot.Area}:{spot.Label}."
+            ? $"Failed to start direct travel for overworld coffer spot {spot.Area}:{spot.Label}."
             : movementController.LastError;
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
         {
-            movementController.Stop($"Overworld coffer route planning failed. context={context}");
+            movementController.Stop($"Overworld coffer direct travel failed. context={context}");
         }
 
-        SetFailure($"Overworld coffer route could not start. territoryKey={scanner.Snapshot.TerritoryKey} routeIndex={CurrentRouteIndex} spot={spot.Area}:{spot.Label} context={context} preferredAethernet={preferredAethernet} reason={failure}");
+        SetFailure($"Overworld coffer route could not start direct travel. territoryKey={scanner.Snapshot.TerritoryKey} routeIndex={CurrentRouteIndex} spot={spot.Area}:{spot.Label} context={context} reason={failure}");
         return false;
     }
 
@@ -1170,8 +1168,9 @@ public sealed class TreasureCofferFarmController : IDisposable
                 Distance = CalculateFlatDistance(coffer.Position, resolvedPosition),
             })
             .Where(entry => entry.PlayerDistance <= scanRadius)
-            .OrderBy(entry => entry.PlayerDistance)
-            .ThenBy(entry => entry.Distance)
+            .Where(entry => entry.Distance <= MatchConfidenceRadius)
+            .OrderBy(entry => entry.Distance)
+            .ThenBy(entry => entry.PlayerDistance)
             .FirstOrDefault();
 
         if (best == null)
@@ -1190,18 +1189,6 @@ public sealed class TreasureCofferFarmController : IDisposable
             : "VISIBLE_COFFER_EARLY_DETECTED";
         logger.Info(
             $"{BuildLogTag()} op={FormatValue(detectedLogPrefix)} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'");
-
-        if (best.Distance > MatchConfidenceRadius)
-        {
-            var rejectedLogPrefix = acquisitionSource == "final"
-                ? "VISIBLE_COFFER_FINAL_SCAN_REJECTED"
-                : "VISIBLE_COFFER_EARLY_REJECTED";
-            logger.Info(
-                $"{BuildLogTag()} op={FormatValue(rejectedLogPrefix)} spot={spot.Area}:{spot.Label} source={acquisitionSource} baseId={best.Coffer.DataId} objectId={best.Coffer.GameObjectId:X} routeDistance={best.Distance:0.0}y playerDistance={best.Coffer.DistanceToPlayer:0.0}y remainingToSpot={remainingDistanceToSpot:0.0}y trustRadius={MatchConfidenceRadius:0.0}y pos=<{best.Coffer.Position.X:0.000}, {best.Coffer.Position.Y:0.000}, {best.Coffer.Position.Z:0.000}> name='{best.Coffer.Name}'");
-            matchedCoffer = null;
-            matchDistance = best.Distance;
-            return false;
-        }
 
         matchedCoffer = best.Coffer;
         matchDistance = best.Distance;
@@ -1912,11 +1899,6 @@ public sealed class TreasureCofferFarmController : IDisposable
         var deltaZ = left.Z - right.Z;
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
-
-    private string ResolvePreferredAethernetName(string area)
-        => scanner.ActiveTerritoryData?.VisibleCoffers.AreaAethernetMappings
-            .FirstOrDefault(mapping => string.Equals(mapping.Area, area, StringComparison.OrdinalIgnoreCase))?.Aethernet
-            ?? string.Empty;
 
     private Dictionary<string, VisibleCofferFarmSpotData> GetSpotsByKey()
         => scanner.ActiveTerritoryData?.VisibleCofferFarmSpots.ToDictionary(spot => BuildKey(spot.Area, spot.Label), StringComparer.OrdinalIgnoreCase) ?? [];
