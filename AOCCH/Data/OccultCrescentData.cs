@@ -171,6 +171,13 @@ public sealed class TreasureCofferCandidateData
     public int AggroLevel { get; init; }
     public int? HideThresholdDistance { get; init; }
     public string? Notes { get; init; }
+    public List<TreasureCofferApproachWaypointData> ApproachWaypoints { get; init; } = [];
+}
+
+public sealed class TreasureCofferApproachWaypointData
+{
+    public Vector3Data Position { get; init; } = new();
+    public float? ArrivalDistance { get; init; }
 }
 
 public sealed class VisibleCofferFarmSpotData

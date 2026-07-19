@@ -368,6 +368,19 @@ public static class OccultCrescentDataLoader
                 {
                     errors.Add($"treasure candidate key='{candidate.CandidateKey}' has invalid safety values");
                 }
+
+                foreach (var waypoint in candidate.ApproachWaypoints)
+                {
+                    if (waypoint.Position.X == 0f && waypoint.Position.Y == 0f && waypoint.Position.Z == 0f)
+                    {
+                        errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid zero approach waypoint");
+                    }
+
+                    if (waypoint.ArrivalDistance is <= 0f)
+                    {
+                        errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid approach waypoint arrival distance");
+                    }
+                }
             }
         }
     }

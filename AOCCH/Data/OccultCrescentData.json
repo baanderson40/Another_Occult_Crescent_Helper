@@ -304,7 +304,19 @@
         { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW1", "label": "SW1", "position": { "x": -746.132, "y": 172.0, "z": 828.881 }, "aggroLevel": 27, "hideThresholdDistance": 400, "notes": "aggro" },
         { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW2", "label": "SW2", "position": { "x": -741.5, "y": 171.5, "z": 689.72 }, "aggroLevel": 28, "hideThresholdDistance": 310, "notes": "aggro" },
         { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW3", "label": "SW3", "position": { "x": -707.7, "y": 203.0, "z": 702.15 }, "aggroLevel": 28, "hideThresholdDistance": 290, "notes": "aggro" },
-        { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW4", "label": "SW4", "position": { "x": -848.56, "y": 107.0, "z": 751.23 }, "aggroLevel": 26, "hideThresholdDistance": 435, "notes": "aggro" }
+        {
+          "fateId": 1977,
+          "groupKey": "southwest",
+          "candidateKey": "SW4",
+          "label": "SW4",
+          "position": { "x": -848.56, "y": 107.0, "z": 751.23 },
+          "aggroLevel": 26,
+          "hideThresholdDistance": 435,
+          "notes": "aggro; approach via upper ramp corner",
+          "approachWaypoints": [
+            { "position": { "x": -735.104, "y": 203.0, "z": 723.384 }, "arrivalDistance": 3.0 }
+          ]
+        }
       ]
     },
     {

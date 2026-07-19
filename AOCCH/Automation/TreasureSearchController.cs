@@ -85,6 +85,7 @@ public sealed class TreasureSearchController : IDisposable
     private string activeFateName = string.Empty;
     private string activeGroupKey = string.Empty;
     private int currentCandidateIndex = -1;
+    private int activeCandidateApproachWaypointIndex = -1;
     private int consumedHintRevision;
     private string lastHandoffReason = string.Empty;
     private Vector3 traversalOriginCenter;
@@ -113,6 +114,7 @@ public sealed class TreasureSearchController : IDisposable
     private TreasureCandidateKey? activeCandidateKey;
     private bool activeCandidateUsesOverride;
     private Vector3 activeCandidateResolvedPosition;
+    private Vector3 candidateTravelTarget;
     private DateTimeOffset revealedCofferAcquireDeadlineAt = DateTimeOffset.MinValue;
     private bool revealedCofferLatched;
     private string lastNavmeshRejectionSummary = string.Empty;
@@ -362,6 +364,7 @@ public sealed class TreasureSearchController : IDisposable
             orderedCandidates.Clear();
             orderedCandidates.AddRange(runOrderedCandidates);
             currentCandidateIndex = 0;
+            activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Selected initial treasure group {group.GroupKey} from first hint revision {hintSnapshot.InitialHintEvent?.Revision ?? 0}.";
             traversalOriginCenter = originCenter;
@@ -420,6 +423,7 @@ public sealed class TreasureSearchController : IDisposable
             activeFateName = string.Empty;
             activeGroupKey = string.Empty;
             currentCandidateIndex = -1;
+            activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = 0;
             lastHandoffReason = string.Empty;
             handledCandidateLabels.Clear();
@@ -484,6 +488,7 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             currentCandidateIndex++;
+            activeCandidateApproachWaypointIndex = -1;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
@@ -665,6 +670,11 @@ public sealed class TreasureSearchController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached treasure candidate.");
+                if (TryContinueCandidateApproachTravel())
+                {
+                    return;
+                }
+
                 lock (gate)
                 {
                     ClearCandidateTravelProgressTracking();
@@ -1058,6 +1068,7 @@ public sealed class TreasureSearchController : IDisposable
             orderedCandidates.Clear();
             orderedCandidates.AddRange(runOrderedCandidates);
             currentCandidateIndex = 0;
+            activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Handoff to treasure group {group.GroupKey} from hint revision {hintSnapshot.Revision}.";
             ClearCandidateTravelProgressTracking();
@@ -1367,6 +1378,7 @@ public sealed class TreasureSearchController : IDisposable
         lock (gate)
         {
             currentCandidateIndex++;
+            activeCandidateApproachWaypointIndex = -1;
             candidateGeneration++;
             ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
@@ -1427,38 +1439,23 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=candidate-start candidate={candidate.Label} fate=\"{activeFateName}\" ({activeFateId}) group={candidate.GroupKey} dangerous={requiresDangerousTravel} staticFallbackDangerous={isDangerousCandidate} knowledgeThreat={hasKnowledgeThreat} threatEntity='{threat?.Name ?? "none"}' threatLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} override={usedOverride} target=<{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> reason={reason}");
-        if (requiresDangerousTravel)
+        activeCandidateApproachWaypointIndex = candidate.ApproachWaypoints.Count > 0 ? 0 : -1;
+        if (activeCandidateApproachWaypointIndex >= 0)
         {
-            if (!configuration.UseNinjaForDangerousArea)
+            if (!TryStartCandidateApproachWaypoint(candidate, activeCandidateApproachWaypointIndex))
             {
-                return SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because it requires dangerous-area Ninja travel and Ninja travel is disabled.");
-            }
-
-            KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat ? GetPotKnowledgeThreatPolicy() : null;
-            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(), knowledgeThreatPolicy))
-            {
-                if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
-                {
-                    return SkipDangerousCandidate(dangerousTreasureTravelController.LastTransition);
-                }
-
-                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
-                    ? $"Failed to start dangerous travel for treasure candidate {candidate.Label}."
-                    : dangerousTreasureTravelController.LastError);
+                SetFailure($"Failed to start approach waypoint {activeCandidateApproachWaypointIndex + 1} for treasure candidate {candidate.Label}.");
                 return false;
             }
         }
-        else if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination.Value, CandidateArrivalTolerance))
+        else if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat))
         {
-            SetFailure(movementController.LastError.Length == 0
-                ? $"Failed to start movement to treasure candidate {candidate.Label}."
-                : movementController.LastError);
             return false;
         }
 
         var currentPlayerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
         var initialTravelDistance = currentPlayerPosition.HasValue
-            ? CalculateFlatDistance(currentPlayerPosition.Value, targetPosition)
+            ? CalculateFlatDistance(currentPlayerPosition.Value, candidateTravelTarget)
             : float.MaxValue;
         lock (gate)
         {
@@ -1515,6 +1512,7 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryStartKnowledgeThreatTravel()
     {
         if (dangerousTreasureTravelController.IsRunning
+            || activeCandidateApproachWaypointIndex >= 0
             || !TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove)
             || !TryGetCurrentCandidate(out var candidate))
         {
@@ -1544,6 +1542,114 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         return true;
+    }
+
+    private bool TryStartCandidateApproachWaypoint(TreasureCofferCandidateData candidate, int waypointIndex)
+    {
+        if (waypointIndex < 0 || waypointIndex >= candidate.ApproachWaypoints.Count)
+        {
+            return false;
+        }
+
+        var waypoint = candidate.ApproachWaypoints[waypointIndex];
+        var canonicalPosition = waypoint.Position.ToVector3();
+        var destination = movementController.FindNearestNavigablePoint(canonicalPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            logger.Warning($"{BuildLogTag()} op=approach-waypoint-unreachable candidate={candidate.Label} index={waypointIndex + 1}/{candidate.ApproachWaypoints.Count} canonical=<{canonicalPosition.X:0.0}, {canonicalPosition.Y:0.0}, {canonicalPosition.Z:0.0}>");
+            return false;
+        }
+
+        var arrivalDistance = waypoint.ArrivalDistance ?? CandidateArrivalTolerance;
+        candidateTravelTarget = destination.Value;
+        logger.Info($"{BuildLogTag()} op=approach-waypoint-start candidate={candidate.Label} index={waypointIndex + 1}/{candidate.ApproachWaypoints.Count} canonical=<{canonicalPosition.X:0.0}, {canonicalPosition.Y:0.0}, {canonicalPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> arrivalDistance={arrivalDistance:0.0}");
+        if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} approach waypoint {waypointIndex + 1}", destination.Value, arrivalDistance))
+        {
+            logger.Warning($"{BuildLogTag()} op=approach-waypoint-start-failed candidate={candidate.Label} index={waypointIndex + 1}/{candidate.ApproachWaypoints.Count} error={movementController.LastError}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryContinueCandidateApproachTravel()
+    {
+        if (activeCandidateApproachWaypointIndex < 0 || !TryGetCurrentCandidate(out var candidate))
+        {
+            return false;
+        }
+
+        var nextWaypointIndex = activeCandidateApproachWaypointIndex + 1;
+        if (nextWaypointIndex < candidate.ApproachWaypoints.Count)
+        {
+            activeCandidateApproachWaypointIndex = nextWaypointIndex;
+            if (TryStartCandidateApproachWaypoint(candidate, nextWaypointIndex))
+            {
+                ResetCandidateTravelProgressTracking(candidateTravelTarget);
+                return true;
+            }
+
+            SetFailure($"Failed to start approach waypoint {nextWaypointIndex + 1} for treasure candidate {candidate.Label}.");
+            return true;
+        }
+
+        activeCandidateApproachWaypointIndex = -1;
+        var hasKnowledgeThreat = TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out _, out _);
+        var requiresDangerousTravel = (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)) || hasKnowledgeThreat;
+        var destination = movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            SetFailure($"Treasure candidate {candidate.Label} has no reliable vnavmesh point near <{activeCandidateResolvedPosition.X:0.0}, {activeCandidateResolvedPosition.Y:0.0}, {activeCandidateResolvedPosition.Z:0.0}> after its approach waypoint.");
+            return true;
+        }
+
+        if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat))
+        {
+            return true;
+        }
+
+        ResetCandidateTravelProgressTracking(candidateTravelTarget);
+        return true;
+    }
+
+    private bool TryStartFinalCandidateTravel(TreasureCofferCandidateData candidate, Vector3 destination, bool requiresDangerousTravel, bool hasKnowledgeThreat)
+    {
+        candidateTravelTarget = destination;
+        if (requiresDangerousTravel)
+        {
+            if (!configuration.UseNinjaForDangerousArea)
+            {
+                SkipDangerousCandidate($"Skipping dangerous treasure candidate {candidate.Label} because it requires dangerous-area Ninja travel and Ninja travel is disabled.");
+                return false;
+            }
+
+            KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat ? GetPotKnowledgeThreatPolicy() : null;
+            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination, CandidateArrivalTolerance, GetDangerousTravelOptions(), knowledgeThreatPolicy))
+            {
+                if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
+                {
+                    SkipDangerousCandidate(dangerousTreasureTravelController.LastTransition);
+                    return false;
+                }
+
+                SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                    ? $"Failed to start dangerous travel for treasure candidate {candidate.Label}."
+                    : dangerousTreasureTravelController.LastError);
+                return false;
+            }
+
+            return true;
+        }
+
+        if (movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
+        {
+            return true;
+        }
+
+        SetFailure(movementController.LastError.Length == 0
+            ? $"Failed to start movement to treasure candidate {candidate.Label}."
+            : movementController.LastError);
+        return false;
     }
 
     private Vector3 ResolveCandidatePosition(TreasureCofferCandidateData candidate)
@@ -1923,6 +2029,7 @@ public sealed class TreasureSearchController : IDisposable
             handledCandidateLabels.Add(currentCandidate.Label);
             handledCandidateLabels.Add(handoffCandidate.Label);
             currentCandidateIndex = bestIndex;
+            activeCandidateApproachWaypointIndex = -1;
             candidateGeneration++;
             activeCandidateKey = handoffKey;
             activeCandidateUsesOverride = usedOverride;
@@ -1934,6 +2041,22 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=handoff fromCandidate={currentCandidate.Label} toCandidate={handoffCandidate.Label} reason={reason} currentDistance={currentDistance:0.0}y handoffDistance={bestDistance:0.0}y advantage={(currentDistance - bestDistance):0.0}y");
+        if (handoffCandidate.ApproachWaypoints.Count > 0)
+        {
+            movementController.Stop($"Treasure candidate handoff to {handoffCandidate.Label} approach waypoint.");
+            activeCandidateApproachWaypointIndex = 0;
+            if (!TryStartCandidateApproachWaypoint(handoffCandidate, activeCandidateApproachWaypointIndex))
+            {
+                SetFailure($"Failed to start approach waypoint 1 for handoff treasure candidate {handoffCandidate.Label}.");
+            }
+            else
+            {
+                ResetCandidateTravelProgressTracking(candidateTravelTarget);
+            }
+
+            return CandidateHandoffResult.DangerousTransitionStarted;
+        }
+
         if (!handoffIsDangerous)
         {
             return CandidateHandoffResult.Updated;
@@ -2053,12 +2176,12 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
-        if (!playerPosition.HasValue || activeCandidateResolvedPosition == Vector3.Zero)
+        if (!playerPosition.HasValue || candidateTravelTarget == Vector3.Zero)
         {
             return false;
         }
 
-        var distance = CalculateFlatDistance(playerPosition.Value, activeCandidateResolvedPosition);
+        var distance = CalculateFlatDistance(playerPosition.Value, candidateTravelTarget);
         var now = DateTimeOffset.UtcNow;
         var dangerousTravelRunning = dangerousTreasureTravelController.IsRunning;
         var madeProgress = false;
@@ -2128,6 +2251,19 @@ public sealed class TreasureSearchController : IDisposable
         candidateTravelProgressDistance = float.MaxValue;
         candidateTravelLastObservedPosition = Vector3.Zero;
         hasCandidateTravelObservedPosition = false;
+        candidateTravelTarget = Vector3.Zero;
+    }
+
+    private void ResetCandidateTravelProgressTracking(Vector3 target)
+    {
+        lock (gate)
+        {
+            candidateTravelTarget = target;
+            candidateTravelLastProgressAt = DateTimeOffset.UtcNow;
+            candidateTravelProgressDistance = float.MaxValue;
+            candidateTravelLastObservedPosition = Plugin.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+            hasCandidateTravelObservedPosition = candidateTravelLastObservedPosition != Vector3.Zero;
+        }
     }
 
     private bool IsHandledCandidate(string label)
