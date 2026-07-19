@@ -567,6 +567,11 @@ public sealed class OccultCrescentScanner : IDisposable
                 continue;
             }
 
+            if (!IsHostile(character))
+            {
+                continue;
+            }
+
             var distance = CalculateFlatDistance(playerPosition.Value, character.Position);
             if (distance > scanRadius || TryGetForayLevel(character) is not { } knowledgeLevel || knowledgeLevel < 1)
             {
@@ -650,6 +655,12 @@ public sealed class OccultCrescentScanner : IDisposable
         }
 
         return ((BattleChara*)characterPointer)->ForayInfo.Level;
+    }
+
+    private static unsafe bool IsHostile(ICharacter character)
+    {
+        var nativeCharacter = (Character*)character.Address;
+        return nativeCharacter != null && nativeCharacter->IsHostile;
     }
 
     private void TrackTreasureBuffState(bool hasTreasureBuff)

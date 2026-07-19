@@ -316,7 +316,6 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var hintSnapshot = treasureHintTracker.Snapshot;
-        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
         if (!hintSnapshot.HasActiveSession || !hintSnapshot.HasInitialHint)
         {
             SetFailure("Treasure search requires an active treasure session with an initial hint.");
@@ -382,6 +381,7 @@ public sealed class TreasureSearchController : IDisposable
             activeRefinementProbeOperationId = string.Empty;
         }
 
+        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) group={group.GroupKey} initialHintRevision={hintSnapshot.InitialHintEvent?.Revision ?? 0} origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
         movementController.SetLogOwner($"TreasureSession#{hintSnapshot.SessionId}");
         return BeginCurrentCandidate($"Starting treasure traversal for {fateName} from first-hint group {group.GroupKey}.");
     }

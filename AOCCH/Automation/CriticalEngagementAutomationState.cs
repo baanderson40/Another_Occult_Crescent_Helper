@@ -7,6 +7,7 @@ public enum CriticalEngagementAutomationState
     TravelingToStaging,
     WaitingForEngage,
     InBattle,
+    AwaitingCombatExit,
     Recovering,
     Completed,
     Stopped,

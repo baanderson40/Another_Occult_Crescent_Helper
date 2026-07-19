@@ -6,6 +6,7 @@ public enum FateAutomationState
     PlanningRoute,
     TravelingToFate,
     Participating,
+    AwaitingCombatExit,
     Recovering,
     Completed,
     Stopped,

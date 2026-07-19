@@ -41,6 +41,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private string lastTransition = "Idle";
     private AutomationRunResult lastResult;
     private DateTimeOffset lastCombatSeenAt = DateTimeOffset.MinValue;
+    private DateTimeOffset awaitingCombatExitAt = DateTimeOffset.MinValue;
     private bool returnTravelFallbackAttempted;
     private bool returnRecoveryFallbackAttempted;
     private Vector3 ceWaitPoint;
@@ -212,6 +213,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             lastError = string.Empty;
             lastResult = AutomationRunResult.None;
             lastCombatSeenAt = DateTimeOffset.MinValue;
+            awaitingCombatExitAt = DateTimeOffset.MinValue;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
             ceWaitPoint = default;
@@ -248,6 +250,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             lastTransition = "Idle";
             lastResult = AutomationRunResult.None;
             lastCombatSeenAt = DateTimeOffset.MinValue;
+            awaitingCombatExitAt = DateTimeOffset.MinValue;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
             ceWaitPoint = default;
@@ -301,6 +304,9 @@ public sealed class CriticalEngagementAutomationController : IDisposable
                 break;
             case CriticalEngagementAutomationState.InBattle:
                 TickInBattle(snapshot, target);
+                break;
+            case CriticalEngagementAutomationState.AwaitingCombatExit:
+                TickAwaitingCombatExit();
                 break;
             case CriticalEngagementAutomationState.Recovering:
                 TickRecovering();
@@ -440,7 +446,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
 
     private void TickInBattle(ScannerSnapshot snapshot, ActiveCriticalEncounter? target)
     {
-        if (snapshot.CurrentCriticalEncounterId == TargetCeId || condition[ConditionFlag.InCombat])
+        if (snapshot.CurrentCriticalEncounterId == TargetCeId)
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
             logger.DebugThrottled("ce-in-battle", WaitLogInterval, $"CE automation is still in battle for {TargetCeName} ({TargetCeId}). inCombat={condition[ConditionFlag.InCombat]} currentCe={snapshot.CurrentCriticalEncounterId}.");
@@ -457,6 +463,43 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             : $"CE {target.Name} no longer has the player engaged.";
 
         logger.ResetThrottle("ce-in-battle");
+        if (condition[ConditionFlag.InCombat])
+        {
+            lock (gate)
+            {
+                awaitingCombatExitAt = DateTimeOffset.UtcNow;
+            }
+
+            TransitionTo(CriticalEngagementAutomationState.AwaitingCombatExit, $"{reason} Waiting for combat to end before releasing autorotation or recovering.");
+            return;
+        }
+
+        CompleteBattle(reason);
+    }
+
+    private void TickAwaitingCombatExit()
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            DateTimeOffset waitingSince;
+            lock (gate)
+            {
+                waitingSince = awaitingCombatExitAt;
+            }
+
+            var elapsed = waitingSince == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - waitingSince;
+            logger.DebugThrottled("ce-awaiting-combat-exit", WaitLogInterval, $"CE automation is waiting for combat to end before completing {TargetCeName} ({TargetCeId}). elapsed={elapsed.TotalSeconds:0}s.");
+            return;
+        }
+
+        logger.ResetThrottle("ce-awaiting-combat-exit");
+        var reason = $"Combat cleared after CE {TargetCeName} ({TargetCeId}) completed.";
+        logger.Info($"{BuildLogTag()} op=combat-cleared target=\"{TargetCeName}\" ({TargetCeId}) reason={reason}");
+        CompleteBattle(reason);
+    }
+
+    private void CompleteBattle(string reason)
+    {
         autorotationController.ReleaseOwnership(reason);
         if (configuration.UseReturn)
         {
@@ -655,6 +698,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
                 targetCeName = string.Empty;
                 ceWaitPoint = default;
                 ceWaitPointArrivalTolerance = 0f;
+                awaitingCombatExitAt = DateTimeOffset.MinValue;
             }
         }
 

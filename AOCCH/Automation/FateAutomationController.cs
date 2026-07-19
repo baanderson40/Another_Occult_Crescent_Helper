@@ -55,6 +55,7 @@ public sealed class FateAutomationController : IDisposable
     private DateTimeOffset monitorStartedAt = DateTimeOffset.MinValue;
     private bool autorotationApplied;
     private AutomationRunResult lastResult;
+    private string pendingCompletionReason = string.Empty;
 
     public FateAutomationController(
         IFramework framework,
@@ -284,6 +285,7 @@ public sealed class FateAutomationController : IDisposable
             monitorStartedAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
             lastResult = AutomationRunResult.None;
+            pendingCompletionReason = string.Empty;
         }
 
         logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior} initialDestinationOverride={(initialDestinationOverride.HasValue ? FormatVector(initialDestinationOverride.Value) : "none")} initialArrivalToleranceOverride={(initialArrivalToleranceOverride.HasValue ? $"{initialArrivalToleranceOverride.Value:0.0}" : "none")}");
@@ -334,6 +336,7 @@ public sealed class FateAutomationController : IDisposable
             monitorStartedAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
             lastResult = AutomationRunResult.None;
+            pendingCompletionReason = string.Empty;
         }
 
         logger.Info($"[FATE] op=reset reason={reason}");
@@ -386,6 +389,9 @@ public sealed class FateAutomationController : IDisposable
                 break;
             case FateAutomationState.Participating:
                 TickParticipating(target);
+                break;
+            case FateAutomationState.AwaitingCombatExit:
+                TickAwaitingCombatExit();
                 break;
             case FateAutomationState.Recovering:
                 TickRecovering();
@@ -520,6 +526,23 @@ public sealed class FateAutomationController : IDisposable
         }
     }
 
+    private void TickAwaitingCombatExit()
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            var elapsed = stateEnteredAt == DateTimeOffset.MinValue ? TimeSpan.Zero : DateTimeOffset.UtcNow - stateEnteredAt;
+            logger.DebugThrottled("fate-awaiting-combat-exit", MonitorLogInterval, $"FATE completion is waiting for combat to end. target=\"{TargetFateName}\" ({TargetFateId}) elapsed={elapsed:mm\\:ss}.");
+            return;
+        }
+
+        logger.ResetThrottle("fate-awaiting-combat-exit");
+        var reason = string.IsNullOrEmpty(pendingCompletionReason)
+            ? "FATE completion resumed after combat ended."
+            : pendingCompletionReason;
+        logger.Info($"{BuildLogTag()} op=combat-exit target=\"{TargetFateName}\" ({TargetFateId}) completion-resumed reason={reason}");
+        CompleteFate(reason);
+    }
+
     private void EnsureAutorotationApplied(FateRunTarget target)
     {
         lock (gate)
@@ -542,6 +565,18 @@ public sealed class FateAutomationController : IDisposable
     }
 
     private void FinishFate(string reason)
+    {
+        if (condition[ConditionFlag.InCombat])
+        {
+            pendingCompletionReason = reason;
+            TransitionTo(FateAutomationState.AwaitingCombatExit, $"FATE completion detected; waiting for combat to end before completing: {reason}");
+            return;
+        }
+
+        CompleteFate(reason);
+    }
+
+    private void CompleteFate(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
         if (completionBehavior == FateRunCompletionBehavior.CompleteInPlace)
@@ -586,7 +621,8 @@ public sealed class FateAutomationController : IDisposable
     }
 
     private bool IsCePreempting(ScannerSnapshot snapshot)
-        => !targetIsPot
+        => State is FateAutomationState.PlanningRoute or FateAutomationState.TravelingToFate
+            && !targetIsPot
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
             && snapshot.EffectiveTarget.WouldPreemptFate;
 
@@ -656,6 +692,7 @@ public sealed class FateAutomationController : IDisposable
                 completionBehavior = FateRunCompletionBehavior.RecoverToBase;
                 initialDestinationOverride = null;
                 initialArrivalToleranceOverride = null;
+                pendingCompletionReason = string.Empty;
             }
 
             if (clearAutorotationState)
