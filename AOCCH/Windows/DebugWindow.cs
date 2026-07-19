@@ -261,6 +261,43 @@ public sealed class DebugWindow : Window, IDisposable
         {
             plugin.RunProbeForay();
         }
+
+        if (ImGui.Button("Dump Targeted Reveal Coffer"))
+        {
+            plugin.LogTargetedRevealCofferDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Visible Coffers"))
+        {
+            plugin.LogVisibleCoffersDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Targeted Shop NPC"))
+        {
+            plugin.LogTargetedShopNpcDebug();
+        }
+
+        if (ImGui.Button("Dump Configured FATE/CE Tables"))
+        {
+            plugin.LogConfiguredEventTablesDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Live FATE/CE Tables"))
+        {
+            plugin.LogLiveEventTablesDebug();
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Instance Search");
+        ImGui.TextWrapped(plugin.InstancedContentController.ContentMemberListAtkValueDumpStatus);
+        if (ImGui.Button("Dump ContentMemberList AtkValues"))
+        {
+            plugin.InstancedContentController.DumpContentMemberListAtkValues();
+        }
+        ImGui.TextDisabled("Run /search first. Logs all 14 AtkValues from the open addon.");
     }
 
     private static string FormatTimestamp(DateTimeOffset timestamp)
@@ -1552,31 +1589,3 @@ public sealed class DebugWindow : Window, IDisposable
         return string.Empty;
     }
 }
-
-        if (ImGui.Button("Dump Targeted Reveal Coffer"))
-        {
-            plugin.LogTargetedRevealCofferDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Visible Coffers"))
-        {
-            plugin.LogVisibleCoffersDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Targeted Shop NPC"))
-        {
-            plugin.LogTargetedShopNpcDebug();
-        }
-
-        if (ImGui.Button("Dump Configured FATE/CE Tables"))
-        {
-            plugin.LogConfiguredEventTablesDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Live FATE/CE Tables"))
-        {
-            plugin.LogLiveEventTablesDebug();
-        }
