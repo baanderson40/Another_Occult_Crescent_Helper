@@ -189,14 +189,8 @@ public sealed class VisibleCofferFarmSpotData
     public int? HideThresholdDistance { get; init; }
     public float? ArrivalDistance { get; init; }
     public bool RouteOnly { get; init; }
-    public bool ForceHidden { get; init; }
-    public bool ForceUnhidden { get; init; }
-    public bool HideOnArrival { get; init; }
-    public bool DisableExitHideThreshold { get; init; }
-    public bool MountOnArrival { get; init; }
     public bool SkipDuringAshkin { get; init; }
     public bool SkipDuringUnsafeWeather { get; init; }
-    public bool RecheckAscentSafetyOnArrival { get; init; }
     public bool RainSensitive { get; init; }
     public string? Note { get; init; }
 }

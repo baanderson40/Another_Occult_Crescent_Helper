@@ -20,6 +20,8 @@ public enum DangerousTreasureTravelState
     WaitingForHideReady,
     UsingHide,
     VerifyingHide,
+    UsingHideToUnhide,
+    VerifyingUnhide,
     WalkingToCandidate,
     TravelingDirectlyAfterThreatClear,
     Arrived,
@@ -57,6 +59,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private static readonly TimeSpan DismountRequestInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan UnhideVerifyTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
@@ -97,6 +100,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private int activeHideThresholdDistance;
     private int activeMaximumAggroLevel;
     private bool hideRetryUsed;
+    private bool unhideRetryUsed;
     private bool hiddenFinalApproachRetryUsed;
     private DateTimeOffset lastHideActivatedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hideReadyDeadline = DateTimeOffset.MinValue;
@@ -280,6 +284,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeHideThresholdDistance = 0;
             activeMaximumAggroLevel = 0;
             hideRetryUsed = false;
+            unhideRetryUsed = false;
             hiddenFinalApproachRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
             hideReadyDeadline = DateTimeOffset.MinValue;
@@ -717,6 +722,12 @@ public sealed class DangerousTreasureTravelController : IDisposable
             case DangerousTreasureTravelState.VerifyingHide:
                 TickVerifyingHide();
                 break;
+            case DangerousTreasureTravelState.UsingHideToUnhide:
+                TickUsingHideToUnhide();
+                break;
+            case DangerousTreasureTravelState.VerifyingUnhide:
+                TickVerifyingUnhide();
+                break;
             case DangerousTreasureTravelState.WalkingToCandidate:
                 TickWalkingToCandidate();
                 break;
@@ -1087,22 +1098,22 @@ public sealed class DangerousTreasureTravelController : IDisposable
         LogKnowledgeThreatStatus("hidden");
         if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
             && gameActionController.IsStealthed
-            && (!activeKnowledgeThreatPolicy.HasValue
-                || !IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.ExitDistance, out _, out _))
             && KnowledgeThreatEvaluator.TryFindHideException(
                 scanner.Snapshot,
                 KnowledgeThreatEvaluator.OccultIsleblazerUnhideDistance,
                 out var hideException))
         {
-            movementController.Stop("Occult Isleblazer is unsafe while hidden; resuming unhidden travel.");
-            logger.Info($"{BuildLogTag()} op=hide-exception-unhide candidate={activeCandidateLabel} entity='{hideException?.Name}' objectId={hideException?.ObjectId:X} baseId={hideException?.BaseId} distance={hideException?.DistanceToPlayer:0.0}y");
-            StartDirectTravelAfterThreatClear("Occult Isleblazer entered the unhide range.");
+            movementController.Stop("Occult Isleblazer is unsafe while hidden; clearing Hide for on-foot travel.");
+            logger.Info($"{BuildLogTag()} op=hide-exception-unhide-request candidate={activeCandidateLabel} entity='{hideException?.Name}' objectId={hideException?.ObjectId:X} baseId={hideException?.BaseId} distance={hideException?.DistanceToPlayer:0.0}y");
+            unhideRetryUsed = false;
+            TransitionTo(DangerousTreasureTravelState.UsingHideToUnhide, "Occult Isleblazer entered the unhide range; clearing Hide before continuing on foot.");
             return;
         }
 
         if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
             && activeKnowledgeThreatPolicy.HasValue
             && scanner.Snapshot.PlayerForayLevel.HasValue
+            && !TryGetNearbyHideException(out _)
             && !IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.ExitDistance, out _, out _))
         {
             movementController.Stop("Knowledge threat cleared; resuming mounted treasure travel.");
@@ -1113,6 +1124,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
             && activeKnowledgeThreatPolicy.HasValue
             && !gameActionController.IsStealthed
+            && !TryGetNearbyHideException(out _)
             && !condition[ConditionFlag.InCombat])
         {
             movementController.Stop("Hide was lost while a knowledge threat remained nearby.");
@@ -1156,6 +1168,72 @@ public sealed class DangerousTreasureTravelController : IDisposable
             "dangerous-treasure-travel",
             WaitLogInterval,
             $"Dangerous treasure travel is moving for {activeCandidateLabel}. phase={activeWalkingPhase} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} destination={FormatVector(finalDestination)} remainingDistance={CalculateFlatDistance(objectTable.LocalPlayer?.Position ?? finalDestination, finalDestination):0.0}y tolerance={arrivalTolerance:0.0} MovementState={movementController.State} pathBusy={movementController.IsPathBusy} route={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} inCombat={condition[ConditionFlag.InCombat]}.");
+    }
+
+    private void TickUsingHideToUnhide()
+    {
+        if (!gameActionController.IsStealthed)
+        {
+            StartIsleblazerUnhiddenWalk();
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (now < hideDispatchRetryAvailableAt)
+        {
+            return;
+        }
+
+        if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"Occult Isleblazer unhide for {activeCandidateLabel}"))
+        {
+            if (unhideRetryUsed)
+            {
+                SkipCandidate($"Could not clear Hide near an Occult Isleblazer for dangerous candidate {activeCandidateLabel}.");
+                return;
+            }
+
+            unhideRetryUsed = true;
+            hideDispatchRetryAvailableAt = now + HideDispatchRetryDelay;
+            return;
+        }
+
+        TransitionTo(DangerousTreasureTravelState.VerifyingUnhide, "Used Hide to clear Hidden near an Occult Isleblazer; verifying unhidden status.");
+    }
+
+    private void TickVerifyingUnhide()
+    {
+        if (!gameActionController.IsStealthed)
+        {
+            StartIsleblazerUnhiddenWalk();
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow - stateEnteredAt < UnhideVerifyTimeout)
+        {
+            return;
+        }
+
+        if (!unhideRetryUsed)
+        {
+            unhideRetryUsed = true;
+            hideDispatchRetryAvailableAt = DateTimeOffset.UtcNow + HideDispatchRetryDelay;
+            TransitionTo(DangerousTreasureTravelState.UsingHideToUnhide, "Hide remained active near an Occult Isleblazer; retrying the unhide toggle.");
+            return;
+        }
+
+        SkipCandidate($"Hide did not clear near an Occult Isleblazer for dangerous candidate {activeCandidateLabel}.");
+    }
+
+    private void StartIsleblazerUnhiddenWalk()
+    {
+        logger.Info($"{BuildLogTag()} op=hide-exception-unhide-confirmed candidate={activeCandidateLabel} range={KnowledgeThreatEvaluator.OccultIsleblazerUnhideDistance:0.0}y action=continue-on-foot");
+        StartWalkingPhase(
+            DangerousTreasureWalkingPhase.FinalApproach,
+            finalDestination,
+            arrivalTolerance,
+            allowMount: false,
+            $"Occult Isleblazer unhidden travel for {activeCandidateLabel}",
+            "Hidden cleared near an Occult Isleblazer; continuing on foot.");
     }
 
     private void TickTravelingDirectlyAfterThreatClear()
@@ -1216,6 +1294,12 @@ public sealed class DangerousTreasureTravelController : IDisposable
         return activeKnowledgeThreatPolicy.HasValue
             && KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, activeKnowledgeThreatPolicy.Value, radius, out threat, out hideAtOrAbove);
     }
+
+    private bool TryGetNearbyHideException(out ForayThreatEntity? entity)
+        => KnowledgeThreatEvaluator.TryFindHideException(
+            scanner.Snapshot,
+            KnowledgeThreatEvaluator.OccultIsleblazerUnhideDistance,
+            out entity);
 
     private void LogKnowledgeThreatStatus(string travelMode)
     {
@@ -1580,7 +1664,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         string reason)
     {
         movementController.SetLogOwner(currentRunId);
-        logger.Info($"{BuildLogTag()} op=hidden-move-start candidate={activeCandidateLabel} phase={phase} destination={FormatVector(destination)} arrivalTolerance={destinationArrivalTolerance:0.0} allowMount={allowMount} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} reason={reason}");
+        logger.Info($"{BuildLogTag()} op=approach-move-start candidate={activeCandidateLabel} phase={phase} destination={FormatVector(destination)} arrivalTolerance={destinationArrivalTolerance:0.0} allowMount={allowMount} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} reason={reason}");
         if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount))
         {
             SkipCandidate(movementController.LastError.Length == 0

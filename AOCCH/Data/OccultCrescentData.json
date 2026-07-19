@@ -1057,29 +1057,9 @@
         "z": 710.17
       },
       "aggroLevel": 28,
-      "forceUnhidden": true,
       "skipDuringAshkin": true,
       "skipDuringUnsafeWeather": true,
       "note": "spell_aggro_unhidden"
-    },
-    {
-      "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_7_UnhidePoint",
-      "position": {
-        "x": -637.906,
-        "y": 180.037,
-        "z": 764.909
-      },
-      "aggroLevel": 28,
-      "forceHidden": true,
-      "routeOnly": true,
-      "disableExitHideThreshold": true,
-      "mountOnArrival": true,
-      "recheckAscentSafetyOnArrival": true,
-      "arrivalDistance": 3.0,
-      "skipDuringAshkin": true,
-      "skipDuringUnsafeWeather": true,
-      "note": "drop_hide_before_ascent_7"
     },
     {
       "area": "Abandoned Ascent",
@@ -1090,29 +1070,11 @@
         "z": 781.534
       },
       "aggroLevel": 28,
-      "forceUnhidden": true,
       "routeOnly": true,
       "arrivalDistance": 3.0,
       "skipDuringAshkin": true,
       "skipDuringUnsafeWeather": true,
       "note": "spell_aggro_unhidden"
-    },
-    {
-      "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_7_RehidePoint",
-      "position": {
-        "x": -687.237,
-        "y": 171.0,
-        "z": 665.097
-      },
-      "aggroLevel": 28,
-      "forceUnhidden": true,
-      "routeOnly": true,
-      "hideOnArrival": true,
-      "arrivalDistance": 3.0,
-      "skipDuringAshkin": true,
-      "skipDuringUnsafeWeather": true,
-      "note": "rehide_after_ascent_7"
     }
   ],
   "visibleCofferFarmRoute": [
@@ -1258,19 +1220,11 @@
     },
     {
       "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_7_UnhidePoint"
-    },
-    {
-      "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_7_RampCorner"
     },
     {
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_7"
-    },
-    {
-      "area": "Abandoned Ascent",
-      "label": "Abandoned Ascent_7_RehidePoint"
     },
     {
       "area": "Abandoned Ascent",

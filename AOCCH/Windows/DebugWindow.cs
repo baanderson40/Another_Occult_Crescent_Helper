@@ -1517,7 +1517,7 @@ public sealed class DebugWindow : Window, IDisposable
             return $"{label} | missing spot";
         }
 
-        return $"{label} | aggro {spot.AggroLevel} | {(spot.ForceHidden ? "hidden" : "normal")}";
+        return $"{label} | aggro {spot.AggroLevel}";
     }
 
     private static string GetCeTargetLabel(ScannerSnapshot snapshot, ActiveCriticalEncounter encounter)
