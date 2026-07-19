@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using AOCCH.Logging;
 using Dalamud.Plugin.Ipc;
 
@@ -19,6 +21,7 @@ public sealed class VNavmeshIpc
     private readonly ICallGateSubscriber<object> stopPath;
     private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> nearestPoint;
     private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> pointOnFloor;
+    private readonly ICallGateSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>> pathfind;
     private bool? lastAvailability;
 
     public VNavmeshIpc(AocchLogger logger)
@@ -33,6 +36,7 @@ public sealed class VNavmeshIpc
         stopPath = Plugin.PluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
         nearestPoint = Plugin.PluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
         pointOnFloor = Plugin.PluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
+        pathfind = Plugin.PluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>("vnavmesh.Nav.Pathfind");
     }
 
     public bool IsReady()
@@ -62,6 +66,9 @@ public sealed class VNavmeshIpc
     public Vector3? FindPointOnFloor(Vector3 position, bool allowUnlandable, float halfExtentXZ)
         => Invoke("vnavmesh.Query.Mesh.PointOnFloor",
             () => pointOnFloor.InvokeFunc(position, allowUnlandable, halfExtentXZ), null);
+
+    public Task<List<Vector3>>? Pathfind(Vector3 from, Vector3 to, bool fly)
+        => Invoke("vnavmesh.Nav.Pathfind", () => pathfind.InvokeFunc(from, to, fly), null);
 
     public void Stop()
     {

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using System.Threading;
+using System.Threading.Tasks;
 using AOCCH.Data;
 using AOCCH.IPC;
 using AOCCH.Logging;
@@ -18,6 +20,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ActivePathStallTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MeshStallCheckTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan ReturnTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReturnReadyTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ReturnReadyPollInterval = TimeSpan.FromMilliseconds(250);
@@ -86,6 +89,12 @@ public sealed class MovementController : IDisposable
     private string currentMovementOperationId = string.Empty;
     private MovementState state = MovementState.Idle;
     private bool stopVerificationPending;
+    private Task<List<Vector3>>? initialMeshPathTask;
+    private Task<List<Vector3>>? stallMeshPathTask;
+    private Vector3 meshPathOrigin;
+    private Vector3 meshPathDestination;
+    private float? initialMeshDistance;
+    private DateTimeOffset stallMeshPathStartedAt = DateTimeOffset.MinValue;
 
     public MovementController(
         IFramework framework,
@@ -200,6 +209,7 @@ public sealed class MovementController : IDisposable
     {
         vnavmesh.Stop();
         BeginStopVerification();
+        ResetMeshPathTracking();
         if (lifestreamOwned && lifestream.IsBusy())
         {
             lifestream.Abort();
@@ -491,6 +501,7 @@ public sealed class MovementController : IDisposable
     {
         vnavmesh.Stop();
         BeginStopVerification();
+        ResetMeshPathTracking();
         if (lifestreamOwned && lifestream.IsBusy())
         {
             lifestream.Abort();
@@ -833,10 +844,13 @@ public sealed class MovementController : IDisposable
                 progressDistance = distance;
             }
 
+            BeginMeshPathTracking(playerPosition, destination.Value);
+
             logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind}");
             return;
         }
 
+        ObserveInitialMeshPath(step);
         var pathBusy = vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
         if (progressDistance - distance >= ProgressThreshold)
         {
@@ -859,6 +873,11 @@ public sealed class MovementController : IDisposable
         var stallTimeout = pathBusy ? ActivePathStallTimeout : StallTimeout;
         if (DateTimeOffset.UtcNow - lastProgressAt > stallTimeout)
         {
+            if (pathBusy && VerifyMeshProgressAtFlatStall(step, playerPosition, distance))
+            {
+                return;
+            }
+
             SetFailure(MovementState.TimedOut, $"Movement stalled during step: {step.Description}.", stopMovement: true);
             return;
         }
@@ -1162,6 +1181,7 @@ public sealed class MovementController : IDisposable
 
     private void AdvanceStep()
     {
+        ResetMeshPathTracking();
         lock (gate)
         {
             currentStepIndex++;
@@ -1196,6 +1216,7 @@ public sealed class MovementController : IDisposable
     {
         vnavmesh.Stop();
         BeginStopVerification();
+        ResetMeshPathTracking();
         lock (gate)
         {
             state = MovementState.Arrived;
@@ -1216,6 +1237,7 @@ public sealed class MovementController : IDisposable
 
     private void SetFailure(MovementState failureState, string reason, bool stopMovement = false)
     {
+        ResetMeshPathTracking();
         if (stopMovement)
         {
             vnavmesh.Stop();
@@ -1433,6 +1455,133 @@ public sealed class MovementController : IDisposable
 
     private Vector3? GetPlayerPosition()
         => objectTable.LocalPlayer?.Position;
+
+    private void BeginMeshPathTracking(Vector3 origin, Vector3 destination)
+    {
+        ResetMeshPathTracking();
+        meshPathOrigin = origin;
+        meshPathDestination = destination;
+        initialMeshPathTask = vnavmesh.Pathfind(origin, destination, fly: false);
+        if (initialMeshPathTask == null)
+        {
+            logger.Debug($"{BuildLogTag()} op=mesh-baseline-unavailable from={FormatVector(origin)} to={FormatVector(destination)}");
+        }
+    }
+
+    private void ObserveInitialMeshPath(RouteStep step)
+    {
+        if (initialMeshDistance.HasValue || initialMeshPathTask == null || !initialMeshPathTask.IsCompleted)
+        {
+            return;
+        }
+
+        if (!TryGetMeshDistance(initialMeshPathTask, meshPathOrigin, meshPathDestination, out var distance, out var pointCount))
+        {
+            initialMeshPathTask = null;
+            logger.Debug($"{BuildLogTag()} op=mesh-baseline-unavailable step=\"{step.Description}\"");
+            return;
+        }
+
+        initialMeshDistance = distance;
+        initialMeshPathTask = null;
+        logger.Debug($"{BuildLogTag()} op=mesh-baseline step=\"{step.Description}\" meshDistance={distance:0.0} points={pointCount} from={FormatVector(meshPathOrigin)} to={FormatVector(meshPathDestination)}");
+    }
+
+    private bool VerifyMeshProgressAtFlatStall(RouteStep step, Vector3 playerPosition, float flatDistance)
+    {
+        if (!initialMeshDistance.HasValue)
+        {
+            logger.Warning($"{BuildLogTag()} op=mesh-stall-check-unavailable step=\"{step.Description}\" reason=no-baseline flatDistance={flatDistance:0.0}");
+            return false;
+        }
+
+        if (stallMeshPathTask == null)
+        {
+            stallMeshPathTask = vnavmesh.Pathfind(playerPosition, meshPathDestination, fly: false);
+            stallMeshPathStartedAt = DateTimeOffset.UtcNow;
+            if (stallMeshPathTask == null)
+            {
+                logger.Warning($"{BuildLogTag()} op=mesh-stall-check-unavailable step=\"{step.Description}\" reason=query-unavailable flatDistance={flatDistance:0.0}");
+                return false;
+            }
+
+            logger.Info($"{BuildLogTag()} op=mesh-stall-check-start step=\"{step.Description}\" initialMeshDistance={initialMeshDistance.Value:0.0} flatDistance={flatDistance:0.0} from={FormatVector(playerPosition)} to={FormatVector(meshPathDestination)}");
+            return true;
+        }
+
+        if (!stallMeshPathTask.IsCompleted)
+        {
+            if (DateTimeOffset.UtcNow - stallMeshPathStartedAt <= MeshStallCheckTimeout)
+            {
+                return true;
+            }
+
+            logger.Warning($"{BuildLogTag()} op=mesh-stall-check-unavailable step=\"{step.Description}\" reason=query-timeout timeout={MeshStallCheckTimeout.TotalSeconds:0.0}s flatDistance={flatDistance:0.0}");
+            stallMeshPathTask = null;
+            return false;
+        }
+
+        if (!TryGetMeshDistance(stallMeshPathTask, playerPosition, meshPathDestination, out var remainingMeshDistance, out var pointCount))
+        {
+            logger.Warning($"{BuildLogTag()} op=mesh-stall-check-unavailable step=\"{step.Description}\" reason=query-failed flatDistance={flatDistance:0.0}");
+            stallMeshPathTask = null;
+            return false;
+        }
+
+        stallMeshPathTask = null;
+        var meshReduction = initialMeshDistance.Value - remainingMeshDistance;
+        if (meshReduction < ProgressThreshold)
+        {
+            logger.Warning($"{BuildLogTag()} op=mesh-stall-check-failed step=\"{step.Description}\" initialMeshDistance={initialMeshDistance.Value:0.0} remainingMeshDistance={remainingMeshDistance:0.0} meshReduction={meshReduction:0.0} requiredReduction={ProgressThreshold:0.0} flatDistance={flatDistance:0.0} points={pointCount}");
+            return false;
+        }
+
+        lock (gate)
+        {
+            lastProgressAt = DateTimeOffset.UtcNow;
+            progressDistance = flatDistance;
+        }
+
+        logger.Info($"{BuildLogTag()} op=mesh-stall-check-continue step=\"{step.Description}\" initialMeshDistance={initialMeshDistance.Value:0.0} remainingMeshDistance={remainingMeshDistance:0.0} meshReduction={meshReduction:0.0} flatDistance={flatDistance:0.0} points={pointCount}");
+        return true;
+    }
+
+    private static bool TryGetMeshDistance(Task<List<Vector3>> task, Vector3 origin, Vector3 destination, out float distance, out int pointCount)
+    {
+        distance = 0f;
+        pointCount = 0;
+        if (task.IsCanceled || task.IsFaulted)
+        {
+            return false;
+        }
+
+        var points = task.GetAwaiter().GetResult();
+        if (points.Count == 0)
+        {
+            return false;
+        }
+
+        pointCount = points.Count;
+        var previous = origin;
+        foreach (var point in points)
+        {
+            distance += Vector3.Distance(previous, point);
+            previous = point;
+        }
+
+        distance += Vector3.Distance(previous, destination);
+        return true;
+    }
+
+    private void ResetMeshPathTracking()
+    {
+        initialMeshPathTask = null;
+        stallMeshPathTask = null;
+        meshPathOrigin = Vector3.Zero;
+        meshPathDestination = Vector3.Zero;
+        initialMeshDistance = null;
+        stallMeshPathStartedAt = DateTimeOffset.MinValue;
+    }
 
     private void WaitForTransitionCompletion(
         RouteStep step,
