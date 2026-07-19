@@ -79,6 +79,7 @@ public sealed class PotFarmController : IDisposable
     private int treasureAttemptBaselineRevision;
     private bool leavePending;
     private bool pendingStop;
+    private bool waitingToResumeInterruptedPotFateAfterDeath;
     private bool resumeBootstrapAfterRecovery;
     private bool isWaitingForConfiguredBootstrapPot;
     private PotFarmRunResult completionResultAfterRecovery;
@@ -363,6 +364,7 @@ public sealed class PotFarmController : IDisposable
             currentRunId = $"Pot#{Interlocked.Increment(ref nextRunSequence)}";
             runStartedAt = DateTimeOffset.UtcNow;
             pendingStop = false;
+            waitingToResumeInterruptedPotFateAfterDeath = false;
             resumeBootstrapAfterRecovery = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
             currentPotId = 0;
@@ -404,6 +406,7 @@ public sealed class PotFarmController : IDisposable
         lock (gate)
         {
             pendingStop = true;
+            waitingToResumeInterruptedPotFateAfterDeath = false;
         }
 
         if (fateAutomationController.IsRunning && currentPotId != 0)
@@ -463,6 +466,7 @@ public sealed class PotFarmController : IDisposable
             treasureAttemptBaselineRevision = 0;
             leavePending = false;
             pendingStop = false;
+            waitingToResumeInterruptedPotFateAfterDeath = false;
             resumeBootstrapAfterRecovery = false;
             isWaitingForConfiguredBootstrapPot = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
@@ -501,12 +505,38 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        if (currentState == PotFarmState.RunningPotFate
-            && !fateAutomationController.IsRunning
-            && deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed)
+        var deathRecoveryInProgress = deathRecoveryController.State is not DeathRecoveryState.Idle
+            and not DeathRecoveryState.Stopped
+            and not DeathRecoveryState.Failed;
+        if (currentState != PotFarmState.RunningPotFate && deathRecoveryInProgress)
         {
-            logger.DebugThrottled("pot-death-recovery-hold", WaitLogInterval, "Pot farm is holding the interrupted pot FATE while death recovery completes.");
+            Stop("Player died; stopping non-resumable pot farm activity during death recovery.");
             return;
+        }
+
+        if (currentState == PotFarmState.RunningPotFate && !fateAutomationController.IsRunning)
+        {
+            if (deathRecoveryInProgress)
+            {
+                lock (gate)
+                {
+                    waitingToResumeInterruptedPotFateAfterDeath = true;
+                }
+            }
+
+            if (waitingToResumeInterruptedPotFateAfterDeath
+                && deathRecoveryController.State is not DeathRecoveryState.Stopped and not DeathRecoveryState.Failed)
+            {
+                logger.DebugThrottled("pot-death-recovery-hold", WaitLogInterval, "Pot farm is holding the interrupted pot FATE while Farm resumes it after death recovery.");
+                return;
+            }
+        }
+        else if (currentState == PotFarmState.RunningPotFate)
+        {
+            lock (gate)
+            {
+                waitingToResumeInterruptedPotFateAfterDeath = false;
+            }
         }
 
         logger.ResetThrottle("pot-death-recovery-hold");

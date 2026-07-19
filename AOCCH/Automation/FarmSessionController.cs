@@ -205,6 +205,11 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        if (potFarmController.State == PotFarmState.Failed)
+        {
+            potFarmController.ResetInstanceState("Starting a new farm session after a terminal pot farm failure.");
+        }
+
         var snapshot = scanner.Snapshot;
         if (!snapshot.IsInSupportedTerritory)
         {
@@ -1278,6 +1283,7 @@ public sealed class FarmSessionController : IDisposable
             logger.Info($"{BuildLogTag()} op=resume-ended activity={activityLabel} target=\"{targetName}\" ({targetId}) reason=target-no-longer-active-after-raise");
             if (isPotTarget)
             {
+                potFarmController.Stop("Interrupted pot FATE was no longer active after death recovery.");
                 TransitionTo(FarmSessionState.SelectingTarget, "Interrupted pot FATE ended while death recovery completed.", "Selecting target");
             }
             else
