@@ -782,9 +782,8 @@ public sealed class MovementController : IDisposable
         }
 
         var isWithinEarlyDismountRange = IsWithinEarlyDismountRange(step, playerPosition, out _);
-        if (isWithinEarlyDismountRange && condition[ConditionFlag.Mounted])
+        if (isWithinEarlyDismountRange && condition[ConditionFlag.Mounted] && ProcessEarlyDismount(step, playerPosition))
         {
-            ProcessEarlyDismount(step, playerPosition);
             return;
         }
 
@@ -1819,16 +1818,16 @@ public sealed class MovementController : IDisposable
         return distanceToDismountTarget <= step.EarlyDismountDistance;
     }
 
-    private void ProcessEarlyDismount(RouteStep step, Vector3 playerPosition)
+    private bool ProcessEarlyDismount(RouteStep step, Vector3 playerPosition)
     {
         if (!IsWithinEarlyDismountRange(step, playerPosition, out var distanceToDismountTarget))
         {
-            return;
+            return false;
         }
 
         if (!condition[ConditionFlag.Mounted])
         {
-            return;
+            return false;
         }
 
         if (condition[ConditionFlag.InCombat]
@@ -1839,8 +1838,8 @@ public sealed class MovementController : IDisposable
             logger.DebugThrottled(
                 BuildStepLogKey("early-dismount-blocked"),
                 TimeSpan.FromSeconds(1),
-                $"Early dismount is waiting during step '{step.Description}'. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} conditions={DescribeMovementConditions()}.");
-            return;
+                $"Early dismount is unavailable during step '{step.Description}'; continuing path. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} conditions={DescribeMovementConditions()}.");
+            return false;
         }
 
         if (!dismountAttempted)
@@ -1851,7 +1850,7 @@ public sealed class MovementController : IDisposable
                     BuildStepLogKey("early-dismount-failed"),
                     TimeSpan.FromSeconds(1),
                     $"Early dismount action dispatch failed for step '{step.Description}'. distanceToTarget={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} conditions={DescribeMovementConditions()}.");
-                return;
+                return true;
             }
 
             lock (gate)
@@ -1861,7 +1860,7 @@ public sealed class MovementController : IDisposable
             }
 
             logger.Info($"{BuildLogTag()} op=early-dismount-request step=\"{step.Description}\" distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} target={FormatVector(step.EarlyDismountTarget)}");
-            return;
+            return true;
         }
 
         logger.DebugThrottled(
@@ -1871,7 +1870,7 @@ public sealed class MovementController : IDisposable
 
         if (DateTimeOffset.UtcNow - dismountAttemptedAt <= MountTimeout)
         {
-            return;
+            return true;
         }
 
         lock (gate)
@@ -1881,6 +1880,7 @@ public sealed class MovementController : IDisposable
         }
 
         logger.Warning($"{BuildLogTag()} op=early-dismount-timeout step=\"{step.Description}\" action=retry distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0}");
+        return true;
     }
 
     private Vector3 GetPathStepTarget(RouteStep step, Vector3 playerPosition)

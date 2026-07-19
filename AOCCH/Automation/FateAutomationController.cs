@@ -58,6 +58,7 @@ public sealed class FateAutomationController : IDisposable
     private AutomationRunResult lastResult;
     private string pendingCompletionReason = string.Empty;
     private bool plannedRouteUsesLiveTarget;
+    private bool liveTargetRoutingActivated;
     private ulong plannedLiveTargetObjectId;
     private Vector3 plannedFateDestination;
 
@@ -291,6 +292,7 @@ public sealed class FateAutomationController : IDisposable
             lastResult = AutomationRunResult.None;
             pendingCompletionReason = string.Empty;
             plannedRouteUsesLiveTarget = false;
+            liveTargetRoutingActivated = false;
             plannedLiveTargetObjectId = 0;
             plannedFateDestination = Vector3.Zero;
         }
@@ -344,6 +346,10 @@ public sealed class FateAutomationController : IDisposable
             autorotationApplied = false;
             lastResult = AutomationRunResult.None;
             pendingCompletionReason = string.Empty;
+            plannedRouteUsesLiveTarget = false;
+            liveTargetRoutingActivated = false;
+            plannedLiveTargetObjectId = 0;
+            plannedFateDestination = Vector3.Zero;
         }
 
         logger.Info($"[FATE] op=reset reason={reason}");
@@ -417,7 +423,10 @@ public sealed class FateAutomationController : IDisposable
         }
 
         TransitionTo(FateAutomationState.PlanningRoute, $"Planning route to FATE {target.Name} ({target.Id}).");
-        if (!movementController.PlanRoute(target, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: initialArrivalToleranceOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        var routeTarget = !target.IsPotTarget && !liveTargetRoutingActivated && !initialDestinationOverride.HasValue
+            ? CreateCenterRouteTarget(target)
+            : target;
+        if (!movementController.PlanRoute(routeTarget, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: initialArrivalToleranceOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -429,7 +438,7 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
-        RememberPlannedFateDestination(target, initialDestinationOverride);
+        RememberPlannedFateDestination(routeTarget, initialDestinationOverride);
         TransitionTo(FateAutomationState.TravelingToFate, $"Traveling to FATE {target.Name} ({target.Id}).");
         return true;
     }
@@ -822,6 +831,31 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
+        if (!liveTargetRoutingActivated)
+        {
+            if (!target.HasLiveTarget)
+            {
+                return false;
+            }
+
+            var playerPosition = objectTable.LocalPlayer?.Position;
+            var earlyDismountDistance = GetEarlyDismountDistance(target);
+            var activationDistance = earlyDismountDistance.GetValueOrDefault() * 1.5f;
+            if (playerPosition is not { } position)
+            {
+                return false;
+            }
+
+            var playerDistance = CalculateFlatDistance(position, target.Position);
+            if (playerDistance > activationDistance)
+            {
+                return false;
+            }
+
+            liveTargetRoutingActivated = true;
+            logger.Info($"{BuildLogTag()} op=live-target-activation target=\"{target.Name}\" ({target.Id}) playerDistance={playerDistance:0.0} activationDistance={activationDistance:0.0} earlyDismountDistance={earlyDismountDistance:0.0}");
+        }
+
         var usesLiveTarget = target.HasLiveTarget;
         var destinationChanged = CalculateFlatDistance(plannedFateDestination, target.Destination) >= LiveTargetReplanDistance;
         if (plannedRouteUsesLiveTarget == usesLiveTarget
@@ -836,6 +870,21 @@ public sealed class FateAutomationController : IDisposable
         movementController.Stop("FATE live target changed; replanning route.");
         return BeginPlanning(target);
     }
+
+    private static FateRunTarget CreateCenterRouteTarget(FateRunTarget target)
+        => new()
+        {
+            Id = target.Id,
+            Name = target.Name,
+            State = target.State,
+            StateCode = target.StateCode,
+            IsInFate = target.IsInFate,
+            Progress = target.Progress,
+            Radius = target.Radius,
+            Position = target.Position,
+            PreferredAethernet = target.PreferredAethernet,
+            IsPotTarget = target.IsPotTarget,
+        };
 
     private void RememberPlannedFateDestination(FateRunTarget target, Vector3? destinationOverride)
     {
