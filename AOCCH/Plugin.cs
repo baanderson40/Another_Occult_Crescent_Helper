@@ -844,6 +844,16 @@ public sealed class Plugin : IDalamudPlugin
         var nextKey = string.IsNullOrWhiteSpace(newTerritoryKey) ? "unsupported" : newTerritoryKey;
         var reason = $"Changed supported territory from {previousKey} to {nextKey} (territory {territoryType}); resetting instance state.";
 
+        if (!string.IsNullOrWhiteSpace(previousTerritoryKey))
+        {
+            var previousStartingPotFateId = Configuration.GetStartingPotFateId(previousTerritoryKey);
+            if (previousStartingPotFateId != 0 && Configuration.SetStartingPotFateId(previousTerritoryKey, 0))
+            {
+                Logger.Info($"[Plugin] op=setting-change key=StartingPotFate territoryKey={previousTerritoryKey} old={previousStartingPotFateId} new=0 reason=territory-change territory={territoryType} previous={previousKey} next={nextKey}");
+                Configuration.Save();
+            }
+        }
+
         ResetAutomationState(reason);
     }
 
