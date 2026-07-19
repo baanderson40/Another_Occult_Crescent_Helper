@@ -1017,3 +1017,142 @@ public sealed class Plugin : IDalamudPlugin
         Logger.Info("[Plugin] op=panic-stop-complete");
     }
 }
+        ChatGui.Print("/aocch debug - Toggle debug window");
+    internal void LogTargetedRevealCofferDebug()
+    {
+        var snapshot = Scanner.Snapshot;
+        var territory = Scanner.ActiveTerritoryData;
+        var target = TargetManager.Target;
+        Logger.Info($"[Plugin] op=debug-targeted-reveal-coffer territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} targetAvailable={target != null}");
+
+        if (target == null)
+        {
+            Logger.Info("[Plugin] op=debug-targeted-reveal-coffer-result available=false reason=no-target");
+            ChatGui.Print("Targeted reveal coffer dump: no current target.");
+            return;
+        }
+
+        var visibleRecognitionSource = string.Empty;
+        var potRecognitionSource = string.Empty;
+        var visibleRecognition = territory != null
+            && CofferRecognition.TryRecognize(territory.VisibleCoffers, target, out visibleRecognitionSource);
+        var potRecognition = territory != null
+            && CofferRecognition.TryRecognizePotReveal(territory.VisibleCoffers, target, out potRecognitionSource);
+        var playerPosition = ObjectTable.LocalPlayer?.Position;
+        var distance = playerPosition.HasValue ? CalculateFlatDistance(playerPosition.Value, target.Position) : float.NaN;
+        var vendorMatch = territory?.Shopping.Vendors.FirstOrDefault(vendor => vendor.DataId == target.BaseId);
+
+        Logger.Info(
+            $"[Plugin] op=debug-targeted-reveal-coffer-result available=true name='{target.Name}' kind={target.ObjectKind} baseId={target.BaseId} objectId={target.GameObjectId:X} pos=<{target.Position.X:0.0},{target.Position.Y:0.0},{target.Position.Z:0.0}> playerDistance={(float.IsNaN(distance) ? "n/a" : $"{distance:0.0}y")} valid={target.IsValid()} targetable={target.IsTargetable} visibleRecognition={visibleRecognition} visibleRecognitionSource={visibleRecognitionSource} potRecognition={potRecognition} potRecognitionSource={potRecognitionSource} vendorBaseIdMatch={(vendorMatch != null)} activeCandidate={TreasureSearchController.ActiveCandidateKey?.Label ?? "none"}");
+        ChatGui.Print($"Targeted reveal coffer dump logged for {target.Name} ({target.BaseId}).");
+    }
+
+    internal void LogVisibleCoffersDebug()
+    {
+        var snapshot = Scanner.Snapshot;
+        var territory = Scanner.ActiveTerritoryData;
+        Logger.Info($"[Plugin] op=debug-visible-coffers territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} scannerCount={snapshot.VisibleCoffers.Count}");
+
+        foreach (var coffer in snapshot.VisibleCoffers)
+        {
+            Logger.Info($"[Plugin] op=debug-visible-coffer source=scanner name='{coffer.Name}' kind={coffer.ObjectKind} baseId={coffer.DataId} objectId={coffer.GameObjectId:X} pos=<{coffer.Position.X:0.0},{coffer.Position.Y:0.0},{coffer.Position.Z:0.0}> playerDistance={coffer.DistanceToPlayer:0.0}y recognition={coffer.RecognitionSource} targetable={coffer.IsTargetable}");
+        }
+
+        if (territory == null)
+        {
+            Logger.Info("[Plugin] op=debug-visible-coffers-raw skipped=true reason=unsupported-territory");
+            ChatGui.Print("Visible coffer dump logged; current territory has no catalog data.");
+            return;
+        }
+
+        var playerPosition = ObjectTable.LocalPlayer?.Position;
+        var rawCount = 0;
+        foreach (var objectEntry in ObjectTable)
+        {
+            if (objectEntry == null || !objectEntry.IsValid())
+            {
+                continue;
+            }
+
+            var visibleRecognitionSource = string.Empty;
+            var potRecognitionSource = string.Empty;
+            var recognizedVisible = CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out visibleRecognitionSource);
+            var recognizedPot = CofferRecognition.TryRecognizePotReveal(territory.VisibleCoffers, objectEntry, out potRecognitionSource);
+            if (!recognizedVisible && !recognizedPot)
+            {
+                continue;
+            }
+
+            rawCount++;
+            var distance = playerPosition.HasValue ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position) : float.NaN;
+            Logger.Info($"[Plugin] op=debug-visible-coffer-raw name='{objectEntry.Name}' kind={objectEntry.ObjectKind} baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} pos=<{objectEntry.Position.X:0.0},{objectEntry.Position.Y:0.0},{objectEntry.Position.Z:0.0}> playerDistance={(float.IsNaN(distance) ? "n/a" : $"{distance:0.0}y")} valid={objectEntry.IsValid()} targetable={objectEntry.IsTargetable} visibleRecognition={recognizedVisible} visibleRecognitionSource={visibleRecognitionSource} potRecognition={recognizedPot} potRecognitionSource={potRecognitionSource}");
+        }
+
+        Logger.Info($"[Plugin] op=debug-visible-coffers-raw-summary entries={rawCount}");
+        ChatGui.Print($"Visible coffer dump logged: scanner={snapshot.VisibleCoffers.Count}, rawRecognized={rawCount}.");
+    }
+
+    internal void LogTargetedShopNpcDebug()
+    {
+        var snapshot = Scanner.Snapshot;
+        var territory = Scanner.ActiveTerritoryData;
+        var target = TargetManager.Target;
+        Logger.Info($"[Plugin] op=debug-targeted-shop-npc territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} supported={snapshot.IsInSupportedTerritory} targetAvailable={target != null}");
+
+        if (target == null)
+        {
+            Logger.Info("[Plugin] op=debug-targeted-shop-npc-result available=false reason=no-target");
+            ChatGui.Print("Targeted shop NPC dump: no current target.");
+            return;
+        }
+
+        var playerPosition = ObjectTable.LocalPlayer?.Position;
+        var distance = playerPosition.HasValue ? CalculateFlatDistance(playerPosition.Value, target.Position) : float.NaN;
+        var vendor = territory?.Shopping.Vendors.FirstOrDefault(definition => definition.DataId == target.BaseId);
+        var isEventNpc = string.Equals(target.ObjectKind.ToString(), "EventNpc", StringComparison.OrdinalIgnoreCase);
+
+        Logger.Info(
+            $"[Plugin] op=debug-targeted-shop-npc-result available=true name='{target.Name}' kind={target.ObjectKind} isEventNpc={isEventNpc} baseId={target.BaseId} objectId={target.GameObjectId:X} pos=<{target.Position.X:0.0},{target.Position.Y:0.0},{target.Position.Z:0.0}> playerDistance={(float.IsNaN(distance) ? "n/a" : $"{distance:0.0}y")} valid={target.IsValid()} targetable={target.IsTargetable} vendorMatch={(vendor != null)} configuredVendorName={vendor?.Name ?? "none"} configuredVendorDataId={vendor?.DataId.ToString() ?? "none"} preferredAethernet={vendor?.PreferredAethernet ?? "none"}");
+        ChatGui.Print($"Targeted shop NPC dump logged for {target.Name} ({target.BaseId}).");
+    }
+
+    internal void LogConfiguredEventTablesDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-configured-event-tables territories={OccultCrescentData.Territories.Count}");
+        foreach (var territory in OccultCrescentData.Territories)
+        {
+            Logger.Info($"[Plugin] op=debug-configured-event-territory key={territory.Key} territoryId={territory.TerritoryTypeId} fates={territory.Fates.Count} criticalEncounters={territory.CriticalEncounters.Count}");
+            foreach (var fate in territory.Fates)
+            {
+                var enabled = Configuration.IsFateEnabled(territory.Key, fate.Id);
+                var isPotFate = territory.PotFates.Any(potFate => potFate.FateId == fate.Id);
+                Logger.Info($"[Plugin] op=debug-configured-fate territoryKey={territory.Key} id={fate.Id} name='{fate.Name}' enabled={enabled} isPotFate={isPotFate} demiatma={fate.Demiatma ?? "none"} aethernet={fate.Aethernet ?? "none"} startPos=<{fate.StartPosition.X:0.0},{fate.StartPosition.Y:0.0},{fate.StartPosition.Z:0.0}>");
+            }
+
+            foreach (var encounter in territory.CriticalEncounters)
+            {
+                var enabled = Configuration.IsCriticalEncounterEnabled(territory.Key, encounter.Id);
+                Logger.Info($"[Plugin] op=debug-configured-ce territoryKey={territory.Key} id={encounter.Id} name='{encounter.Name}' enabled={enabled} priority={encounter.Priority} engageRadius={encounter.EngageRadius:0.0} aethernet={encounter.PreferredAethernet} stagingPos=<{encounter.StagingPoint.X:0.0},{encounter.StagingPoint.Y:0.0},{encounter.StagingPoint.Z:0.0}>");
+            }
+        }
+
+        ChatGui.Print($"Configured FATE/CE tables logged for {OccultCrescentData.Territories.Count} territories.");
+    }
+
+    internal void LogLiveEventTablesDebug()
+    {
+        var snapshot = Scanner.Snapshot;
+        Logger.Info($"[Plugin] op=debug-live-event-tables territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} fates={snapshot.Fates.Count} unknownCes={snapshot.UnknownCriticalEncounters.Count} ces={snapshot.CriticalEncounters.Count}");
+        foreach (var fate in snapshot.Fates)
+        {
+            Logger.Info($"[Plugin] op=debug-live-fate id={fate.Id} name='{fate.Name}' state={fate.State} stateCode={fate.StateCode} progress={fate.Progress} radius={fate.Radius:0.0} pos=<{fate.Position.X:0.0},{fate.Position.Y:0.0},{fate.Position.Z:0.0}> knownMetadata={fate.HasKnownMetadata} excluded={fate.IsExcluded} candidate={fate.IsCandidate} inFate={fate.IsInFate} liveTargetObjectId={fate.LiveTargetObjectId:X}");
+        }
+
+        foreach (var encounter in snapshot.CriticalEncounters.Concat(snapshot.UnknownCriticalEncounters))
+        {
+            Logger.Info($"[Plugin] op=debug-live-ce id={encounter.Id} name='{encounter.Name}' state={encounter.State} stateCode={encounter.StateCode} progress={encounter.Progress} startTimestamp={encounter.StartTimestamp} knownMetadata={encounter.HasKnownMetadata} candidate={encounter.IsCandidate}");
+        }
+
+        ChatGui.Print($"Live FATE/CE tables logged: fates={snapshot.Fates.Count}, CEs={snapshot.CriticalEncounters.Count + snapshot.UnknownCriticalEncounters.Count}.");
+    }
+

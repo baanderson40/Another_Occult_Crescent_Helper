@@ -1371,7 +1371,6 @@
     {
       "key": "northHorn",
       "displayName": "North Horn",
-      // Temporary until the release territory ID is verified in-game.
       "territoryTypeId": 9999,
       "features": {
         "fates": false,

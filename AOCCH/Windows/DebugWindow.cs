@@ -1552,3 +1552,31 @@ public sealed class DebugWindow : Window, IDisposable
         return string.Empty;
     }
 }
+
+        if (ImGui.Button("Dump Targeted Reveal Coffer"))
+        {
+            plugin.LogTargetedRevealCofferDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Visible Coffers"))
+        {
+            plugin.LogVisibleCoffersDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Targeted Shop NPC"))
+        {
+            plugin.LogTargetedShopNpcDebug();
+        }
+
+        if (ImGui.Button("Dump Configured FATE/CE Tables"))
+        {
+            plugin.LogConfiguredEventTablesDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Live FATE/CE Tables"))
+        {
+            plugin.LogLiveEventTablesDebug();
+        }
