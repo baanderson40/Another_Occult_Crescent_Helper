@@ -202,6 +202,8 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
+        ImGui.TextUnformatted("Automation");
+
         var enablePotFarming = configuration.EnablePotFarming;
         if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
         {
@@ -211,7 +213,7 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Pot Cycle");
+        ImGui.TextUnformatted("Route Setup");
 
         var territory = plugin.Scanner.ActiveTerritoryData;
         var potFates = territory?.PotFates.OrderBy(pot => pot.Name, StringComparer.Ordinal).ToArray() ?? [];
@@ -227,7 +229,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Spawn Lead Minutes",
             configuration.SpawnLeadMinutes,
             0,
@@ -235,7 +237,7 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.SpawnLeadMinutes = value,
             nameof(configuration.SpawnLeadMinutes));
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Arrival Radius",
             configuration.SpawnArrivalRadius,
             0,
@@ -244,12 +246,34 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.SpawnArrivalRadius));
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Treasure Travel");
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+        ImGui.TextUnformatted("Threat Handling");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
+            "Live Knowledge Hide Offset (Revealed Treasure)",
+            configuration.PotKnowledgeHideOffset,
+            -27,
+            27,
+            value => configuration.PotKnowledgeHideOffset = value,
+            nameof(configuration.PotKnowledgeHideOffset));
+        DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 0 hides at equal level; negative values are more cautious.");
+
+        DrawNarrowIntSetting(
+            "Knowledge Threat Enter Range",
+            configuration.KnowledgeThreatEnterDistance,
+            1,
+            50,
+            value => configuration.KnowledgeThreatEnterDistance = value,
+            nameof(configuration.KnowledgeThreatEnterDistance));
+        DrawNarrowIntSetting(
+            "Knowledge Threat Exit Range",
+            configuration.KnowledgeThreatExitDistance,
+            configuration.KnowledgeThreatEnterDistance,
+            100,
+            value => configuration.KnowledgeThreatExitDistance = value,
+            nameof(configuration.KnowledgeThreatExitDistance));
+        DrawSettingTooltip("Shared with overworld coffers. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+
+        DrawNarrowIntSetting(
             "Fallback Maximum Aggro Level (Revealed Treasure)",
             configuration.MaximumAggroLevel,
             0,
@@ -258,15 +282,12 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.MaximumAggroLevel));
         DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
 
-        DrawPotsIntSetting(
-            "Live Knowledge Hide Offset (Revealed Treasure)",
-            configuration.PotKnowledgeHideOffset,
-            -27,
-            27,
-            value => configuration.PotKnowledgeHideOffset = value,
-            nameof(configuration.PotKnowledgeHideOffset));
-        DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 0 hides at equal level; negative values are more cautious.");
-        var manageInstanceTime = configuration.ManageInstanceTime;
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dangerous Travel");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+
         var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
         if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
         {
@@ -278,14 +299,14 @@ public class ConfigWindow : Window, IDisposable
 
         using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
         {
-            DrawPotsIntSetting(
+            DrawNarrowIntSetting(
                 "Hide Threshold Distance",
                 configuration.HideThresholdDistance,
                 0,
                 500,
                 value => configuration.HideThresholdDistance = value,
                 nameof(configuration.HideThresholdDistance));
-            DrawPotsIntSetting(
+            DrawNarrowIntSetting(
                 "Ninja Gearset Number",
                 configuration.NinjaGearsetNumber,
                 0,
@@ -295,7 +316,7 @@ public class ConfigWindow : Window, IDisposable
             DrawSettingTooltip("This gearset value is linked with the overworld coffer Ninja gearset setting. Changing either one updates both.");
         }
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "FATE Gearset Number",
             configuration.FateGearsetNumber,
             0,
@@ -304,8 +325,9 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.FateGearsetNumber));
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Time Constraints");
+        ImGui.TextUnformatted("Policy");
 
+        var manageInstanceTime = configuration.ManageInstanceTime;
         if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
         {
             logger.Info($"[Config] op=setting-change key=ManageInstanceTime old={configuration.ManageInstanceTime} new={manageInstanceTime}");
@@ -314,21 +336,21 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("When enabled, pot timing can respect the remaining instance window and exit buffer.");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "FATE Completion Budget Minutes",
             configuration.FateCompletionBudgetMinutes,
             0,
             60,
             value => configuration.FateCompletionBudgetMinutes = value,
             nameof(configuration.FateCompletionBudgetMinutes));
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Treasure Hunt Budget Minutes",
             configuration.TreasureHuntBudgetMinutes,
             0,
             60,
             value => configuration.TreasureHuntBudgetMinutes = value,
             nameof(configuration.TreasureHuntBudgetMinutes));
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Instance Exit Buffer Minutes",
             configuration.InstanceExitBufferMinutes,
             0,
@@ -336,14 +358,14 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.InstanceExitBufferMinutes = value,
             nameof(configuration.InstanceExitBufferMinutes));
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "CE Fallback Cutoff Minutes",
             configuration.CeFallbackCutoffMinutes,
             0,
             30,
             value => configuration.CeFallbackCutoffMinutes = value,
             nameof(configuration.CeFallbackCutoffMinutes));
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "FATE Fallback Cutoff Minutes",
             configuration.FateFallbackCutoffMinutes,
             0,
@@ -360,6 +382,8 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
+        ImGui.TextUnformatted("Automation");
+
         var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
         if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
         {
@@ -369,14 +393,14 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Automatic Silver Threshold",
             configuration.AutomaticTreasureCofferSilverThreshold,
             0,
             8,
             value => configuration.AutomaticTreasureCofferSilverThreshold = value,
             nameof(configuration.AutomaticTreasureCofferSilverThreshold));
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Automatic Bronze Threshold",
             configuration.AutomaticTreasureCofferBronzeThreshold,
             0,
@@ -386,9 +410,9 @@ public class ConfigWindow : Window, IDisposable
         DrawSettingTooltip("0 means any amount of that type. Both automatic threshold checks must pass. A 0/0 configuration starts the route when the survey finds at least one coffer of either type.");
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Overworld Coffer Route");
+        ImGui.TextUnformatted("Route Setup");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Arrival Distance",
             configuration.ArrivalDistance,
             1,
@@ -396,16 +420,10 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.ArrivalDistance = value,
             nameof(configuration.ArrivalDistance));
 
-        DrawPotsIntSetting(
-            "Fallback Maximum Aggro Level (Overworld Coffers)",
-            configuration.VisibleTreasureCofferMaximumAggroLevel,
-            0,
-            28,
-            value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
-            nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-        DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
+        ImGui.Separator();
+        ImGui.TextUnformatted("Threat Handling");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Live Knowledge Hide Offset (Overworld Coffers)",
             configuration.VisibleCofferKnowledgeHideOffset,
             -27,
@@ -414,14 +432,14 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.VisibleCofferKnowledgeHideOffset));
         DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 4 means a Knowledge 20 player hides at level 24 and above.");
 
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Knowledge Threat Enter Range",
             configuration.KnowledgeThreatEnterDistance,
             1,
             50,
             value => configuration.KnowledgeThreatEnterDistance = value,
             nameof(configuration.KnowledgeThreatEnterDistance));
-        DrawPotsIntSetting(
+        DrawNarrowIntSetting(
             "Knowledge Threat Exit Range",
             configuration.KnowledgeThreatExitDistance,
             configuration.KnowledgeThreatEnterDistance,
@@ -429,6 +447,15 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.KnowledgeThreatExitDistance = value,
             nameof(configuration.KnowledgeThreatExitDistance));
         DrawSettingTooltip("Shared with revealed treasure. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+
+        DrawNarrowIntSetting(
+            "Fallback Maximum Aggro Level (Overworld Coffers)",
+            configuration.VisibleTreasureCofferMaximumAggroLevel,
+            0,
+            28,
+            value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
+            nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
+        DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
@@ -447,15 +474,15 @@ public class ConfigWindow : Window, IDisposable
 
         using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
         {
-            DrawPotsIntSetting(
-                "Overworld Coffer Hide Threshold Distance",
+            DrawNarrowIntSetting(
+                "Hide Threshold Distance",
                 configuration.VisibleCofferHideThresholdDistance,
                 0,
                 500,
                 value => configuration.VisibleCofferHideThresholdDistance = value,
                 nameof(configuration.VisibleCofferHideThresholdDistance));
-            DrawPotsIntSetting(
-                "Overworld Coffer Ninja Gearset Number",
+            DrawNarrowIntSetting(
+                "Ninja Gearset Number",
                 configuration.VisibleCofferNinjaGearsetNumber,
                 0,
                 100,
@@ -464,8 +491,8 @@ public class ConfigWindow : Window, IDisposable
             DrawSettingTooltip("This gearset value is linked with the pots/revealed treasure Ninja gearset setting. Changing either one updates both.");
         }
 
-        DrawPotsIntSetting(
-            "Return FATE Gearset Number",
+        DrawNarrowIntSetting(
+            "FATE Gearset Number",
             configuration.FateGearsetNumber,
             0,
             100,
@@ -473,7 +500,7 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.FateGearsetNumber));
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Route Rules");
+        ImGui.TextUnformatted("Policy");
 
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
@@ -962,7 +989,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.EndChild();
     }
 
-    private void DrawPotsIntSetting(string label, int currentValue, int minValue, int maxValue, Action<int> applyValue, string logName)
+    private void DrawNarrowIntSetting(string label, int currentValue, int minValue, int maxValue, Action<int> applyValue, string logName)
     {
         ImGui.SetNextItemWidth(PotsNumericInputWidth);
         DrawClampedIntSetting(label, currentValue, minValue, maxValue, applyValue, logName);
