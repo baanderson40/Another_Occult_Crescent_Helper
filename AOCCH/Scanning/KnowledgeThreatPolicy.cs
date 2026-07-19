@@ -11,6 +11,9 @@ public readonly record struct KnowledgeThreatPolicy(int HideOffset, float EnterD
 
 public static class KnowledgeThreatEvaluator
 {
+    public const uint OccultIsleblazerBaseId = 17900;
+    public const float OccultIsleblazerUnhideDistance = 5f;
+
     public static bool TryFindThreat(
         ScannerSnapshot snapshot,
         KnowledgeThreatPolicy policy,
@@ -28,10 +31,24 @@ public static class KnowledgeThreatEvaluator
         hideAtOrAbove = policy.GetHideAtOrAbove(snapshot.PlayerForayLevel.Value);
         var threshold = hideAtOrAbove;
         threat = snapshot.NearbyForayEntities
-            .Where(entity => entity.DistanceToPlayer <= radius && entity.KnowledgeLevel >= threshold)
+            .Where(entity => entity.DistanceToPlayer <= radius
+                && entity.KnowledgeLevel >= threshold
+                && !IsHideException(entity))
             .OrderByDescending(entity => entity.KnowledgeLevel)
             .ThenBy(entity => entity.DistanceToPlayer)
             .FirstOrDefault();
         return threat != null;
     }
+
+    public static bool TryFindHideException(ScannerSnapshot snapshot, float radius, out ForayThreatEntity? entity)
+    {
+        entity = snapshot.NearbyForayEntities
+            .Where(candidate => candidate.DistanceToPlayer <= radius && IsHideException(candidate))
+            .OrderBy(candidate => candidate.DistanceToPlayer)
+            .FirstOrDefault();
+        return entity != null;
+    }
+
+    private static bool IsHideException(ForayThreatEntity entity)
+        => entity.BaseId == OccultIsleblazerBaseId;
 }

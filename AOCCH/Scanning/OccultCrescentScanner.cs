@@ -195,12 +195,16 @@ public sealed class OccultCrescentScanner : IDisposable
                 if (canRunPotTreasure)
                 {
                     ScanTreasureBuff(out hasTreasureBuff, out treasureBuffRemainingSeconds);
-                    ScanNearbyForayEntities(nearbyForayEntities, playerPosition);
-                    LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
                 }
                 else
                 {
                     TrackTreasureBuffState(false);
+                }
+
+                if (canRunPotTreasure || canRunVisibleCofferRoute)
+                {
+                    ScanNearbyForayEntities(nearbyForayEntities, playerPosition);
+                    LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
                 }
 
                 if (canRunVisibleCofferRoute)
@@ -558,7 +562,9 @@ public sealed class OccultCrescentScanner : IDisposable
             return;
         }
 
-        var scanRadius = Math.Max(configuration.KnowledgeThreatExitDistance, configuration.KnowledgeThreatEnterDistance);
+        var scanRadius = Math.Max(
+            Math.Max(configuration.KnowledgeThreatExitDistance, configuration.KnowledgeThreatEnterDistance),
+            KnowledgeThreatEvaluator.OccultIsleblazerUnhideDistance);
         foreach (var gameObject in objectTable)
         {
             if (gameObject is not IBattleNpc || gameObject is not ICharacter character
@@ -581,6 +587,7 @@ public sealed class OccultCrescentScanner : IDisposable
             entities.Add(new ForayThreatEntity
             {
                 ObjectId = character.GameObjectId,
+                BaseId = character.BaseId,
                 Name = character.Name.ToString(),
                 Position = character.Position,
                 KnowledgeLevel = knowledgeLevel,
@@ -623,7 +630,7 @@ public sealed class OccultCrescentScanner : IDisposable
             : string.Join(
                 " | ",
                 entities.Select(entity =>
-                    $"name='{entity.Name}' objectId={entity.ObjectId:X} level={entity.KnowledgeLevel} distance={entity.DistanceToPlayer:0.0}y potThreat={entity.KnowledgeLevel >= potHideAtOrAbove} overworldThreat={entity.KnowledgeLevel >= visibleHideAtOrAbove}"));
+                    $"name='{entity.Name}' objectId={entity.ObjectId:X} baseId={entity.BaseId} level={entity.KnowledgeLevel} distance={entity.DistanceToPlayer:0.0}y potThreat={entity.KnowledgeLevel >= potHideAtOrAbove} overworldThreat={entity.KnowledgeLevel >= visibleHideAtOrAbove}"));
         logger.VerboseThrottled(
             "foray-threat-scan",
             ForayThreatDiagnosticLogInterval,

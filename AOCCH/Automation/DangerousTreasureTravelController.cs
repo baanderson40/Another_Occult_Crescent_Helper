@@ -1086,12 +1086,27 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         LogKnowledgeThreatStatus("hidden");
         if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
+            && gameActionController.IsStealthed
+            && (!activeKnowledgeThreatPolicy.HasValue
+                || !IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.ExitDistance, out _, out _))
+            && KnowledgeThreatEvaluator.TryFindHideException(
+                scanner.Snapshot,
+                KnowledgeThreatEvaluator.OccultIsleblazerUnhideDistance,
+                out var hideException))
+        {
+            movementController.Stop("Occult Isleblazer is unsafe while hidden; resuming unhidden travel.");
+            logger.Info($"{BuildLogTag()} op=hide-exception-unhide candidate={activeCandidateLabel} entity='{hideException?.Name}' objectId={hideException?.ObjectId:X} baseId={hideException?.BaseId} distance={hideException?.DistanceToPlayer:0.0}y");
+            StartDirectTravelAfterThreatClear("Occult Isleblazer entered the unhide range.");
+            return;
+        }
+
+        if (activeWalkingPhase == DangerousTreasureWalkingPhase.FinalApproach
             && activeKnowledgeThreatPolicy.HasValue
             && scanner.Snapshot.PlayerForayLevel.HasValue
             && !IsKnowledgeThreatActive(activeKnowledgeThreatPolicy.Value.ExitDistance, out _, out _))
         {
             movementController.Stop("Knowledge threat cleared; resuming mounted treasure travel.");
-            StartDirectTravelAfterThreatClear();
+            StartDirectTravelAfterThreatClear("Knowledge threat cleared.");
             return;
         }
 
@@ -1178,9 +1193,9 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
     }
 
-    private void StartDirectTravelAfterThreatClear()
+    private void StartDirectTravelAfterThreatClear(string reason)
     {
-        logger.Info($"{BuildLogTag()} op=knowledge-threat-clear candidate={activeCandidateLabel} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} destination={FormatVector(finalDestination)} exitRange={activeKnowledgeThreatPolicy?.ExitDistance:0.0}");
+        logger.Info($"{BuildLogTag()} op=direct-travel-resume candidate={activeCandidateLabel} reason={reason} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} destination={FormatVector(finalDestination)} exitRange={activeKnowledgeThreatPolicy?.ExitDistance:0.0}");
         movementController.SetLogOwner(currentRunId);
         if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true))
         {
@@ -1191,7 +1206,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
 
         activeWalkingPhase = DangerousTreasureWalkingPhase.None;
-        TransitionTo(DangerousTreasureTravelState.TravelingDirectlyAfterThreatClear, $"No live knowledge threat remained near {activeCandidateLabel}; resuming mounted travel.");
+        TransitionTo(DangerousTreasureTravelState.TravelingDirectlyAfterThreatClear, $"{reason} Resuming direct travel to {activeCandidateLabel}.");
     }
 
     private bool IsKnowledgeThreatActive(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
