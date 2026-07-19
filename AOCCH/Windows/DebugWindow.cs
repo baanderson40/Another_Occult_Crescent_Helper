@@ -121,23 +121,23 @@ public sealed class DebugWindow : Window, IDisposable
     private void DrawSectionList()
     {
         DrawSectionButton(DebugSection.Overview, "Overview");
-        DrawSectionButton(DebugSection.DebugActions, "Debug Actions");
-        DrawSectionButton(DebugSection.Safety, "Safety");
         DrawSectionButton(DebugSection.AutomationTestReadiness, "Automation Test Readiness");
-        DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
-        DrawSectionButton(DebugSection.FarmSession, "Farm Session");
-        DrawSectionButton(DebugSection.PotControl, "Pot Control");
-        DrawSectionButton(DebugSection.VisibleCofferFarm, "Overworld Coffer Route");
-        DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
-        DrawSectionButton(DebugSection.CriticalEngagementAutomation, "Critical Engagement Automation");
-        DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
         DrawSectionButton(DebugSection.Autorotation, "Autorotation");
         DrawSectionButton(DebugSection.BuffRotation, "Buff Rotation");
-        DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
-        DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
-        DrawSectionButton(DebugSection.Movement, "Movement");
+        DrawSectionButton(DebugSection.CriticalEngagementAutomation, "Critical Engagement Automation");
         DrawSectionButton(DebugSection.CriticalEngagements, "Critical Engagements");
+        DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
+        DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
+        DrawSectionButton(DebugSection.DebugActions, "Debug Actions");
+        DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
         DrawSectionButton(DebugSection.Fates, "FATEs");
+        DrawSectionButton(DebugSection.FarmSession, "Farm Session");
+        DrawSectionButton(DebugSection.Movement, "Movement");
+        DrawSectionButton(DebugSection.VisibleCofferFarm, "Overworld Coffer Route");
+        DrawSectionButton(DebugSection.PotControl, "Pot Control");
+        DrawSectionButton(DebugSection.Safety, "Safety");
+        DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
+        DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
     }
 
     private void DrawSectionButton(DebugSection section, string label)

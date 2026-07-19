@@ -53,12 +53,12 @@ public sealed class NormalAutomationDependencyChecker
         var installedPlugins = Plugin.PluginInterface.InstalledPlugins;
         var vnavmeshInstalled = installedPlugins.Any(plugin => string.Equals(plugin.InternalName, VNavmeshName, StringComparison.OrdinalIgnoreCase));
         var lifestreamInstalled = installedPlugins.Any(plugin => string.Equals(plugin.InternalName, LifestreamName, StringComparison.OrdinalIgnoreCase));
-        var rotationProviderName = installedPlugins
-            .Select(plugin => plugin.InternalName)
-            .FirstOrDefault(name =>
-                string.Equals(name, BossModName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, BossModRebornName, StringComparison.OrdinalIgnoreCase));
-        var bossModAvailable = bossMod.IsAvailable();
+        var rotationProvider = installedPlugins.FirstOrDefault(plugin =>
+            plugin.IsLoaded
+            && (string.Equals(plugin.InternalName, BossModName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(plugin.InternalName, BossModRebornName, StringComparison.OrdinalIgnoreCase)));
+        var rotationProviderName = rotationProvider?.InternalName;
+        var bossModAvailable = rotationProvider != null && bossMod.IsAvailable();
 
         return new AutomationDependencyReport(
         [
@@ -80,8 +80,8 @@ public sealed class NormalAutomationDependencyChecker
                 rotationProviderName != null,
                 bossModAvailable,
                 rotationProviderName == null
-                    ? "BossMod or BossModReborn is not installed."
-                    : "BossMod IPC is unavailable from the installed rotation provider.")
+                    ? "BossMod or BossModReborn is not installed or enabled."
+                    : $"BossMod Presets IPC is unavailable from {rotationProviderName}.")
         ]);
     }
 }
