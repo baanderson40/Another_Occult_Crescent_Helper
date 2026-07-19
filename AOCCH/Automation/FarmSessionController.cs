@@ -69,6 +69,7 @@ public sealed class FarmSessionController : IDisposable
     private bool automaticTreasureCofferRestorePending;
     private bool automaticTreasureCofferStartRouteAfterRestore;
     private bool automaticTreasureCofferResumeAutomaticCheckAfterRestore;
+    private bool skipAutomaticTreasureCofferAfterDeathRecovery;
     private bool pendingAutomaticTreasureCofferCheckAfterExternalRecovery;
     private string pendingAutomaticTreasureCofferCheckSource = string.Empty;
     private byte automaticTreasureCofferOriginalSupportJob;
@@ -249,6 +250,7 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -277,6 +279,7 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -349,6 +352,7 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -397,6 +401,16 @@ public sealed class FarmSessionController : IDisposable
         {
             if (currentState != FarmSessionState.WaitingForDeathRecovery)
             {
+                if (currentState == FarmSessionState.RunningVisibleCofferRoute)
+                {
+                    lock (gate)
+                    {
+                        skipAutomaticTreasureCofferAfterDeathRecovery = true;
+                    }
+
+                    logger.Info($"{BuildLogTag()} op=auto-coffer-death-suppress-latch reason=Death interrupted automatic overworld coffer route; skipping the next Base Camp automatic coffer check.");
+                }
+
                 CaptureInterruptedActivity(currentState);
                 TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
             }
@@ -408,6 +422,11 @@ public sealed class FarmSessionController : IDisposable
         {
             if (!scanner.Snapshot.IsInSupportedTerritory)
             {
+                lock (gate)
+                {
+                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
+                }
+
                 ClearInterruptedActivity();
                 TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Death recovery completed outside a supported territory.", "Waiting for Supported Territory");
                 return;
@@ -415,6 +434,11 @@ public sealed class FarmSessionController : IDisposable
 
             if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised)
             {
+                lock (gate)
+                {
+                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
+                }
+
                 if (BeginInterruptedActivityResumeAfterRaise())
                 {
                     return;
@@ -684,6 +708,20 @@ public sealed class FarmSessionController : IDisposable
 
                     StartSessionBuffRotation("farm session recovery", recoverAfterSuccess: false, skipReason: "Recovery buff rotation skipped.");
                     return;
+                }
+
+                bool skipAutomaticCofferCheck;
+                lock (gate)
+                {
+                    skipAutomaticCofferCheck = skipAutomaticTreasureCofferAfterDeathRecovery;
+                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
+                }
+
+                if (skipAutomaticCofferCheck)
+                {
+                    logger.Info($"{BuildLogTag()} op=auto-coffer-death-suppress-consume reason=Death interrupted automatic overworld coffer route; resuming normal farming after Base Camp recovery.");
+                    TransitionTo(FarmSessionState.SelectingTarget, "Death recovery completed after an interrupted overworld coffer route; skipping automatic coffer restart.", "Selecting target");
+                    break;
                 }
 
                 if (TryBeginAutomaticTreasureCofferFlow("Base Camp recovery completed."))
