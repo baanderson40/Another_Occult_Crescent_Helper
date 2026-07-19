@@ -105,12 +105,13 @@ public sealed class RoutePlanner
         float? finalArrivalToleranceOverride = null,
         float? earlyDismountDistance = null)
     {
-        var earlyDismountTarget = target.HasLiveTarget ? target.LiveTargetPosition : target.Position;
+        var earlyDismountTarget = target.Destination;
+        var destination = finalDestinationOverride ?? target.Destination;
         var planned = TryPlanToLocation(
             territory,
             $"FATE {target.Name} ({target.Id})",
             target.PreferredAethernet,
-            finalDestinationOverride ?? target.Position,
+            destination,
             playerPosition,
             out route,
             out failureReason,
@@ -122,6 +123,12 @@ public sealed class RoutePlanner
         {
             var source = target.HasLiveTarget ? $"live-target:{target.LiveTargetName}" : "fate-center";
             logger.Info($"[RoutePlanner] op=fate-early-dismount target=\"{target.Name}\" ({target.Id}) source={source} distance={earlyDismountDistance.Value:0.0} targetPos={FormatVector(earlyDismountTarget)}");
+        }
+
+        if (planned)
+        {
+            var source = finalDestinationOverride.HasValue ? "override" : target.HasLiveTarget ? $"live-target:{target.LiveTargetName}" : "fate-center";
+            logger.Info($"[RoutePlanner] op=fate-destination target=\"{target.Name}\" ({target.Id}) source={source} destination={FormatVector(destination)}");
         }
 
         return planned;

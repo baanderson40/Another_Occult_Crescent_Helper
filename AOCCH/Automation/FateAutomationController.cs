@@ -17,6 +17,7 @@ public sealed class FateAutomationController : IDisposable
     private const float FateParticipationPadding = 5f;
     private const int MinimumFateDismountDistance = 5;
     private const int MaximumFateDismountDistance = 50;
+    private const float LiveTargetReplanDistance = 5f;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -56,6 +57,9 @@ public sealed class FateAutomationController : IDisposable
     private bool autorotationApplied;
     private AutomationRunResult lastResult;
     private string pendingCompletionReason = string.Empty;
+    private bool plannedRouteUsesLiveTarget;
+    private ulong plannedLiveTargetObjectId;
+    private Vector3 plannedFateDestination;
 
     public FateAutomationController(
         IFramework framework,
@@ -286,6 +290,9 @@ public sealed class FateAutomationController : IDisposable
             autorotationApplied = false;
             lastResult = AutomationRunResult.None;
             pendingCompletionReason = string.Empty;
+            plannedRouteUsesLiveTarget = false;
+            plannedLiveTargetObjectId = 0;
+            plannedFateDestination = Vector3.Zero;
         }
 
         logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior} initialDestinationOverride={(initialDestinationOverride.HasValue ? FormatVector(initialDestinationOverride.Value) : "none")} initialArrivalToleranceOverride={(initialArrivalToleranceOverride.HasValue ? $"{initialArrivalToleranceOverride.Value:0.0}" : "none")}");
@@ -422,6 +429,7 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
+        RememberPlannedFateDestination(target, initialDestinationOverride);
         TransitionTo(FateAutomationState.TravelingToFate, $"Traveling to FATE {target.Name} ({target.Id}).");
         return true;
     }
@@ -431,6 +439,11 @@ public sealed class FateAutomationController : IDisposable
         if (target == null)
         {
             FinishFate("Target FATE disappeared before arrival.");
+            return;
+        }
+
+        if (TryReplanForLiveTarget(target))
+        {
             return;
         }
 
@@ -768,6 +781,7 @@ public sealed class FateAutomationController : IDisposable
             return false;
         }
 
+        RememberPlannedFateDestination(target, initialDestinationOverride);
         TransitionTo(FateAutomationState.TravelingToFate, $"Traveling to FATE {target.Name} ({target.Id}) with Return fallback disabled.");
         return true;
     }
@@ -800,6 +814,43 @@ public sealed class FateAutomationController : IDisposable
         => target.IsPotTarget
             ? null
             : Math.Clamp(configuration.FateDismountDistance, MinimumFateDismountDistance, MaximumFateDismountDistance);
+
+    private bool TryReplanForLiveTarget(FateRunTarget target)
+    {
+        if (target.IsPotTarget || initialDestinationOverride.HasValue)
+        {
+            return false;
+        }
+
+        var usesLiveTarget = target.HasLiveTarget;
+        var destinationChanged = CalculateFlatDistance(plannedFateDestination, target.Destination) >= LiveTargetReplanDistance;
+        if (plannedRouteUsesLiveTarget == usesLiveTarget
+            && (!usesLiveTarget || (plannedLiveTargetObjectId == target.LiveTargetObjectId && !destinationChanged)))
+        {
+            return false;
+        }
+
+        var previousSource = plannedRouteUsesLiveTarget ? $"live-target:{plannedLiveTargetObjectId:X}" : "fate-center";
+        var nextSource = usesLiveTarget ? $"live-target:{target.LiveTargetName}({target.LiveTargetObjectId:X})" : "fate-center";
+        logger.Info($"{BuildLogTag()} op=live-target-replan target=\"{target.Name}\" ({target.Id}) previous={previousSource} next={nextSource} destination={FormatVector(target.Destination)}");
+        movementController.Stop("FATE live target changed; replanning route.");
+        return BeginPlanning(target);
+    }
+
+    private void RememberPlannedFateDestination(FateRunTarget target, Vector3? destinationOverride)
+    {
+        if (target.IsPotTarget || destinationOverride.HasValue)
+        {
+            plannedRouteUsesLiveTarget = false;
+            plannedLiveTargetObjectId = 0;
+            plannedFateDestination = destinationOverride ?? target.Position;
+            return;
+        }
+
+        plannedRouteUsesLiveTarget = target.HasLiveTarget;
+        plannedLiveTargetObjectId = target.LiveTargetObjectId;
+        plannedFateDestination = target.Destination;
+    }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {

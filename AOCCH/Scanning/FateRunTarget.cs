@@ -18,6 +18,7 @@ public sealed class FateRunTarget
     public ulong LiveTargetObjectId { get; init; }
     public string LiveTargetName { get; init; } = string.Empty;
     public Vector3 LiveTargetPosition { get; init; }
+    public Vector3 Destination => HasLiveTarget ? LiveTargetPosition : Position;
 }
 
 public static class FateRunTargetExtensions
