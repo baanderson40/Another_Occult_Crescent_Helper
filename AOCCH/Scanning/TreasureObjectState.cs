@@ -1,5 +1,5 @@
 using Dalamud.Game.ClientState.Objects.Types;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace AOCCH.Scanning;
@@ -14,7 +14,7 @@ public static class TreasureObjectState
             return false;
         }
 
-        var objectPointer = (GameObject*)(void*)gameObject.Address;
+        var objectPointer = (GameObjectStruct*)(void*)gameObject.Address;
         if (objectPointer == null)
         {
             return false;
