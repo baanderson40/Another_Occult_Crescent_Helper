@@ -98,13 +98,13 @@ public class Configuration : IPluginConfiguration
     public StartingPotFateMode StartingPotFate { get; set; } = StartingPotFateMode.Auto;
     public List<TerritoryPotStartingSetting> StartingPotFates { get; set; } = [];
     public int SpawnLeadMinutes { get; set; } = 5;
-    public bool ManageInstanceTime { get; set; } = true;
+    public bool ManageInstanceTime { get; set; }
     public int FateCompletionBudgetMinutes { get; set; } = 5;
     public int TreasureHuntBudgetMinutes { get; set; } = 5;
     public int InstanceExitBufferMinutes { get; set; } = 2;
     public int SpawnArrivalRadius { get; set; } = 18;
-    public int MaximumAggroLevel { get; set; } = 19;
-    public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 19;
+    public int MaximumAggroLevel { get; set; } = 20;
+    public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 20;
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public int AutomaticTreasureCofferSilverThreshold { get; set; }
     public int AutomaticTreasureCofferBronzeThreshold { get; set; }
@@ -119,7 +119,7 @@ public class Configuration : IPluginConfiguration
 
     public bool UseNinjaForDangerousVisibleCoffers { get; set; }
     public int VisibleCofferHideThresholdDistance { get; set; } = 120;
-    public int VisibleCofferKnowledgeHideOffset { get; set; } = 4;
+    public int VisibleCofferKnowledgeHideOffset { get; set; }
     public int KnowledgeThreatEnterDistance { get; set; } = 10;
     public int KnowledgeThreatExitDistance { get; set; } = 20;
     public int VisibleCofferNinjaGearsetNumber
@@ -132,7 +132,7 @@ public class Configuration : IPluginConfiguration
     public int FateDismountDistance { get; set; } = 10;
     public int ArrivalDistance { get; set; } = 5;
     public bool SkipHighLevelCavernsDuringAshkin { get; set; }
-    public bool SkipUnsafeWeatherRoutes { get; set; } = true;
+    public bool SkipUnsafeWeatherRoutes { get; set; }
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;
