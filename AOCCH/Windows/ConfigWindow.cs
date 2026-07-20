@@ -197,8 +197,6 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
-        ImGui.TextUnformatted("Automation");
-
         var enablePotFarming = configuration.EnablePotFarming;
         if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
         {
@@ -239,88 +237,6 @@ public class ConfigWindow : Window, IDisposable
             100,
             value => configuration.SpawnArrivalRadius = value,
             nameof(configuration.SpawnArrivalRadius));
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Threat Handling");
-
-        DrawNarrowIntSetting(
-            "Live Knowledge Hide Offset (Revealed Treasure)",
-            configuration.PotKnowledgeHideOffset,
-            -27,
-            27,
-            value => configuration.PotKnowledgeHideOffset = value,
-            nameof(configuration.PotKnowledgeHideOffset));
-        DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 0 hides at equal level; negative values are more cautious.");
-
-        DrawNarrowIntSetting(
-            "Knowledge Threat Enter Range",
-            configuration.KnowledgeThreatEnterDistance,
-            1,
-            50,
-            value => configuration.KnowledgeThreatEnterDistance = value,
-            nameof(configuration.KnowledgeThreatEnterDistance));
-        DrawNarrowIntSetting(
-            "Knowledge Threat Exit Range",
-            configuration.KnowledgeThreatExitDistance,
-            configuration.KnowledgeThreatEnterDistance,
-            100,
-            value => configuration.KnowledgeThreatExitDistance = value,
-            nameof(configuration.KnowledgeThreatExitDistance));
-        DrawSettingTooltip("Shared with overworld coffers. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
-
-        DrawNarrowIntSetting(
-            "Fallback Maximum Aggro Level (Revealed Treasure)",
-            configuration.MaximumAggroLevel,
-            0,
-            20,
-            value => configuration.MaximumAggroLevel = value,
-            nameof(configuration.MaximumAggroLevel));
-        DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Dangerous Travel");
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
-
-        var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
-        if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
-        {
-            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousArea old={configuration.UseNinjaForDangerousArea} new={useNinjaForDangerousArea}");
-            configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
-            configuration.Save();
-        }
-        DrawSettingTooltip("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
-
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
-        {
-            DrawNarrowIntSetting(
-                "Hide Threshold Distance",
-                configuration.HideThresholdDistance,
-                0,
-                500,
-                value => configuration.HideThresholdDistance = value,
-                nameof(configuration.HideThresholdDistance));
-            DrawNarrowIntSetting(
-                "Ninja Gearset Number",
-                configuration.NinjaGearsetNumber,
-                0,
-                100,
-                value => configuration.NinjaGearsetNumber = value,
-                nameof(configuration.NinjaGearsetNumber));
-            DrawSettingTooltip("This gearset value is linked with the overworld coffer Ninja gearset setting. Changing either one updates both.");
-        }
-
-        DrawNarrowIntSetting(
-            "FATE Gearset Number",
-            configuration.FateGearsetNumber,
-            0,
-            100,
-            value => configuration.FateGearsetNumber = value,
-            nameof(configuration.FateGearsetNumber));
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Policy");
 
         var manageInstanceTime = configuration.ManageInstanceTime;
         if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
@@ -368,6 +284,97 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.FateFallbackCutoffMinutes = value,
             nameof(configuration.FateFallbackCutoffMinutes));
         DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dangerous Travel");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+
+        var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
+        if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
+        {
+            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousArea old={configuration.UseNinjaForDangerousArea} new={useNinjaForDangerousArea}");
+            configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+        {
+            DrawNarrowIntSetting(
+                "Ninja Gearset Number",
+                configuration.NinjaGearsetNumber,
+                0,
+                100,
+                value => configuration.NinjaGearsetNumber = value,
+                nameof(configuration.NinjaGearsetNumber));
+            DrawSettingTooltip("This gearset value is linked with the overworld coffer Ninja gearset setting. Changing either one updates both.");
+
+            DrawNarrowIntSetting(
+                "FATE Gearset Number",
+                configuration.FateGearsetNumber,
+                0,
+                100,
+                value => configuration.FateGearsetNumber = value,
+                nameof(configuration.FateGearsetNumber));
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Threat Handling");
+
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+        {
+            var liveHideLevelLabel = GetLiveKnowledgeHideLevelLabel("Live Knowledge Hide Offset", configuration.PotKnowledgeHideOffset);
+            DrawNarrowIntSetting(
+                liveHideLevelLabel,
+                configuration.PotKnowledgeHideOffset,
+                -27,
+                27,
+                value => configuration.PotKnowledgeHideOffset = value,
+                nameof(configuration.PotKnowledgeHideOffset));
+            DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 0 hides at equal level; negative values are more cautious.");
+
+            DrawNarrowIntSetting(
+                "Knowledge Threat Enter Range",
+                configuration.KnowledgeThreatEnterDistance,
+                1,
+                50,
+                value => configuration.KnowledgeThreatEnterDistance = value,
+                nameof(configuration.KnowledgeThreatEnterDistance));
+            DrawNarrowIntSetting(
+                "Knowledge Threat Exit Range",
+                configuration.KnowledgeThreatExitDistance,
+                configuration.KnowledgeThreatEnterDistance,
+                100,
+                value => configuration.KnowledgeThreatExitDistance = value,
+                nameof(configuration.KnowledgeThreatExitDistance));
+            DrawSettingTooltip("Shared with overworld coffers. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+        }
+
+        if (ImGui.CollapsingHeader("Fallback"))
+        {
+            using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+            {
+                DrawNarrowIntSetting(
+                    "Fallback Maximum Aggro Level",
+                    configuration.MaximumAggroLevel,
+                    0,
+                    20,
+                    value => configuration.MaximumAggroLevel = value,
+                    nameof(configuration.MaximumAggroLevel));
+                DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
+
+                DrawNarrowIntSetting(
+                    "Fallback",
+                    configuration.HideThresholdDistance,
+                    0,
+                    500,
+                    value => configuration.HideThresholdDistance = value,
+                    nameof(configuration.HideThresholdDistance));
+            }
+        }
+
     }
 
     private void DrawTreasureCoffersTab()
@@ -376,8 +383,6 @@ public class ConfigWindow : Window, IDisposable
         {
             return;
         }
-
-        ImGui.TextUnformatted("Automation");
 
         var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
         if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
@@ -424,88 +429,6 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.ArrivalDistance = value,
             nameof(configuration.ArrivalDistance));
 
-        ImGui.Separator();
-        ImGui.TextUnformatted("Threat Handling");
-
-        DrawNarrowIntSetting(
-            "Live Knowledge Hide Offset (Overworld Coffers)",
-            configuration.VisibleCofferKnowledgeHideOffset,
-            -27,
-            27,
-            value => configuration.VisibleCofferKnowledgeHideOffset = value,
-            nameof(configuration.VisibleCofferKnowledgeHideOffset));
-        DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 4 means a Knowledge 20 player hides at level 24 and above.");
-
-        DrawNarrowIntSetting(
-            "Knowledge Threat Enter Range",
-            configuration.KnowledgeThreatEnterDistance,
-            1,
-            50,
-            value => configuration.KnowledgeThreatEnterDistance = value,
-            nameof(configuration.KnowledgeThreatEnterDistance));
-        DrawNarrowIntSetting(
-            "Knowledge Threat Exit Range",
-            configuration.KnowledgeThreatExitDistance,
-            configuration.KnowledgeThreatEnterDistance,
-            100,
-            value => configuration.KnowledgeThreatExitDistance = value,
-            nameof(configuration.KnowledgeThreatExitDistance));
-        DrawSettingTooltip("Shared with revealed treasure. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
-
-        DrawNarrowIntSetting(
-            "Fallback Maximum Aggro Level (Overworld Coffers)",
-            configuration.VisibleTreasureCofferMaximumAggroLevel,
-            0,
-            28,
-            value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
-            nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-        DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Dangerous Travel");
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
-
-        var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
-        if (ImGui.Checkbox("Use Ninja For Dangerous Overworld Coffers", ref useNinjaForDangerousVisibleCoffers))
-        {
-            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousVisibleCoffers old={configuration.UseNinjaForDangerousVisibleCoffers} new={useNinjaForDangerousVisibleCoffers}");
-            configuration.UseNinjaForDangerousVisibleCoffers = useNinjaForDangerousVisibleCoffers;
-            configuration.Save();
-        }
-        DrawSettingTooltip("When enabled, dangerous overworld coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
-
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
-        {
-            DrawNarrowIntSetting(
-                "Hide Threshold Distance",
-                configuration.VisibleCofferHideThresholdDistance,
-                0,
-                500,
-                value => configuration.VisibleCofferHideThresholdDistance = value,
-                nameof(configuration.VisibleCofferHideThresholdDistance));
-            DrawNarrowIntSetting(
-                "Ninja Gearset Number",
-                configuration.VisibleCofferNinjaGearsetNumber,
-                0,
-                100,
-                value => configuration.VisibleCofferNinjaGearsetNumber = value,
-                nameof(configuration.VisibleCofferNinjaGearsetNumber));
-            DrawSettingTooltip("This gearset value is linked with the pots/revealed treasure Ninja gearset setting. Changing either one updates both.");
-        }
-
-        DrawNarrowIntSetting(
-            "FATE Gearset Number",
-            configuration.FateGearsetNumber,
-            0,
-            100,
-            value => configuration.FateGearsetNumber = value,
-            nameof(configuration.FateGearsetNumber));
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Policy");
-
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
         {
@@ -525,6 +448,97 @@ public class ConfigWindow : Window, IDisposable
         }
 
         DrawSettingTooltip("During unsafe weather, skips the Abandoned Ascent 7 route. Heathcliff_10 uses Ninja Hide when enabled, or is skipped when Ninja travel is disabled.");
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dangerous Travel");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+
+        var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
+        if (ImGui.Checkbox("Use Ninja For Dangerous Coffers", ref useNinjaForDangerousVisibleCoffers))
+        {
+            logger.Info($"[Config] op=setting-change key=UseNinjaForDangerousVisibleCoffers old={configuration.UseNinjaForDangerousVisibleCoffers} new={useNinjaForDangerousVisibleCoffers}");
+            configuration.UseNinjaForDangerousVisibleCoffers = useNinjaForDangerousVisibleCoffers;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, dangerous overworld coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+        {
+            DrawNarrowIntSetting(
+                "Ninja Gearset Number",
+                configuration.VisibleCofferNinjaGearsetNumber,
+                0,
+                100,
+                value => configuration.VisibleCofferNinjaGearsetNumber = value,
+                nameof(configuration.VisibleCofferNinjaGearsetNumber));
+            DrawSettingTooltip("This gearset value is linked with the Pots tab Ninja gearset setting. Changing either one updates both.");
+
+            DrawNarrowIntSetting(
+                "FATE Gearset Number",
+                configuration.FateGearsetNumber,
+                0,
+                100,
+                value => configuration.FateGearsetNumber = value,
+                nameof(configuration.FateGearsetNumber));
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Threat Handling");
+
+        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+        {
+            var liveHideLevelLabel = GetLiveKnowledgeHideLevelLabel("Live Knowledge Hide Offset", configuration.VisibleCofferKnowledgeHideOffset);
+            DrawNarrowIntSetting(
+                liveHideLevelLabel,
+                configuration.VisibleCofferKnowledgeHideOffset,
+                -27,
+                27,
+                value => configuration.VisibleCofferKnowledgeHideOffset = value,
+                nameof(configuration.VisibleCofferKnowledgeHideOffset));
+            DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 4 means a Knowledge 20 player hides at level 24 and above.");
+
+            DrawNarrowIntSetting(
+                "Knowledge Threat Enter Range",
+                configuration.KnowledgeThreatEnterDistance,
+                1,
+                50,
+                value => configuration.KnowledgeThreatEnterDistance = value,
+                nameof(configuration.KnowledgeThreatEnterDistance));
+            DrawNarrowIntSetting(
+                "Knowledge Threat Exit Range",
+                configuration.KnowledgeThreatExitDistance,
+                configuration.KnowledgeThreatEnterDistance,
+                100,
+                value => configuration.KnowledgeThreatExitDistance = value,
+                nameof(configuration.KnowledgeThreatExitDistance));
+            DrawSettingTooltip("Shared with pots. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+        }
+
+        if (ImGui.CollapsingHeader("Fallback"))
+        {
+            using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+            {
+                DrawNarrowIntSetting(
+                    "Fallback Maximum Aggro Level",
+                    configuration.VisibleTreasureCofferMaximumAggroLevel,
+                    0,
+                    28,
+                    value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
+                    nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
+                DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
+
+                DrawNarrowIntSetting(
+                    "Fallback",
+                    configuration.VisibleCofferHideThresholdDistance,
+                    0,
+                    500,
+                    value => configuration.VisibleCofferHideThresholdDistance = value,
+                    nameof(configuration.VisibleCofferHideThresholdDistance));
+            }
+        }
+
     }
 
     private void DrawSettingsTab()
@@ -997,6 +1011,15 @@ public class ConfigWindow : Window, IDisposable
     {
         ImGui.SetNextItemWidth(PotsNumericInputWidth);
         DrawClampedIntSetting(label, currentValue, minValue, maxValue, applyValue, logName);
+    }
+
+    private string GetLiveKnowledgeHideLevelLabel(string label, int offset)
+    {
+        var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+        var hideLevel = playerKnowledgeLevel.HasValue
+            ? Math.Clamp(playerKnowledgeLevel.Value + offset, 1, 28).ToString()
+            : "?";
+        return $"{label} ({hideLevel})";
     }
 
     private static void DrawSettingTooltip(string text)
