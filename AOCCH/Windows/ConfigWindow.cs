@@ -388,6 +388,15 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
 
+        var enableOverworldTreasureGuide = configuration.EnableOverworldTreasureGuide;
+        if (ImGui.Checkbox("Enable Overworld Treasure Guide", ref enableOverworldTreasureGuide))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableOverworldTreasureGuide old={configuration.EnableOverworldTreasureGuide} new={enableOverworldTreasureGuide}");
+            configuration.EnableOverworldTreasureGuide = enableOverworldTreasureGuide;
+            configuration.Save();
+        }
+        DrawSettingTooltip("Draws a world-space line and marker to the nearest detected overworld treasure. It does not start or control coffer automation.");
+
         DrawNarrowIntSetting(
             "Automatic Silver Threshold",
             configuration.AutomaticTreasureCofferSilverThreshold,

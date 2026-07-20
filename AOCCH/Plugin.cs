@@ -9,6 +9,7 @@ using AOCCH.Automation;
 using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Movement;
+using AOCCH.Rendering;
 using AOCCH.Scanning;
 using AOCCH.Shopping;
 using Dalamud.Game.Command;
@@ -81,6 +82,7 @@ public sealed class Plugin : IDalamudPlugin
     public ShopPurchaseController ShopPurchaseController { get; init; }
     public CurrentCurrencyShopPageMatcher CurrentCurrencyShopPageMatcher { get; init; }
     public ManualCurrencyShoppingController ManualCurrencyShoppingController { get; init; }
+    public TreasureGuideRenderer TreasureGuideRenderer { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -132,6 +134,7 @@ public sealed class Plugin : IDalamudPlugin
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
         PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
+        TreasureGuideRenderer = new TreasureGuideRenderer(PluginInterface, Configuration, Scanner, Condition, ObjectTable, Logger);
         ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
         ShopPurchaseController = new ShopPurchaseController(Framework, ChatGui, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
@@ -157,6 +160,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Tell the UI system that we want our windows to be drawn through the window system
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
+        PluginInterface.UiBuilder.Draw += TreasureGuideRenderer.Draw;
 
         // This adds a button to the plugin installer entry of this plugin which allows
         // toggling the display status of the configuration ui
@@ -181,6 +185,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Unregister all actions to not leak anything during disposal of plugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
+        PluginInterface.UiBuilder.Draw -= TreasureGuideRenderer.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
@@ -200,6 +205,7 @@ public sealed class Plugin : IDalamudPlugin
         DebugWindow.Dispose();
         DependencyWindow.Dispose();
         AutomaticTreasureCofferDebugController.Dispose();
+        TreasureGuideRenderer.Dispose();
         ManualCurrencyShoppingController.Dispose();
         ShopInspectorController.Dispose();
         ShopPurchaseController.Dispose();

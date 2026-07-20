@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Pictomancy" Version="1.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="Data\OccultCrescentData.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

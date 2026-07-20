@@ -155,6 +155,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var unknownCriticalEncounters = new List<ActiveCriticalEncounter>();
             var fates = new List<ActiveFate>();
             var potFates = new List<ActivePotFate>();
+            var detectedTreasures = new List<DetectedTreasure>();
             var visibleCoffers = new List<VisibleCoffer>();
             var nearbyForayEntities = new List<ForayThreatEntity>();
             uint currentCriticalEncounterId = 0;
@@ -207,10 +208,11 @@ public sealed class OccultCrescentScanner : IDisposable
                     LogForayThreatDiagnostics(playerForayLevel, nearbyForayEntities);
                 }
 
+                if (configuration.EnableOverworldTreasureGuide)
+                    ScanDetectedTreasures(detectedTreasures, playerPosition);
+
                 if (canRunVisibleCofferRoute)
-                {
                     ScanVisibleCoffers(territory!, visibleCoffers);
-                }
 
                 if (canFarmFates)
                 {
@@ -249,6 +251,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 ActivePotFate = activePotFate,
                 HasTreasureBuff = hasTreasureBuff,
                 TreasureBuffRemainingSeconds = treasureBuffRemainingSeconds,
+                DetectedTreasures = detectedTreasures,
                 VisibleCoffers = visibleCoffers,
                 PlayerForayLevel = playerForayLevel,
                 NearbyForayEntities = nearbyForayEntities,
@@ -480,6 +483,35 @@ public sealed class OccultCrescentScanner : IDisposable
         }
 
         TrackTreasureBuffState(hasTreasureBuff);
+    }
+
+    private void ScanDetectedTreasures(List<DetectedTreasure> detectedTreasures, Vector3? playerPosition)
+    {
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is not IGameObject objectEntry
+                || !objectEntry.ObjectKind.ToString().StartsWith("Treasure", StringComparison.OrdinalIgnoreCase)
+                || !objectEntry.IsTargetable
+                || !objectEntry.IsValid())
+            {
+                continue;
+            }
+
+            detectedTreasures.Add(new DetectedTreasure
+            {
+                GameObjectId = objectEntry.GameObjectId,
+                DataId = objectEntry.BaseId,
+                Name = objectEntry.Name.ToString(),
+                ObjectKind = objectEntry.ObjectKind.ToString(),
+                Position = objectEntry.Position,
+                DistanceToPlayer = playerPosition.HasValue
+                    ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position)
+                    : float.MaxValue,
+                IsTargetable = objectEntry.IsTargetable,
+            });
+        }
+
+        detectedTreasures.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
     }
 
     private void ScanVisibleCoffers(OccultCrescentTerritoryData territory, List<VisibleCoffer> visibleCoffers)

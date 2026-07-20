@@ -29,6 +29,7 @@ public sealed class ScannerSnapshot
     public ActivePotFate? ActivePotFate { get; init; }
     public bool HasTreasureBuff { get; init; }
     public float TreasureBuffRemainingSeconds { get; init; }
+    public IReadOnlyList<DetectedTreasure> DetectedTreasures { get; init; } = [];
     public IReadOnlyList<VisibleCoffer> VisibleCoffers { get; init; } = [];
     public int? PlayerForayLevel { get; init; }
     public IReadOnlyList<ForayThreatEntity> NearbyForayEntities { get; init; } = [];
