@@ -75,6 +75,15 @@ function parsePositiveInteger(value: string | null): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseNonNegativeInteger(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 async function listCandidates(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const status = url.searchParams.get("status");
@@ -98,6 +107,12 @@ async function listCandidates(request: Request, env: Env): Promise<Response> {
   const parsedLimit = requestedLimit === null ? 50 : parsePositiveInteger(requestedLimit);
   if (parsedLimit === null) {
     return jsonResponse({ error: "Invalid limit." }, 400);
+  }
+
+  const requestedOffset = url.searchParams.get("offset");
+  const parsedOffset = requestedOffset === null ? 0 : parseNonNegativeInteger(requestedOffset);
+  if (parsedOffset === null) {
+    return jsonResponse({ error: "Invalid offset." }, 400);
   }
 
   const clauses = ["1 = 1"];
@@ -124,11 +139,15 @@ async function listCandidates(request: Request, env: Env): Promise<Response> {
       reviewed_at_utc, review_note, acceptance_method
     FROM observation_candidates
     WHERE ${clauses.join(" AND ")}
-    ORDER BY updated_at_utc DESC
-    LIMIT ?
-  `).bind(...values, Math.min(parsedLimit, 100)).all();
+    ORDER BY updated_at_utc DESC, id DESC
+    LIMIT ? OFFSET ?
+  `).bind(...values, Math.min(parsedLimit, 100) + 1, parsedOffset).all();
 
-  return jsonResponse({ candidates: candidates.results });
+  const pageSize = Math.min(parsedLimit, 100);
+  return jsonResponse({
+    candidates: candidates.results.slice(0, pageSize),
+    hasMore: candidates.results.length > pageSize,
+  });
 }
 
 async function getCandidateDetail(candidateId: number, env: Env): Promise<Response> {

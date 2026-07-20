@@ -61,6 +61,8 @@ The configuration window is divided into these tabs:
 
 Confirmed coffer observation sharing is disabled by default. When enabled, the plugin transmits only territory, position, coffer type, version, timestamp, and a locally generated installation hash to the public observation endpoint.
 
+Candidate review can be run from Windows PowerShell 5.1 with `AOCCH/Review-CofferCandidates.ps1`. Set the local `$AdminToken` field in that script before running it, and do not commit the script after adding the token.
+
 Dangerous travel settings are experimental and intended for characters with suitable Knowledge progression. Review the tooltips in the configuration window before enabling them.
 
 ## Commands
