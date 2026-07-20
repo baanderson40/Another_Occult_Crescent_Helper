@@ -15,9 +15,11 @@ public sealed class FateAutomationController : IDisposable
     private static readonly TimeSpan CombatExitGrace = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MonitorLogInterval = TimeSpan.FromSeconds(10);
     private const float FateParticipationPadding = 5f;
+    private const float MinimumFateArrivalTolerance = 5f;
+    private const float PotFateArrivalTolerance = 10f;
     private const int MinimumFateDismountDistance = 5;
     private const int MaximumFateDismountDistance = 50;
-    private const float LiveTargetReplanDistance = 5f;
+    private const float LiveTargetReplanDistance = 10f;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -426,7 +428,9 @@ public sealed class FateAutomationController : IDisposable
         var routeTarget = !target.IsPotTarget && !liveTargetRoutingActivated && !initialDestinationOverride.HasValue
             ? CreateCenterRouteTarget(target)
             : target;
-        if (!movementController.PlanRoute(routeTarget, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: initialArrivalToleranceOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        var arrivalTolerance = GetFateArrivalTolerance(target, initialArrivalToleranceOverride);
+        logger.Info($"{BuildLogTag()} op=fate-arrival-tolerance target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} tolerance={arrivalTolerance:0.0} earlyDismountDistance={(GetEarlyDismountDistance(target)?.ToString("0.0") ?? "none")} override={(initialArrivalToleranceOverride.HasValue ? "true" : "false")}");
+        if (!movementController.PlanRoute(routeTarget, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -778,7 +782,9 @@ public sealed class FateAutomationController : IDisposable
     private bool BeginPlanningWithoutReturn(FateRunTarget target)
     {
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
-        if (!movementController.PlanRoute(target, allowReturn: false, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: initialArrivalToleranceOverride, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        var arrivalTolerance = GetFateArrivalTolerance(target, initialArrivalToleranceOverride);
+        logger.Info($"{BuildLogTag()} op=fate-arrival-tolerance target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} tolerance={arrivalTolerance:0.0} earlyDismountDistance={(GetEarlyDismountDistance(target)?.ToString("0.0") ?? "none")} override={(initialArrivalToleranceOverride.HasValue ? "true" : "false")} fallback=without-return");
+        if (!movementController.PlanRoute(target, allowReturn: false, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target)))
         {
             logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
@@ -824,10 +830,36 @@ public sealed class FateAutomationController : IDisposable
             ? null
             : Math.Clamp(configuration.FateDismountDistance, MinimumFateDismountDistance, MaximumFateDismountDistance);
 
+    private float GetFateArrivalTolerance(FateRunTarget target, float? overrideTolerance)
+    {
+        if (overrideTolerance.HasValue)
+        {
+            return overrideTolerance.Value;
+        }
+
+        if (target.IsPotTarget)
+        {
+            return PotFateArrivalTolerance;
+        }
+
+        return MathF.Max(
+            MinimumFateArrivalTolerance,
+            GetEarlyDismountDistance(target).GetValueOrDefault() / 2f);
+    }
+
     private bool TryReplanForLiveTarget(FateRunTarget target)
     {
         if (target.IsPotTarget || initialDestinationOverride.HasValue)
         {
+            return false;
+        }
+
+        if (movementController.IsEarlyDismountPending)
+        {
+            logger.DebugThrottled(
+                "fate-live-target-dismount-pending",
+                MonitorLogInterval,
+                $"{BuildLogTag()} op=live-target-replan-suppressed reason=early-dismount-pending target=\"{target.Name}\" ({target.Id}) movement={movementController.GetStatusSummary()} step={movementController.GetActiveStepSummary()}.");
             return false;
         }
 

@@ -194,6 +194,25 @@ public sealed class MovementController : IDisposable
     public bool IsPathBusy
         => vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
 
+    public bool IsEarlyDismountPending
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (!dismountAttempted || !condition[ConditionFlag.Mounted] || plannedRoute == null)
+                {
+                    return false;
+                }
+
+                return currentStepIndex >= 0
+                    && currentStepIndex < plannedRoute.Steps.Count
+                    && plannedRoute.Steps[currentStepIndex].EarlyDismountDistance > 0f
+                    && !IsZeroVector(plannedRoute.Steps[currentStepIndex].EarlyDismountTarget);
+            }
+        }
+    }
+
     public bool CanUseReturnAction
         => gameActionController.CanUseGeneralAction(GameActionController.ReturnActionId);
 
