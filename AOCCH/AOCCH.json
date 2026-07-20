@@ -1,8 +1,8 @@
 {
-  "Author": "your name here",
+  "Author": "baanderson40",
   "Name": "Another Occult Crescent Helper",
   "Punchline": "Occult Crescent automation and tracking helper.",
-  "Description": "A Dalamud plugin for Occult Crescent automation and tracking. Use /aocch to open the main window.",
+  "Description": "Automates and monitors Occult Crescent FATEs, Critical Engagements, pot treasure, treasure coffers, movement, combat, recovery, and currency shopping. Use /aocch to open the main window.",
   "ApplicableVersion": "any",
   "Tags": [
     "occult crescent",
