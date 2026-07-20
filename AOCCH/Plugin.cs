@@ -12,6 +12,7 @@ using AOCCH.Movement;
 using AOCCH.Rendering;
 using AOCCH.Scanning;
 using AOCCH.Shopping;
+using AOCCH.Telemetry;
 using Dalamud.Game.Command;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.IoC;
@@ -83,6 +84,7 @@ public sealed class Plugin : IDalamudPlugin
     public CurrentCurrencyShopPageMatcher CurrentCurrencyShopPageMatcher { get; init; }
     public ManualCurrencyShoppingController ManualCurrencyShoppingController { get; init; }
     public TreasureGuideRenderer TreasureGuideRenderer { get; init; }
+    public CofferObservationSubmissionService CofferObservationSubmissionService { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AOCCH");
     private ConfigWindow ConfigWindow { get; init; }
@@ -129,6 +131,9 @@ public sealed class Plugin : IDalamudPlugin
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
+        CofferObservationSubmissionService = new CofferObservationSubmissionService(PluginInterface.ConfigDirectory.FullName, Configuration, Logger, typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "unknown");
+        CofferInteractionController.CofferOpened += OnCofferOpened;
+        Scanner.CofferOpened += OnScannerCofferOpened;
         TreasureCofferFarmController = new TreasureCofferFarmController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
@@ -212,6 +217,9 @@ public sealed class Plugin : IDalamudPlugin
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
         TreasureCofferFarmController.Dispose();
+        CofferInteractionController.CofferOpened -= OnCofferOpened;
+        Scanner.CofferOpened -= OnScannerCofferOpened;
+        CofferObservationSubmissionService.Dispose();
         CofferInteractionController.Dispose();
         TreasureSearchController.Dispose();
         DangerousTreasureTravelController.Dispose();
@@ -269,6 +277,29 @@ public sealed class Plugin : IDalamudPlugin
 
     public void OpenDependencyUi()
         => DependencyWindow.IsOpen = true;
+
+    private void OnCofferOpened(VisibleCofferMatch match)
+    {
+        if (!Scanner.Snapshot.IsInSupportedTerritory)
+        {
+            return;
+        }
+
+        var source = match.Flow == CofferInteractionFlow.PotReveal
+            ? "pot-reveal"
+            : "interaction-overworld";
+        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, match.Coffer, source);
+    }
+
+    private void OnScannerCofferOpened(VisibleCoffer coffer)
+    {
+        if (!Scanner.Snapshot.IsInSupportedTerritory)
+        {
+            return;
+        }
+
+        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, coffer, "scanner-overworld");
+    }
 
     private bool TryBlockNormalStart(string entryPoint)
     {

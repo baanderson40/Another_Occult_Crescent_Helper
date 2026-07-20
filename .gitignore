@@ -4,3 +4,8 @@ bin/
 *.user
 knowledge-base/
 AGENTS.md
+cloudflare/coffer-api/node_modules/
+cloudflare/coffer-api/.wrangler/
+cloudflare/coffer-api/.dev.vars
+cloudflare/coffer-api/.env
+cloudflare/coffer-api/.env.*

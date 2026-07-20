@@ -1136,6 +1136,7 @@ public sealed class TreasureSearchController : IDisposable
         var activePosition = ActiveCandidateResolvedPosition != Vector3.Zero
             ? ActiveCandidateResolvedPosition
             : ResolveCandidatePosition(activeCandidate);
+        coffer = NormalizePotRevealCofferPosition(coffer, activePosition);
         var distanceToActive = CalculateFlatDistance(coffer.Position, activePosition);
         var nearestOtherDistance = float.MaxValue;
         TreasureCandidateKey? nearestOtherCandidateKey = null;
@@ -1271,6 +1272,26 @@ public sealed class TreasureSearchController : IDisposable
         recognitionSource = bestRecognitionSource;
         objectKind = bestObjectKind;
         return true;
+    }
+
+    private static VisibleCoffer NormalizePotRevealCofferPosition(VisibleCoffer coffer, Vector3 fallbackPosition)
+    {
+        if (MathF.Abs(coffer.Position.Y + 500f) >= 0.5f)
+        {
+            return coffer;
+        }
+
+        return new VisibleCoffer
+        {
+            GameObjectId = coffer.GameObjectId,
+            DataId = coffer.DataId,
+            Name = coffer.Name,
+            ObjectKind = coffer.ObjectKind,
+            RecognitionSource = coffer.RecognitionSource,
+            Position = new Vector3(coffer.Position.X, fallbackPosition.Y, coffer.Position.Z),
+            DistanceToPlayer = coffer.DistanceToPlayer,
+            IsTargetable = coffer.IsTargetable,
+        };
     }
 
     private void CompleteWithVisibleCoffer(VisibleCoffer coffer, TreasureCandidateKey candidateKey, float matchDistance, bool isTrustworthy, float nearestOtherDistance, string reason)

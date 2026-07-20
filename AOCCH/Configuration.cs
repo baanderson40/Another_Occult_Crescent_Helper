@@ -107,6 +107,8 @@ public class Configuration : IPluginConfiguration
     public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 20;
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public bool EnableOverworldTreasureGuide { get; set; }
+    public bool EnableCofferObservationSubmission { get; set; }
+    public string CofferObservationSubmissionUrl { get; set; } = string.Empty;
     public int AutomaticTreasureCofferSilverThreshold { get; set; }
     public int AutomaticTreasureCofferBronzeThreshold { get; set; }
     public bool UseNinjaForDangerousArea { get; set; }

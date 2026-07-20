@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading;
 using AOCCH.Logging;
 using AOCCH.Movement;
@@ -52,6 +53,8 @@ public sealed class CofferInteractionController : IDisposable
     private readonly CofferPositionOverrideStore cofferPositionOverrideStore;
     private readonly AocchLogger logger;
     private readonly object gate = new();
+
+    public event Action<VisibleCofferMatch>? CofferOpened;
 
     private CofferInteractionState state = CofferInteractionState.Idle;
     private CofferInteractionResult lastResult;
@@ -325,7 +328,8 @@ public sealed class CofferInteractionController : IDisposable
             return false;
         }
 
-        var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        var interactionPosition = GetInteractionPosition(liveObject);
+        var distance = CalculateFlatDistance(playerPosition.Value, interactionPosition);
         logger.Debug($"Coffer interaction evaluating approach for {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). distance={distance:0.0} preferredOpenDistance={PreferredOpenDistance:0.00} maxInteractRange={MaxInteractRange:0.0} reason={reason}");
         if (distance <= PreferredOpenDistance)
         {
@@ -348,7 +352,7 @@ public sealed class CofferInteractionController : IDisposable
             }
         }
 
-        var destination = movementController.FindNearestNavigablePoint(liveObject.Position, halfExtentXZ: 3f, halfExtentY: 3f);
+        var destination = movementController.FindNearestNavigablePoint(interactionPosition, halfExtentXZ: 3f, halfExtentY: 3f);
         if (!destination.HasValue)
         {
             SetFailure($"No reliable vnavmesh point is available near coffer {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}).");
@@ -417,7 +421,7 @@ public sealed class CofferInteractionController : IDisposable
                     return;
                 }
 
-                var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+                var distance = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
                 if (distance > PreferredOpenDistance)
                 {
                     BeginApproachOrTarget(liveObject, $"Movement reported arrival, but the player is still {distance:0.0}y from {liveObject.Name.TextValue}.");
@@ -454,7 +458,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        var distance = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
         if (distance > MaxInteractRange)
         {
             BeginApproachOrTarget(liveObject, $"Player drifted outside the coffer interaction range ({distance:0.0}y > {MaxInteractRange:0.0}y).");
@@ -492,7 +496,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        var distance = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        var distance = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
         if (distance > MaxInteractRange)
         {
             BeginApproachOrTarget(liveObject, $"Interaction was deferred because the player is {distance:0.0}y from the matched coffer.");
@@ -581,6 +585,7 @@ public sealed class CofferInteractionController : IDisposable
                 if (!previousFlags.HasFlag(TreasureFlags.Opened) && currentFlags.HasFlag(TreasureFlags.Opened))
                 {
                     PersistConfirmedOverride(active);
+                    NotifyCofferOpened(active);
                     logger.ResetThrottle("coffer-confirmation");
                     logger.Info($"{BuildLogTag()} op=open-confirmed method=opened-flag flow={active.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} objectId={active.Coffer.GameObjectId:X}");
                     TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via the treasure opened flag after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
@@ -624,6 +629,7 @@ public sealed class CofferInteractionController : IDisposable
                 }
 
                 PersistConfirmedOverride(active);
+                NotifyCofferOpened(active);
                 logger.ResetThrottle("coffer-confirmation");
                 logger.Info($"{BuildLogTag()} op=open-confirmed method=object-disappeared flow={active.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} requiredMissingConfirmations={RequiredMissingConfirmations} objectId={active.Coffer.GameObjectId:X}");
                 TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
@@ -734,6 +740,7 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         PersistConfirmedOverride(match);
+        NotifyCofferOpened(match);
         logger.ResetThrottle("coffer-confirmation");
         logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-confirm attempt={interactionAttemptCount} deltas={string.Join(", ", deltas)}");
         logger.Info($"{BuildLogTag()} op=open-confirmed method=inventory-delta flow={match.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} objectId={match.Coffer.GameObjectId:X}");
@@ -818,6 +825,17 @@ public sealed class CofferInteractionController : IDisposable
     private IGameObject? ResolveActiveObject()
         => ActiveMatch == null ? null : ResolveObject(ActiveMatch.Coffer.GameObjectId);
 
+    private Vector3 GetInteractionPosition(IGameObject liveObject)
+    {
+        if (ActiveMatch?.Flow != CofferInteractionFlow.PotReveal
+            || MathF.Abs(liveObject.Position.Y + 500f) >= 0.5f)
+        {
+            return liveObject.Position;
+        }
+
+        return ActiveMatch.Coffer.Position;
+    }
+
     private IGameObject? ResolveObject(ulong gameObjectId)
     {
         foreach (var gameObject in objectTable)
@@ -869,6 +887,18 @@ public sealed class CofferInteractionController : IDisposable
         logger.Warning($"{BuildLogTag()} op=override-save-failed candidate={match.CandidateKey.Label} reason=save-confirmed-position-returned-false");
     }
 
+    private void NotifyCofferOpened(VisibleCofferMatch match)
+    {
+        try
+        {
+            CofferOpened?.Invoke(match);
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"{BuildLogTag()} op=coffer-open-notification-failed error={ex}");
+        }
+    }
+
     private void TryApplyJumpAssistDuringApproach()
     {
         var match = ActiveMatch;
@@ -889,7 +919,7 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        var remaining = CalculateFlatDistance(playerPosition.Value, liveObject.Position);
+        var remaining = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
         if (remaining > JumpAssistTriggerDistance)
         {
             return;

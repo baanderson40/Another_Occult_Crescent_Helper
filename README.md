@@ -10,6 +10,7 @@ Another Occult Crescent Helper (AOCCH) is a Dalamud plugin for automating and mo
 - Treasure hunting with hint interpretation, candidate search, dangerous-area travel, and optional treasure guide markers.
 - Manual overworld coffer routes with optional starting route indexes.
 - Automatic overworld coffer surveys and route starts based on silver and bronze thresholds.
+- Optional anonymous submission of confirmed coffer observations to a configured HTTPS endpoint.
 - Route safety policies for knowledge-level threats, unsafe weather, Ashkin periods, and dangerous caverns.
 - Optional Ninja gearset and Hide handling for dangerous treasure and coffer routes.
 - Buff rotation and BossMod autorotation integration.
@@ -57,6 +58,8 @@ The configuration window is divided into these tabs:
 - **Treasure Coffers**: configure manual and automatic overworld coffer routes, guide markers, thresholds, route arrival, threat handling, dangerous travel, weather, and Ashkin policies.
 - **Shopping**: configure currency reserves, purchase thresholds, item priorities, keep amounts, one-off purchases, and keep-buying behavior.
 - **Settings**: configure autorotation overrides, target ranges, buff rotation, Return usage, mounting distance, and interface scaling.
+
+Confirmed coffer observation sharing is disabled by default. When enabled, the configuration tab shows the HTTPS endpoint and the plugin transmits only territory, position, coffer type, version, timestamp, and a locally generated installation hash.
 
 Dangerous travel settings are experimental and intended for characters with suitable Knowledge progression. Review the tooltips in the configuration window before enabling them.
 

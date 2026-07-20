@@ -37,6 +37,9 @@ public sealed class OccultCrescentScanner : IDisposable
     private HashSet<uint> potFateIds;
     private Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
+    private readonly Dictionary<ulong, TrackedVisibleCoffer> trackedVisibleCoffers = [];
+
+    public event Action<VisibleCoffer>? CofferOpened;
 
     private ScannerSnapshot snapshot = new()
     {
@@ -108,6 +111,7 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private void OnTerritoryChanged(uint territoryType)
     {
+        trackedVisibleCoffers.Clear();
         var territory = catalog.GetTerritoryOrNull(territoryType);
         logger.Info(territory != null
             ? $"[Scanner] op=territory-change territoryId={territoryType} territoryKey={territory.Key} supported=true state=entered"
@@ -525,6 +529,7 @@ public sealed class OccultCrescentScanner : IDisposable
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
         var nearbyTreasureObjects = new List<string>();
+        var recognizedObjectIds = new HashSet<ulong>();
 
         foreach (var gameObject in objectTable)
         {
@@ -548,17 +553,18 @@ public sealed class OccultCrescentScanner : IDisposable
             }
 
             if (!CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out var recognitionSource)
-                || !objectEntry.IsTargetable
                 || !objectEntry.IsValid())
             {
                 continue;
             }
 
+            recognizedObjectIds.Add(objectEntry.GameObjectId);
+
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position)
                 : float.MaxValue;
 
-            visibleCoffers.Add(new VisibleCoffer
+            var coffer = new VisibleCoffer
             {
                 GameObjectId = objectEntry.GameObjectId,
                 DataId = objectEntry.BaseId,
@@ -568,7 +574,32 @@ public sealed class OccultCrescentScanner : IDisposable
                 Position = objectEntry.Position,
                 DistanceToPlayer = distanceToPlayer,
                 IsTargetable = objectEntry.IsTargetable,
-            });
+            };
+
+            var isOpened = TreasureObjectState.TryReadTreasureFlags(objectEntry, out var treasureFlags)
+                && treasureFlags.HasFlag(TreasureFlags.Opened);
+            var hasPrevious = trackedVisibleCoffers.TryGetValue(objectEntry.GameObjectId, out var previous);
+            if (hasPrevious
+                && (previous.DataId != coffer.DataId || !string.Equals(previous.Name, coffer.Name, StringComparison.Ordinal)))
+            {
+                hasPrevious = false;
+            }
+
+            if (hasPrevious && !previous.IsOpened && isOpened)
+            {
+                NotifyCofferOpened(coffer);
+            }
+
+            trackedVisibleCoffers[objectEntry.GameObjectId] = new TrackedVisibleCoffer(coffer.DataId, coffer.Name, isOpened);
+            if (!isOpened && objectEntry.IsTargetable)
+            {
+                visibleCoffers.Add(coffer);
+            }
+        }
+
+        foreach (var objectId in trackedVisibleCoffers.Keys.Where(objectId => !recognizedObjectIds.Contains(objectId)).ToList())
+        {
+            trackedVisibleCoffers.Remove(objectId);
         }
 
         visibleCoffers.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
@@ -593,6 +624,20 @@ public sealed class OccultCrescentScanner : IDisposable
                 $"[Scanner] op=visible-coffer-unrecognized territoryKey={territory.Key} entries={string.Join(" | ", nearbyTreasureObjects)}");
         }
     }
+
+    private void NotifyCofferOpened(VisibleCoffer coffer)
+    {
+        try
+        {
+            CofferOpened?.Invoke(coffer);
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"[Scanner] op=coffer-open-notification-failed objectId={coffer.GameObjectId:X} error={ex}");
+        }
+    }
+
+    private readonly record struct TrackedVisibleCoffer(uint DataId, string Name, bool IsOpened);
 
     private void ScanNearbyForayEntities(List<ForayThreatEntity> entities, Vector3? playerPosition)
     {
