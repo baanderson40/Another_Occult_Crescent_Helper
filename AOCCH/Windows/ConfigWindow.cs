@@ -405,24 +405,6 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("Draws a world-space line and marker to the nearest detected overworld treasure. It does not start or control coffer automation.");
 
-        var enableCofferObservationSubmission = configuration.EnableCofferObservationSubmission;
-        if (ImGui.Checkbox("Share Confirmed Coffer Observations", ref enableCofferObservationSubmission))
-        {
-            logger.Info($"[Config] op=setting-change key=EnableCofferObservationSubmission old={configuration.EnableCofferObservationSubmission} new={enableCofferObservationSubmission}");
-            configuration.EnableCofferObservationSubmission = enableCofferObservationSubmission;
-            configuration.Save();
-        }
-        DrawSettingTooltip("When enabled, confirmed coffer positions are submitted anonymously to the configured public observation endpoint. No character or account identity is transmitted.");
-
-        ImGui.SetNextItemWidth(SettingsTextInputMaxWidth);
-        var submissionUrl = configuration.CofferObservationSubmissionUrl;
-        if (ImGui.InputText("Observation API URL", ref submissionUrl, 256))
-        {
-            configuration.CofferObservationSubmissionUrl = submissionUrl.Trim();
-            configuration.Save();
-        }
-        DrawSettingTooltip("Use the HTTPS URL ending in /api/v1/observations. Submission remains disabled until both the checkbox and URL are configured.");
-
         DrawNarrowIntSetting(
             "Automatic Silver Threshold",
             configuration.AutomaticTreasureCofferSilverThreshold,
@@ -564,6 +546,18 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawSettingsTab()
     {
+        ImGui.TextUnformatted("Coffer Observations");
+
+        var enableCofferObservationSubmission = configuration.EnableCofferObservationSubmission;
+        if (ImGui.Checkbox("Share Confirmed Coffer Observations", ref enableCofferObservationSubmission))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableCofferObservationSubmission old={configuration.EnableCofferObservationSubmission} new={enableCofferObservationSubmission}");
+            configuration.EnableCofferObservationSubmission = enableCofferObservationSubmission;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, confirmed coffer positions are submitted anonymously to the public observation endpoint. No character or account identity is transmitted.");
+
+        ImGui.Separator();
         ImGui.TextUnformatted("Combat");
 
         var autorotationPresetName = configuration.AutorotationPresetName;

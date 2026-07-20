@@ -31,6 +31,7 @@ public sealed class CofferObservationSubmissionService : IDisposable
 {
     private const int MaximumPendingObservations = 500;
     private const int MaximumAttempts = 5;
+    private const string SubmissionUrl = "https://aocch-coffer-api.baanderson40.workers.dev/api/v1/observations";
     private static readonly TimeSpan MaximumRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan[] RetryDelays =
     [
@@ -247,7 +248,7 @@ public sealed class CofferObservationSubmissionService : IDisposable
         try
         {
             using var response = await httpClient.PostAsJsonAsync(
-                configuration.CofferObservationSubmissionUrl,
+                SubmissionUrl,
                 item.Observation,
                 SerializerOptions,
                 cancellationToken).ConfigureAwait(false);
@@ -278,7 +279,7 @@ public sealed class CofferObservationSubmissionService : IDisposable
     }
 
     private bool IsValidSubmissionUri()
-        => Uri.TryCreate(configuration.CofferObservationSubmissionUrl, UriKind.Absolute, out var uri)
+        => Uri.TryCreate(SubmissionUrl, UriKind.Absolute, out var uri)
             && uri.Scheme == Uri.UriSchemeHttps
             && uri.AbsolutePath.EndsWith("/api/v1/observations", StringComparison.Ordinal);
 
