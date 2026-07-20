@@ -1846,6 +1846,20 @@ public sealed class MovementController : IDisposable
 
         if (!condition[ConditionFlag.Mounted])
         {
+            if (dismountAttempted)
+            {
+                var elapsed = dismountAttemptedAt == DateTimeOffset.MinValue
+                    ? TimeSpan.Zero
+                    : DateTimeOffset.UtcNow - dismountAttemptedAt;
+                lock (gate)
+                {
+                    dismountAttempted = false;
+                    dismountAttemptedAt = DateTimeOffset.MinValue;
+                }
+
+                logger.Info($"{BuildLogTag()} op=early-dismount-complete step=\"{step.Description}\" distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} elapsed={elapsed.TotalMilliseconds:0}ms target={FormatVector(step.EarlyDismountTarget)}");
+            }
+
             return false;
         }
 
