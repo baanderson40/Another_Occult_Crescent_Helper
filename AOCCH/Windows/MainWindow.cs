@@ -68,7 +68,6 @@ public sealed class MainWindow : Window, IDisposable
         var statusTextScale = configuration.MainWindowStatusTextScalePercent / 100f;
 
         ImGui.SetWindowFontScale(statusTextScale);
-        ImGui.TextWrapped(GetTerritoryFeatureSummary(snapshot));
         ImGui.TextWrapped($"Farm: {GetFarmSummary(snapshot, potCycleSnapshot, treasureSnapshot, cofferSurveySnapshot, automaticCofferStatus)}");
         var potSummary = GetPotSummary(snapshot, potCycleSnapshot);
         if (potSummary != null)
@@ -541,22 +540,4 @@ public sealed class MainWindow : Window, IDisposable
             || snapshot.CanUseShopping
             || snapshot.CanRunBuffRotation;
 
-    private static string GetTerritoryFeatureSummary(ScannerSnapshot snapshot)
-    {
-        if (!snapshot.IsInSupportedTerritory)
-        {
-            return $"Territory: Unsupported ({snapshot.TerritoryTypeId})";
-        }
-
-        return $"Territory: {snapshot.TerritoryDisplayName} ({snapshot.TerritoryTypeId}) | "
-            + $"FATEs {FormatAvailability(snapshot.CanFarmFates)}, "
-            + $"CEs {FormatAvailability(snapshot.CanFarmCriticalEncounters)}, "
-            + $"Shopping {FormatAvailability(snapshot.CanUseShopping)}, "
-            + $"Coffers {FormatAvailability(snapshot.CanRunVisibleCofferRoute)}, "
-            + $"Pots {FormatAvailability(snapshot.CanRunPotTreasure)}, "
-            + $"Buffs {FormatAvailability(snapshot.CanRunBuffRotation)}";
-    }
-
-    private static string FormatAvailability(bool available)
-        => available ? "ready" : "unavailable";
 }

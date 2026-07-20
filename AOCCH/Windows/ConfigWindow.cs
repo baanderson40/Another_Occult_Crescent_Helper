@@ -68,11 +68,6 @@ public class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
-        var snapshot = plugin.Scanner.Snapshot;
-        ImGui.TextUnformatted(snapshot.IsInSupportedTerritory
-            ? $"Active territory: {snapshot.TerritoryDisplayName} ({snapshot.TerritoryTypeId})"
-            : $"Active territory: Unsupported ({snapshot.TerritoryTypeId})");
-
         if (!ImGui.BeginTabBar("AOCCHConfigTabs"))
         {
             return;

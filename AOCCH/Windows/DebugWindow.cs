@@ -32,6 +32,7 @@ public sealed class DebugWindow : Window, IDisposable
         Movement,
         CriticalEngagements,
         Fates,
+        Territory,
     }
 
     private readonly Plugin plugin;
@@ -138,6 +139,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.Safety, "Safety");
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
         DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
+        DrawSectionButton(DebugSection.Territory, "Territory");
     }
 
     private void DrawSectionButton(DebugSection section, string label)
@@ -207,6 +209,9 @@ public sealed class DebugWindow : Window, IDisposable
             case DebugSection.Fates:
                 DrawFates(snapshot);
                 break;
+            case DebugSection.Territory:
+                DrawTerritory(snapshot);
+                break;
         }
     }
 
@@ -215,10 +220,6 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted("Overview");
         ImGui.TextUnformatted($"CE Farming: {(configuration.EnableCriticalEngagementFarming ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"FATE Farming: {(configuration.EnableFateFarming ? "Enabled" : "Disabled")}");
-        ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
-        ImGui.TextUnformatted($"In Supported Territory: {(snapshot.IsInSupportedTerritory ? "Yes" : "No")}");
-        ImGui.TextUnformatted($"Territory Key: {(snapshot.TerritoryKey.Length == 0 ? "Unsupported" : snapshot.TerritoryKey)}");
-        ImGui.TextUnformatted($"Territory Name: {(snapshot.TerritoryDisplayName.Length == 0 ? "Unsupported" : snapshot.TerritoryDisplayName)}");
         ImGui.TextUnformatted($"FATE Data: {FormatFeatureAvailability(snapshot.CanFarmFates)}");
         ImGui.TextUnformatted($"CE Data: {FormatFeatureAvailability(snapshot.CanFarmCriticalEncounters)}");
         ImGui.TextUnformatted($"Shopping Data: {FormatFeatureAvailability(snapshot.CanUseShopping)}");
@@ -226,6 +227,15 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"Pot Treasure Data: {FormatFeatureAvailability(snapshot.CanRunPotTreasure)}");
         ImGui.TextUnformatted($"Buff Rotation Data: {FormatFeatureAvailability(snapshot.CanRunBuffRotation)}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
+    }
+
+    private static void DrawTerritory(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Territory");
+        ImGui.TextUnformatted($"Territory: {snapshot.TerritoryTypeId}");
+        ImGui.TextUnformatted($"In Supported Territory: {(snapshot.IsInSupportedTerritory ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Territory Key: {(snapshot.TerritoryKey.Length == 0 ? "Unsupported" : snapshot.TerritoryKey)}");
+        ImGui.TextUnformatted($"Territory Name: {(snapshot.TerritoryDisplayName.Length == 0 ? "Unsupported" : snapshot.TerritoryDisplayName)}");
     }
 
     private static string FormatFeatureAvailability(bool available)
