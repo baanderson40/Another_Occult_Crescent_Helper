@@ -12,7 +12,7 @@ public readonly record struct KnowledgeThreatPolicy(int HideOffset, float EnterD
 public static class KnowledgeThreatEvaluator
 {
     public const uint OccultIsleblazerBaseId = 17900;
-    public const float OccultIsleblazerUnhideDistance = 7f;
+    public const float OccultIsleblazerUnhideDistance = 5f;
 
     public static bool TryFindThreat(
         ScannerSnapshot snapshot,

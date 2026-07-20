@@ -60,6 +60,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan UnhideVerifyTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan UnhideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(5);
@@ -100,7 +101,6 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private int activeHideThresholdDistance;
     private int activeMaximumAggroLevel;
     private bool hideRetryUsed;
-    private bool unhideRetryUsed;
     private bool hiddenFinalApproachRetryUsed;
     private DateTimeOffset lastHideActivatedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hideReadyDeadline = DateTimeOffset.MinValue;
@@ -284,7 +284,6 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeHideThresholdDistance = 0;
             activeMaximumAggroLevel = 0;
             hideRetryUsed = false;
-            unhideRetryUsed = false;
             hiddenFinalApproachRetryUsed = false;
             lastHideActivatedAt = DateTimeOffset.MinValue;
             hideReadyDeadline = DateTimeOffset.MinValue;
@@ -1105,7 +1104,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
         {
             movementController.Stop("Occult Isleblazer is unsafe while hidden; clearing Hide for on-foot travel.");
             logger.Info($"{BuildLogTag()} op=hide-exception-unhide-request candidate={activeCandidateLabel} entity='{hideException?.Name}' objectId={hideException?.ObjectId:X} baseId={hideException?.BaseId} distance={hideException?.DistanceToPlayer:0.0}y");
-            unhideRetryUsed = false;
+            hideReadyDeadline = DateTimeOffset.UtcNow + UnhideReadyTimeout;
+            hideDispatchRetryAvailableAt = DateTimeOffset.MinValue;
             TransitionTo(DangerousTreasureTravelState.UsingHideToUnhide, "Occult Isleblazer entered the unhide range; clearing Hide before continuing on foot.");
             return;
         }
@@ -1178,22 +1178,53 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return;
         }
 
+        if (!TryGetNearbyHideException(out _))
+        {
+            StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: false,
+                $"Hidden travel after Occult Isleblazer cleared for {activeCandidateLabel}",
+                "Occult Isleblazer left the unhide range; continuing hidden.");
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         if (now < hideDispatchRetryAvailableAt)
         {
             return;
         }
 
-        if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"Occult Isleblazer unhide for {activeCandidateLabel}"))
+        if (!gameActionController.IsPlayerInChangeableState() || !gameActionController.CanUseHide())
         {
-            if (unhideRetryUsed)
+            if (now >= hideReadyDeadline)
             {
-                SkipCandidate($"Could not clear Hide near an Occult Isleblazer for dangerous candidate {activeCandidateLabel}.");
+                SkipCandidate($"Hide did not become ready near an Occult Isleblazer for dangerous candidate {activeCandidateLabel} within {UnhideReadyTimeout.TotalSeconds:0.0}s.");
                 return;
             }
 
-            unhideRetryUsed = true;
             hideDispatchRetryAvailableAt = now + HideDispatchRetryDelay;
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-unhide-ready",
+                TimeSpan.FromSeconds(1),
+                $"Dangerous treasure travel is waiting to clear Hide near an Occult Isleblazer on {activeCandidateLabel}. deadlineIn={Math.Max(0, (hideReadyDeadline - now).TotalSeconds):0.0}s canUseHide={gameActionController.CanUseHide()} changeableState=\"{gameActionController.GetChangeableStateSummary()}\".");
+            return;
+        }
+
+        if (!gameActionController.TryExecuteAction(GameActionController.HideActionId, $"Occult Isleblazer unhide for {activeCandidateLabel}"))
+        {
+            if (now >= hideReadyDeadline)
+            {
+                SkipCandidate($"Could not clear Hide near an Occult Isleblazer for dangerous candidate {activeCandidateLabel} within {UnhideReadyTimeout.TotalSeconds:0.0}s.");
+                return;
+            }
+
+            hideDispatchRetryAvailableAt = now + HideDispatchRetryDelay;
+            logger.DebugThrottled(
+                "dangerous-treasure-travel-unhide-dispatch",
+                TimeSpan.FromSeconds(1),
+                $"Dangerous treasure travel received an unavailable Hide dispatch while clearing Hide near an Occult Isleblazer on {activeCandidateLabel}; retrying until the readiness deadline.");
             return;
         }
 
@@ -1208,20 +1239,31 @@ public sealed class DangerousTreasureTravelController : IDisposable
             return;
         }
 
+        if (!TryGetNearbyHideException(out _))
+        {
+            StartWalkingPhase(
+                DangerousTreasureWalkingPhase.FinalApproach,
+                finalDestination,
+                arrivalTolerance,
+                allowMount: false,
+                $"Hidden travel after Occult Isleblazer cleared for {activeCandidateLabel}",
+                "Occult Isleblazer left the unhide range while verifying; continuing hidden.");
+            return;
+        }
+
         if (DateTimeOffset.UtcNow - stateEnteredAt < UnhideVerifyTimeout)
         {
             return;
         }
 
-        if (!unhideRetryUsed)
+        if (DateTimeOffset.UtcNow < hideReadyDeadline)
         {
-            unhideRetryUsed = true;
             hideDispatchRetryAvailableAt = DateTimeOffset.UtcNow + HideDispatchRetryDelay;
             TransitionTo(DangerousTreasureTravelState.UsingHideToUnhide, "Hide remained active near an Occult Isleblazer; retrying the unhide toggle.");
             return;
         }
 
-        SkipCandidate($"Hide did not clear near an Occult Isleblazer for dangerous candidate {activeCandidateLabel}.");
+        SkipCandidate($"Hide did not clear near an Occult Isleblazer for dangerous candidate {activeCandidateLabel} within {UnhideReadyTimeout.TotalSeconds:0.0}s.");
     }
 
     private void StartIsleblazerUnhiddenWalk()
