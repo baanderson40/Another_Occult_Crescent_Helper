@@ -9,8 +9,6 @@ using AOCCH.Data;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace AOCCH.Automation;
@@ -833,23 +831,7 @@ public sealed class CofferInteractionController : IDisposable
     }
 
     private static unsafe bool TryReadTreasureFlags(IGameObject gameObject, out TreasureFlags flags)
-    {
-        flags = TreasureFlags.None;
-        if (gameObject == null || gameObject.Address == nint.Zero)
-        {
-            return false;
-        }
-
-        var objectPointer = (GameObject*)(void*)gameObject.Address;
-        if (objectPointer == null)
-        {
-            return false;
-        }
-
-        var treasurePointer = (FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure*)objectPointer;
-        flags = treasurePointer->Flags;
-        return true;
-    }
+        => TreasureObjectState.TryReadTreasureFlags(gameObject, out flags);
 
     private void LogTreasureFlagReadFailureOnce(string phase, IGameObject gameObject)
     {

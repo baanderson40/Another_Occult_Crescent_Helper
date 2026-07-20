@@ -7,6 +7,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Pictomancy;
+using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace AOCCH.Rendering;
 
@@ -80,7 +81,6 @@ public sealed class TreasureGuideRenderer : IDisposable
 
         try
         {
-            var target = snapshot.DetectedTreasures[0];
             var hints = new PctDrawHints
             {
                 DefaultParams = new PctDxParams
@@ -98,12 +98,6 @@ public sealed class TreasureGuideRenderer : IDisposable
                 return;
             }
 
-            var lineDistance = Vector3.Distance(player.Position, target.Position);
-            var distanceT = Math.Clamp(
-                (lineDistance - LineColorNearDistance) / (LineColorFarDistance - LineColorNearDistance),
-                0f,
-                1f);
-            var lineColor = ImGuiColor(Vector4.Lerp(NearLineColor, FarLineColor, distanceT));
             var markerColor = ImGuiColor(MarkerColor);
             var markerParams = hints.DefaultParams with
             {
@@ -111,22 +105,40 @@ public sealed class TreasureGuideRenderer : IDisposable
                 FresnelIntensity = 0.5f,
                 FresnelOpacity = 0.8f,
             };
-            var direction = new Vector3(
-                target.Position.X - player.Position.X,
-                0f,
-                target.Position.Z - player.Position.Z);
-            if (direction.LengthSquared() > 0.01f)
+
+            foreach (var target in snapshot.DetectedTreasures)
             {
-                direction = Vector3.Normalize(direction);
-            }
-            else
-            {
-                direction = Vector3.UnitZ;
+                if (!TryResolveTargetObject(target.GameObjectId, out var targetObject)
+                    || (TreasureObjectState.TryReadTreasureFlags(targetObject, out var treasureFlags)
+                        && treasureFlags.HasFlag(TreasureFlags.Opened)))
+                {
+                    continue;
+                }
+
+                var lineDistance = Vector3.Distance(player.Position, target.Position);
+                var distanceT = Math.Clamp(
+                    (lineDistance - LineColorNearDistance) / (LineColorFarDistance - LineColorNearDistance),
+                    0f,
+                    1f);
+                var lineColor = ImGuiColor(Vector4.Lerp(NearLineColor, FarLineColor, distanceT));
+                var direction = new Vector3(
+                    target.Position.X - player.Position.X,
+                    0f,
+                    target.Position.Z - player.Position.Z);
+                if (direction.LengthSquared() > 0.01f)
+                {
+                    direction = Vector3.Normalize(direction);
+                }
+                else
+                {
+                    direction = Vector3.UnitZ;
+                }
+
+                var lineStart = player.Position + direction * LineStartOffset;
+                draw.AddLineFilled(lineStart, target.Position, LineHalfWidth, lineColor, lineColor, p: hints.DefaultParams);
+                draw.AddSphere(target.Position + new Vector3(0f, MarkerHeight, 0f), MarkerRadius, markerColor, markerParams);
             }
 
-            var lineStart = player.Position + direction * LineStartOffset;
-            draw.AddLineFilled(lineStart, target.Position, LineHalfWidth, lineColor, lineColor, p: hints.DefaultParams);
-            draw.AddSphere(target.Position + new Vector3(0f, MarkerHeight, 0f), MarkerRadius, markerColor, markerParams);
             drawFailureLogged = false;
         }
         catch (Exception ex)
@@ -149,4 +161,21 @@ public sealed class TreasureGuideRenderer : IDisposable
 
     private static uint ImGuiColor(Vector4 color)
         => Dalamud.Bindings.ImGui.ImGui.ColorConvertFloat4ToU32(color);
+
+    private bool TryResolveTargetObject(ulong gameObjectId, out Dalamud.Game.ClientState.Objects.Types.IGameObject targetObject)
+    {
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is Dalamud.Game.ClientState.Objects.Types.IGameObject objectEntry
+                && objectEntry.GameObjectId == gameObjectId
+                && objectEntry.IsValid())
+            {
+                targetObject = objectEntry;
+                return true;
+            }
+        }
+
+        targetObject = null!;
+        return false;
+    }
 }

@@ -10,6 +10,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
+using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
 
 namespace AOCCH.Scanning;
 
@@ -493,6 +494,12 @@ public sealed class OccultCrescentScanner : IDisposable
                 || !objectEntry.ObjectKind.ToString().StartsWith("Treasure", StringComparison.OrdinalIgnoreCase)
                 || !objectEntry.IsTargetable
                 || !objectEntry.IsValid())
+            {
+                continue;
+            }
+
+            if (TreasureObjectState.TryReadTreasureFlags(objectEntry, out var treasureFlags)
+                && treasureFlags.HasFlag(TreasureFlags.Opened))
             {
                 continue;
             }
