@@ -238,53 +238,6 @@ public class ConfigWindow : Window, IDisposable
             value => configuration.SpawnArrivalRadius = value,
             nameof(configuration.SpawnArrivalRadius));
 
-        var manageInstanceTime = configuration.ManageInstanceTime;
-        if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
-        {
-            logger.Info($"[Config] op=setting-change key=ManageInstanceTime old={configuration.ManageInstanceTime} new={manageInstanceTime}");
-            configuration.ManageInstanceTime = manageInstanceTime;
-            configuration.Save();
-        }
-        DrawSettingTooltip("When enabled, pot timing can respect the remaining instance window and exit buffer.");
-
-        DrawNarrowIntSetting(
-            "FATE Completion Budget Minutes",
-            configuration.FateCompletionBudgetMinutes,
-            0,
-            60,
-            value => configuration.FateCompletionBudgetMinutes = value,
-            nameof(configuration.FateCompletionBudgetMinutes));
-        DrawNarrowIntSetting(
-            "Treasure Hunt Budget Minutes",
-            configuration.TreasureHuntBudgetMinutes,
-            0,
-            60,
-            value => configuration.TreasureHuntBudgetMinutes = value,
-            nameof(configuration.TreasureHuntBudgetMinutes));
-        DrawNarrowIntSetting(
-            "Instance Exit Buffer Minutes",
-            configuration.InstanceExitBufferMinutes,
-            0,
-            30,
-            value => configuration.InstanceExitBufferMinutes = value,
-            nameof(configuration.InstanceExitBufferMinutes));
-
-        DrawNarrowIntSetting(
-            "CE Fallback Cutoff Minutes",
-            configuration.CeFallbackCutoffMinutes,
-            0,
-            30,
-            value => configuration.CeFallbackCutoffMinutes = value,
-            nameof(configuration.CeFallbackCutoffMinutes));
-        DrawNarrowIntSetting(
-            "FATE Fallback Cutoff Minutes",
-            configuration.FateFallbackCutoffMinutes,
-            0,
-            30,
-            value => configuration.FateFallbackCutoffMinutes = value,
-            nameof(configuration.FateFallbackCutoffMinutes));
-        DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
-
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
         ImGui.SameLine();
@@ -366,7 +319,7 @@ public class ConfigWindow : Window, IDisposable
                 DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
 
                 DrawNarrowIntSetting(
-                    "Fallback",
+                    "Fallback Hide Threshold Distance",
                     configuration.HideThresholdDistance,
                     0,
                     500,
@@ -374,6 +327,56 @@ public class ConfigWindow : Window, IDisposable
                     nameof(configuration.HideThresholdDistance));
             }
         }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Time Management");
+
+        var manageInstanceTime = configuration.ManageInstanceTime;
+        if (ImGui.Checkbox("Manage Instance Time", ref manageInstanceTime))
+        {
+            logger.Info($"[Config] op=setting-change key=ManageInstanceTime old={configuration.ManageInstanceTime} new={manageInstanceTime}");
+            configuration.ManageInstanceTime = manageInstanceTime;
+            configuration.Save();
+        }
+        DrawSettingTooltip("When enabled, pot timing can respect the remaining instance window and exit buffer.");
+
+        DrawNarrowIntSetting(
+            "FATE Completion Budget Minutes",
+            configuration.FateCompletionBudgetMinutes,
+            0,
+            60,
+            value => configuration.FateCompletionBudgetMinutes = value,
+            nameof(configuration.FateCompletionBudgetMinutes));
+        DrawNarrowIntSetting(
+            "Treasure Hunt Budget Minutes",
+            configuration.TreasureHuntBudgetMinutes,
+            0,
+            60,
+            value => configuration.TreasureHuntBudgetMinutes = value,
+            nameof(configuration.TreasureHuntBudgetMinutes));
+        DrawNarrowIntSetting(
+            "Instance Exit Buffer Minutes",
+            configuration.InstanceExitBufferMinutes,
+            0,
+            30,
+            value => configuration.InstanceExitBufferMinutes = value,
+            nameof(configuration.InstanceExitBufferMinutes));
+
+        DrawNarrowIntSetting(
+            "CE Fallback Cutoff Minutes",
+            configuration.CeFallbackCutoffMinutes,
+            0,
+            30,
+            value => configuration.CeFallbackCutoffMinutes = value,
+            nameof(configuration.CeFallbackCutoffMinutes));
+        DrawNarrowIntSetting(
+            "FATE Fallback Cutoff Minutes",
+            configuration.FateFallbackCutoffMinutes,
+            0,
+            30,
+            value => configuration.FateFallbackCutoffMinutes = value,
+            nameof(configuration.FateFallbackCutoffMinutes));
+        DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
 
     }
 
@@ -530,7 +533,7 @@ public class ConfigWindow : Window, IDisposable
                 DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
 
                 DrawNarrowIntSetting(
-                    "Fallback",
+                    "Fallback Hide Threshold Distance",
                     configuration.VisibleCofferHideThresholdDistance,
                     0,
                     500,
