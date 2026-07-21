@@ -18,6 +18,7 @@ public sealed class TreasureSearchController : IDisposable
     private sealed record RefinementMovePlan(
         Vector3 RawTarget,
         Vector3 SnappedTarget,
+        TreasureDirection Direction,
         string SnapMethod,
         float SnapRadius,
         float SnapDistance,
@@ -991,7 +992,7 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         refinementStepIndex++;
-        logger.Info($"{BuildLogTag()} op=refine-move candidate={activeCandidateKey?.Label ?? "none"} stepIndex={refinementStepIndex}/{MaximumCandidateRefinementSteps} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> snapMethod={movePlan.SnapMethod} snapRadius={movePlan.SnapRadius:0} actualTarget={targetDistance:0.0}y");
+        logger.Info($"{BuildLogTag()} op=refine-move candidate={activeCandidateKey?.Label ?? "none"} stepIndex={refinementStepIndex}/{MaximumCandidateRefinementSteps} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} resolvedDirection={movePlan.Direction} raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> snapMethod={movePlan.SnapMethod} snapRadius={movePlan.SnapRadius:0} actualTarget={targetDistance:0.0}y");
         if (!TryStartRefinementMove(activeCandidate, target, Math.Max(2.5f, 8f / 2f), $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}", targetAlreadyResolved: true))
         {
             return;
@@ -2297,8 +2298,7 @@ public sealed class TreasureSearchController : IDisposable
 
     private RefinementMovePlan? ResolveRefinementMove(Vector3 playerPosition, TreasureDirection direction, float baseStep)
     {
-        var directionVector = GetDirectionVector(direction);
-        if (directionVector == Vector3.Zero)
+        if (GetDirectionVector(direction) == Vector3.Zero)
         {
             lastNavmeshRejectionSummary = string.Empty;
             return null;
@@ -2310,7 +2310,7 @@ public sealed class TreasureSearchController : IDisposable
         void RecordRejection(string reason)
             => rejectionCounts[reason] = rejectionCounts.GetValueOrDefault(reason, 0) + 1;
 
-        RefinementMovePlan? ValidateMeshTarget(Vector3 rawTarget, Vector3? meshTarget, string method, float radius, float step, float multiplier)
+        RefinementMovePlan? ValidateMeshTarget(Vector3 rawTarget, Vector3? meshTarget, TreasureDirection refinementDirection, Vector3 directionVector, string method, float radius, float step, float multiplier)
         {
             if (!meshTarget.HasValue)
             {
@@ -2335,6 +2335,14 @@ public sealed class TreasureSearchController : IDisposable
             var minimumForwardDistance = MathF.Max(1f, step * 0.20f);
             var maxLateralDistance = MathF.Max(3f, step * 0.75f);
 
+            if (targetDistance <= LocalMoveSkipDistance
+                && CalculateFlatDistance(playerPosition, rawTarget) > LocalMoveSkipDistance)
+            {
+                RecordRejection("collapsed_underfoot");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but movement collapsed to {targetDistance:0.0}y in the requested {refinementDirection} direction; rejecting fallback mesh point.");
+                return null;
+            }
+
             if (snapDistance > maxSnapDistance)
             {
                 RecordRejection("horizontal_snap");
@@ -2345,20 +2353,21 @@ public sealed class TreasureSearchController : IDisposable
             if (forwardDistance < minimumForwardDistance)
             {
                 RecordRejection("insufficient_forward");
-                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but it only advances {forwardDistance:0.0}y in the intended {direction} direction; rejecting mesh point.");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but it only advances {forwardDistance:0.0}y in the intended {refinementDirection} direction; rejecting mesh point.");
                 return null;
             }
 
             if (lateralDistance > maxLateralDistance)
             {
                 RecordRejection("lateral_drift");
-                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but lateral drift {lateralDistance:0.0}y exceeds {maxLateralDistance:0.0}y for {direction}; rejecting mesh point.");
+                logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> resolved via {method}(r={radius:0}) to <{snappedTarget.X:0.0}, {snappedTarget.Y:0.0}, {snappedTarget.Z:0.0}>, but lateral drift {lateralDistance:0.0}y exceeds {maxLateralDistance:0.0}y for {refinementDirection}; rejecting mesh point.");
                 return null;
             }
 
             return new RefinementMovePlan(
                 rawTarget,
                 snappedTarget,
+                refinementDirection,
                 method,
                 radius,
                 snapDistance,
@@ -2371,37 +2380,46 @@ public sealed class TreasureSearchController : IDisposable
                 snapDistance + (lateralDistance * 0.5f) + (MathF.Abs(targetDistance - step) * 0.25f));
         }
 
-        foreach (var multiplier in RefinementStepMultipliers)
+        foreach (var refinementDirection in GetRefinementDirections(direction))
         {
-            var step = baseStep * multiplier;
-            var rawTarget = BuildTreasureTarget(playerPosition, directionVector, step);
-            foreach (var radius in RefinementSearchRadii)
+            var directionVector = GetDirectionVector(refinementDirection);
+            foreach (var multiplier in RefinementStepMultipliers)
             {
-                RefinementMovePlan? radiusBestPlan = null;
-
-                var nearestPoint = movementController.FindNearestNavigablePoint(rawTarget, radius, MathF.Max(8f, radius * 0.4f));
-                var nearestPlan = ValidateMeshTarget(rawTarget, nearestPoint, "NearestPoint", radius, step, multiplier);
-                if (nearestPlan != null)
+                var step = baseStep * multiplier;
+                var rawTarget = BuildTreasureTarget(playerPosition, directionVector, step);
+                foreach (var radius in RefinementSearchRadii)
                 {
-                    radiusBestPlan = nearestPlan;
-                }
+                    RefinementMovePlan? radiusBestPlan = null;
 
-                var floorPoint = movementController.FindPointOnFloor(rawTarget, radius);
-                var floorPlan = ValidateMeshTarget(rawTarget, floorPoint, "PointOnFloor", radius, step, multiplier);
-                if (floorPlan != null && (radiusBestPlan == null || floorPlan.Score + PointOnFloorOverrideScoreAdvantage < radiusBestPlan.Score))
-                {
-                    radiusBestPlan = floorPlan;
-                }
+                    var nearestPoint = movementController.FindNearestNavigablePoint(rawTarget, radius, MathF.Max(8f, radius * 0.4f));
+                    var nearestPlan = ValidateMeshTarget(rawTarget, nearestPoint, refinementDirection, directionVector, "NearestPoint", radius, step, multiplier);
+                    if (nearestPlan != null)
+                    {
+                        radiusBestPlan = nearestPlan;
+                    }
 
-                if (radiusBestPlan != null && (bestPlan == null || radiusBestPlan.Score < bestPlan.Score))
-                {
-                    bestPlan = radiusBestPlan;
-                }
+                    var floorPoint = movementController.FindPointOnFloor(rawTarget, radius);
+                    var floorPlan = ValidateMeshTarget(rawTarget, floorPoint, refinementDirection, directionVector, "PointOnFloor", radius, step, multiplier);
+                    if (floorPlan != null && (radiusBestPlan == null || floorPlan.Score + PointOnFloorOverrideScoreAdvantage < radiusBestPlan.Score))
+                    {
+                        radiusBestPlan = floorPlan;
+                    }
 
-                if (floorPoint == null && nearestPoint == null)
-                {
-                    logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> had no navmesh point from PointOnFloor or NearestPoint at radius {radius:0}.");
+                    if (radiusBestPlan != null && (bestPlan == null || radiusBestPlan.Score < bestPlan.Score))
+                    {
+                        bestPlan = radiusBestPlan;
+                    }
+
+                    if (floorPoint == null && nearestPoint == null)
+                    {
+                        logger.Debug($"Treasure target <{rawTarget.X:0.0}, {rawTarget.Y:0.0}, {rawTarget.Z:0.0}> had no navmesh point from PointOnFloor or NearestPoint at radius {radius:0}.");
+                    }
                 }
+            }
+
+            if (bestPlan != null)
+            {
+                break;
             }
         }
 
@@ -2410,6 +2428,16 @@ public sealed class TreasureSearchController : IDisposable
             : string.Join(", ", rejectionCounts.OrderBy(entry => entry.Key).Select(entry => $"{entry.Key}={entry.Value}"));
         return bestPlan;
     }
+
+    private static TreasureDirection[] GetRefinementDirections(TreasureDirection direction)
+        => direction switch
+        {
+            TreasureDirection.Northeast => [direction, TreasureDirection.East, TreasureDirection.North],
+            TreasureDirection.Southeast => [direction, TreasureDirection.East, TreasureDirection.South],
+            TreasureDirection.Southwest => [direction, TreasureDirection.West, TreasureDirection.South],
+            TreasureDirection.Northwest => [direction, TreasureDirection.West, TreasureDirection.North],
+            _ => [direction],
+        };
 
     private float GetRefinementStepSize(string distanceBucket)
         => distanceBucket switch
