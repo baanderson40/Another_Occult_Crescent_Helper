@@ -1,0 +1,159 @@
+name: Report a plugin issue
+description: Collect detailed Another Occult Crescent Helper bug reports and troubleshooting information
+title: "[Issue]: "
+labels: ["needs more information"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue with Another Occult Crescent Helper.
+
+        Please fill out the fields below as completely as possible. The most helpful reports include exact reproduction steps and logs from the in-game AOCCH log window (`/aocch log`).
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      description: What kind of problem are you reporting?
+      options:
+        - Bug
+        - Regression
+        - UI / configuration issue
+        - FATE or Critical Engagement automation issue
+        - Pot or treasure issue
+        - Treasure coffer route issue
+        - Movement or pathfinding issue
+        - Currency shopping issue
+        - Dependency or integration issue
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin version
+      description: What Another Occult Crescent Helper version are you using?
+      placeholder: "Example: 0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: dalamud_environment
+    attributes:
+      label: Dalamud / launcher environment
+      description: Include the Dalamud API version, launcher version, and testing or stable channel if relevant.
+      placeholder: "Example: Dalamud API 15, XIVLauncher stable"
+    validations:
+      required: false
+
+  - type: input
+    id: client_language
+    attributes:
+      label: Client language
+      description: Which FFXIV client language are you using?
+      placeholder: "Example: English"
+    validations:
+      required: false
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the issue.
+      placeholder: "What went wrong?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature or command affected
+      description: Which feature, command, window, or configuration area is involved?
+      placeholder: |
+        Examples:
+        - /aocch start
+        - /aocch coffer-start
+        - Treasure Coffers configuration
+        - Currency Shopping configuration
+        - Debug window
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect AOCCH to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps needed to reproduce the issue.
+      placeholder: |
+        1. Enter a supported Occult Crescent territory
+        2. Enable the relevant feature
+        3. Run a command or start the activity
+        4. Observe the issue
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration and dependency details
+      description: Include relevant settings, territory, character/job details, and dependency versions or status.
+      placeholder: |
+        Examples:
+        - Territory: South Horn
+        - Relevant configuration: ...
+        - vnavmesh: enabled and available
+        - Lifestream: enabled and available
+        - BossMod: enabled and available
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ### How to collect AOCCH logs
+
+        Please attach logs if possible:
+        1. Reproduce the issue, then open `/aocch log` or open the Log window from AOCCH
+        2. Use **Copy Mode** to select the relevant entries, then paste them below
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: AOCCH logs
+      description: Paste the relevant entries from the AOCCH Log window.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or video
+      description: Add screenshots or recordings if they help explain the problem.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Include anything else that may help diagnose the issue.
+    validations:
+      required: false
