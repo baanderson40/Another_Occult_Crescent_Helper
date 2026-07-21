@@ -16,21 +16,8 @@ public static class CofferRecognition
             return false;
         }
 
-        if (data.BaseIds.Contains(gameObject.BaseId))
-        {
-            source = "base-id+object-kind";
-            return true;
-        }
-
-        var name = gameObject.Name.ToString();
-        if (data.LocalizedNames.Any(configuredName => string.Equals(configuredName.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)))
-        {
-            source = "localized-name+object-kind";
-            return true;
-        }
-
-        source = string.Empty;
-        return false;
+        source = "object-kind";
+        return true;
     }
 
     public static bool TryRecognizePotReveal(VisibleCofferData data, IGameObject gameObject, out string source)
