@@ -35,7 +35,7 @@ Add the following custom repository URL in Dalamud's plugin settings:
 
 `https://raw.githubusercontent.com/baanderson40/dalamud_plugins/master/repo.json`
 
-Then install **Another Occult Crescent Helper** from the plugin list. For development, clone this repository and build `AOCCH/AOCCH.csproj` in an environment configured for the Dalamud.NET SDK.
+Then install **Another Occult Crescent Helper** from the plugin list.
 
 The project is not a standalone application and must run inside Dalamud alongside Final Fantasy XIV.
 
@@ -43,10 +43,10 @@ The project is not a standalone application and must run inside Dalamud alongsid
 
 1. Enter a supported Occult Crescent territory.
 2. Install and enable vnavmesh, Lifestream, and BossMod.
-3. Open AOCCH from the Dalamud plugin list or run `/aocch`.
-4. Configure the desired CE, FATE, pot, treasure, coffer, combat, and shopping options.
+3. Open AOCCH with `/aocch` if needed.
+4. Configure the desired CE, FATE, pot, treasure, coffer, combat, and shopping options in the config window.
 5. Start the unified farm session from the main window or with `/aocch start`.
-6. Monitor the current activity in the main window and investigate blocked starts in the Dependencies or Log windows.
+6. Monitor the current activity in the main window.
 
 ## Configuration
 
@@ -59,9 +59,7 @@ The configuration window is divided into these tabs:
 - **Shopping**: configure currency reserves, purchase thresholds, item priorities, keep amounts, one-off purchases, and keep-buying behavior.
 - **Settings**: configure confirmed coffer observation sharing, autorotation overrides, target ranges, buff rotation, Return usage, mounting distance, and interface scaling.
 
-Confirmed coffer observation sharing is disabled by default. When enabled, the plugin transmits only territory, position, coffer type, version, timestamp, and a locally generated installation hash to the public observation endpoint.
-
-Candidate review can be run from Windows PowerShell 5.1 with `AOCCH/Review-CofferCandidates.ps1`. Set the local `$AdminToken` field in that script before running it, and do not commit the script after adding the token.
+Confirmed coffer observation sharing is disabled by default. When enabled, the plugin transmits only territory, position, coffer type, version, and timestamp to the public coffer observation database for crowdsourcing.
 
 Dangerous travel settings are experimental and intended for characters with suitable Knowledge progression. Review the tooltips in the configuration window before enabling them.
 
@@ -74,7 +72,6 @@ All commands use the `/aocch` prefix.
 | `/aocch` | Toggle the main window |
 | `/aocch main` | Toggle the main window |
 | `/aocch config` | Toggle the configuration window |
-| `/aocch debug` | Toggle the debug window |
 | `/aocch log` | Toggle the log window |
 | `/aocch shopping` | Open shopping configuration |
 | `/aocch start` | Start a unified CE/FATE farm session |
@@ -89,7 +86,7 @@ The manual overworld coffer route cannot start while the unified farm session is
 ## Safety And Limitations
 
 - Automation is limited to territories and features with validated data profiles.
-- The plugin stops or blocks flows when the player dies, changes territory, loses required data, or encounters an unrecoverable movement or interaction failure.
+- The plugin stops or blocks flows when the player changes territory, loses required data, or encounters an unrecoverable movement or interaction failure.
 - Combat automation requires the relevant BossMod integration and suitable combat configuration.
 - Pathing and teleport behavior depends on vnavmesh and Lifestream being installed, available, and usable.
 - Dangerous travel, Hide usage, Ninja gearset swaps, weather handling, and high-level threat rules should be tested carefully before unattended use.
