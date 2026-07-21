@@ -1,0 +1,31 @@
+namespace AOCCH.Automation;
+
+public enum FarmSessionState
+{
+    Idle,
+    Starting,
+    WaitingForSupportedTerritory,
+    ValidatingDependencies,
+    RunningBuffRotation,
+    RecoveringToBase,
+    SelectingTarget,
+    WaitingForPredictedPotWindow,
+    WaitingAtPotSpawn,
+    RunningPots,
+    RunningTreasureHunt,
+    RunningCe,
+    RunningFate,
+    SwitchingToFreelancerForCofferSurvey,
+    WaitingForCofferSurvey,
+    RestoringOriginalJobAfterCofferSurvey,
+    RunningVisibleCofferRoute,
+    WaitingForDeathRecovery,
+    ResumingInterruptedCe,
+    ResumingInterruptedFate,
+    ResumingInterruptedPotFate,
+    RunningCurrencyShopping,
+    IdleWaiting,
+    Stopping,
+    Stopped,
+    Failed,
+}
