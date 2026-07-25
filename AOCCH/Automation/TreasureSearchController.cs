@@ -1444,8 +1444,13 @@ public sealed class TreasureSearchController : IDisposable
         var canonicalPosition = candidate.Position.ToVector3();
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition);
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
-        var hasKnowledgeThreat = TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove);
-        var isDangerousCandidate = !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate);
+        ForayThreatEntity? threat = null;
+        var hideAtOrAbove = 0;
+        var hasKnowledgeThreat = configuration.UseNinjaForDangerousArea
+            && TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out threat, out hideAtOrAbove);
+        var isDangerousCandidate = configuration.UseNinjaForDangerousArea
+            ? !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)
+            : IsAggroDangerousCandidate(candidate);
         var requiresDangerousTravel = isDangerousCandidate || hasKnowledgeThreat;
         var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
@@ -1533,7 +1538,8 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TryStartKnowledgeThreatTravel()
     {
-        if (dangerousTreasureTravelController.IsRunning
+        if (!configuration.UseNinjaForDangerousArea
+            || dangerousTreasureTravelController.IsRunning
             || activeCandidateApproachWaypointIndex >= 0
             || !TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove)
             || !TryGetCurrentCandidate(out var candidate))
@@ -1545,12 +1551,6 @@ public sealed class TreasureSearchController : IDisposable
         if (!destination.HasValue)
         {
             SetFailure($"Treasure candidate {candidate.Label} has no reliable vnavmesh point while responding to a live knowledge threat.");
-            return true;
-        }
-
-        if (!configuration.UseNinjaForDangerousArea)
-        {
-            SetFailure($"Treasure candidate {candidate.Label} encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous-area Ninja travel is disabled.");
             return true;
         }
 
@@ -1616,8 +1616,11 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         activeCandidateApproachWaypointIndex = -1;
-        var hasKnowledgeThreat = TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out _, out _);
-        var requiresDangerousTravel = (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)) || hasKnowledgeThreat;
+        var hasKnowledgeThreat = configuration.UseNinjaForDangerousArea
+            && TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out _, out _);
+        var requiresDangerousTravel = configuration.UseNinjaForDangerousArea
+            ? (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)) || hasKnowledgeThreat
+            : IsAggroDangerousCandidate(candidate);
         var destination = movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
@@ -2024,7 +2027,7 @@ public sealed class TreasureSearchController : IDisposable
                 continue;
             }
 
-            if (IsDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
+            if (IsAggroDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
             {
                 continue;
             }
@@ -2042,7 +2045,9 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var handoffCandidate = orderedCandidates[bestIndex];
-        var handoffIsDangerous = !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(handoffCandidate);
+        var handoffIsDangerous = configuration.UseNinjaForDangerousArea
+            ? !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(handoffCandidate)
+            : IsAggroDangerousCandidate(handoffCandidate);
         var handoffKey = ToCandidateKey(handoffCandidate);
         var usedOverride = cofferPositionOverrideStore.TryResolvePosition(handoffKey, out var overridePosition);
         var handoffResolvedPosition = usedOverride ? overridePosition : handoffCandidate.Position.ToVector3();
@@ -2132,13 +2137,15 @@ public sealed class TreasureSearchController : IDisposable
 
         foreach (var candidate in group.Candidates)
         {
-            if (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate))
+            if (IsAggroDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
             {
-                if (!configuration.UseNinjaForDangerousArea)
-                {
-                    continue;
-                }
+                continue;
+            }
 
+            if (configuration.UseNinjaForDangerousArea
+                && !scanner.Snapshot.PlayerForayLevel.HasValue
+                && IsDangerousCandidate(candidate))
+            {
                 dangerousCandidates.Add(candidate);
             }
             else
@@ -2186,6 +2193,9 @@ public sealed class TreasureSearchController : IDisposable
     private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
         => candidate.AggroLevel > configuration.MaximumAggroLevel
             || (candidate.HideThresholdDistance ?? 0) > 0;
+
+    private bool IsAggroDangerousCandidate(TreasureCofferCandidateData candidate)
+        => candidate.AggroLevel > configuration.MaximumAggroLevel;
 
     private DangerousTreasureTravelOptions GetDangerousTravelOptions()
         => new(configuration.NinjaGearsetNumber, configuration.HideThresholdDistance, configuration.MaximumAggroLevel);
