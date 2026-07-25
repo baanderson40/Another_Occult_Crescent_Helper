@@ -273,11 +273,11 @@ public class ConfigWindow : Window, IDisposable
                 nameof(configuration.FateGearsetNumber));
         }
 
-        ImGui.Separator();
-        ImGui.TextUnformatted("Threat Handling");
-
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+        if (configuration.UseNinjaForDangerousArea)
         {
+            ImGui.Separator();
+            ImGui.TextUnformatted("Threat Handling");
+
             var liveHideLevelLabel = GetLiveKnowledgeHideLevelLabel("Live Knowledge Hide Offset", configuration.PotKnowledgeHideOffset);
             DrawNarrowIntSetting(
                 liveHideLevelLabel,
@@ -303,11 +303,8 @@ public class ConfigWindow : Window, IDisposable
                 value => configuration.KnowledgeThreatExitDistance = value,
                 nameof(configuration.KnowledgeThreatExitDistance));
             DrawSettingTooltip("Shared with overworld coffers. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
-        }
 
-        if (ImGui.CollapsingHeader("Fallback"))
-        {
-            using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+            if (ImGui.CollapsingHeader("Fallback"))
             {
                 DrawNarrowIntSetting(
                     "Fallback Maximum Aggro Level",
@@ -326,6 +323,17 @@ public class ConfigWindow : Window, IDisposable
                     value => configuration.HideThresholdDistance = value,
                     nameof(configuration.HideThresholdDistance));
             }
+        }
+        else
+        {
+            DrawNarrowIntSetting(
+                "Maximum Aggro Level",
+                configuration.MaximumAggroLevel,
+                0,
+                20,
+                value => configuration.MaximumAggroLevel = value,
+                nameof(configuration.MaximumAggroLevel));
+            DrawSettingTooltip("Candidates above this aggro level are skipped when Ninja travel is disabled.");
         }
 
         ImGui.Separator();
@@ -487,11 +495,11 @@ public class ConfigWindow : Window, IDisposable
                 nameof(configuration.FateGearsetNumber));
         }
 
-        ImGui.Separator();
-        ImGui.TextUnformatted("Threat Handling");
-
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+        if (configuration.UseNinjaForDangerousVisibleCoffers)
         {
+            ImGui.Separator();
+            ImGui.TextUnformatted("Threat Handling");
+
             var liveHideLevelLabel = GetLiveKnowledgeHideLevelLabel("Live Knowledge Hide Offset", configuration.VisibleCofferKnowledgeHideOffset);
             DrawNarrowIntSetting(
                 liveHideLevelLabel,
@@ -517,11 +525,8 @@ public class ConfigWindow : Window, IDisposable
                 value => configuration.KnowledgeThreatExitDistance = value,
                 nameof(configuration.KnowledgeThreatExitDistance));
             DrawSettingTooltip("Shared with pots. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
-        }
 
-        if (ImGui.CollapsingHeader("Fallback"))
-        {
-            using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+            if (ImGui.CollapsingHeader("Fallback"))
             {
                 DrawNarrowIntSetting(
                     "Fallback Maximum Aggro Level",
@@ -540,6 +545,17 @@ public class ConfigWindow : Window, IDisposable
                     value => configuration.VisibleCofferHideThresholdDistance = value,
                     nameof(configuration.VisibleCofferHideThresholdDistance));
             }
+        }
+        else
+        {
+            DrawNarrowIntSetting(
+                "Maximum Aggro Level",
+                configuration.VisibleTreasureCofferMaximumAggroLevel,
+                0,
+                28,
+                value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
+                nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
+            DrawSettingTooltip("Route spots above this aggro level are skipped when Ninja travel is disabled.");
         }
 
     }

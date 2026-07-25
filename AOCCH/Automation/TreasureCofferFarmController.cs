@@ -1046,17 +1046,12 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool TryStartThreatenedCofferTravel(VisibleCofferMatch match, string source)
     {
         var spot = ActiveSpot;
-        if (spot == null
+        if (!configuration.UseNinjaForDangerousVisibleCoffers
+            || spot == null
             || dangerousTreasureTravelController.IsRunning
             || !TryGetVisibleKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove))
         {
             return false;
-        }
-
-        if (!configuration.UseNinjaForDangerousVisibleCoffers)
-        {
-            SetFailure($"Overworld coffer interaction encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous Ninja travel is disabled.");
-            return true;
         }
 
         var playerPosition = objectTable.LocalPlayer?.Position;
@@ -1194,6 +1189,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
     {
+        if (!configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            return IsDangerousByAggro(spot);
+        }
+
         if (RequiresHiddenTravel(spot))
         {
             return true;
@@ -1325,6 +1325,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool RequiresHiddenTravel(VisibleCofferFarmSpotData spot)
     {
+        if (!configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            return false;
+        }
+
         if (ReferenceEquals(spot, ActiveSpot) && activeSpotWeatherForcedHidden)
         {
             return true;
@@ -1361,17 +1366,12 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool TryStartKnowledgeThreatTravel()
     {
         var spot = ActiveSpot;
-        if (spot == null
+        if (!configuration.UseNinjaForDangerousVisibleCoffers
+            || spot == null
             || dangerousTreasureTravelController.IsRunning
             || !TryGetVisibleKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out var threat, out var hideAtOrAbove))
         {
             return false;
-        }
-
-        if (!configuration.UseNinjaForDangerousVisibleCoffers)
-        {
-            SetFailure($"Overworld coffer route encountered live knowledge threat {threat?.Name ?? "unknown"} but dangerous Ninja travel is disabled.");
-            return true;
         }
 
         movementController.Stop("Live knowledge threat entered the overworld coffer Hide range.");
