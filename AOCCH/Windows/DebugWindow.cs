@@ -246,6 +246,11 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted("Debug Actions");
         ImGui.TextWrapped("These diagnostic operations are intentionally available only from the debug window.");
 
+        if (ImGui.Button("Open North Horn Status Preview"))
+        {
+            plugin.OpenNorthHornStatusPreview();
+        }
+
         ImGui.Checkbox("Wait for Magical Elixir readiness", ref waitForMagicalElixirReady);
         if (ImGui.Button("Use Magical Elixir"))
         {

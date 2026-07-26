@@ -390,6 +390,13 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawTreasureCoffersTab()
     {
+        if (string.Equals(plugin.Scanner.Snapshot.TerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase))
+        {
+            ImGui.TextUnformatted("North Horn Supported Features");
+            DrawOverworldTreasureGuideSetting();
+            return;
+        }
+
         if (!RequireFeature(plugin.Scanner.Snapshot.CanRunVisibleCofferRoute || plugin.Scanner.Snapshot.CanRunPotTreasure, "Treasure coffer data"))
         {
             return;
@@ -404,14 +411,7 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
 
-        var enableOverworldTreasureGuide = configuration.EnableOverworldTreasureGuide;
-        if (ImGui.Checkbox("Enable Overworld Treasure Guide", ref enableOverworldTreasureGuide))
-        {
-            logger.Info($"[Config] op=setting-change key=EnableOverworldTreasureGuide old={configuration.EnableOverworldTreasureGuide} new={enableOverworldTreasureGuide}");
-            configuration.EnableOverworldTreasureGuide = enableOverworldTreasureGuide;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Draws a world-space line and marker to the nearest detected overworld treasure. It does not start or control coffer automation.");
+        DrawOverworldTreasureGuideSetting();
 
         DrawNarrowIntSetting(
             "Automatic Silver Threshold",
@@ -558,6 +558,20 @@ public class ConfigWindow : Window, IDisposable
             DrawSettingTooltip("Route spots above this aggro level are skipped when Ninja travel is disabled.");
         }
 
+    }
+
+    private void DrawOverworldTreasureGuideSetting()
+    {
+        var enableOverworldTreasureGuide = configuration.EnableOverworldTreasureGuide;
+        if (ImGui.Checkbox("Enable Overworld Treasure Guide", ref enableOverworldTreasureGuide))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableOverworldTreasureGuide old={configuration.EnableOverworldTreasureGuide} new={enableOverworldTreasureGuide}");
+            configuration.EnableOverworldTreasureGuide = enableOverworldTreasureGuide;
+            configuration.Save();
+        }
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("Draws a world-space line and marker to the nearest detected overworld treasure. It does not start or control coffer automation.");
     }
 
     private void DrawSettingsTab()
