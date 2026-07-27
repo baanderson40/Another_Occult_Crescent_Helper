@@ -39,7 +39,8 @@ public sealed class MovementController : IDisposable
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
     private const float AethernetApproachTolerance = 0.25f;
-    private const float BaseCampSideArcDegrees = 50f;
+    private const float BaseCampRightApproachDegrees = 90f;
+    private const float BaseCampLeftApproachAllowanceDegrees = 15f;
     private const float ProgressThreshold = 2f;
     private const int MaxAethernetAttempts = 3;
     private const int MaxReturnAttempts = 3;
@@ -1988,12 +1989,14 @@ public sealed class MovementController : IDisposable
         }
 
         var outward = delta / length;
-        var side = Random.Shared.Next(2) == 0
-            ? new Vector2(-outward.Y, outward.X)
-            : new Vector2(outward.Y, -outward.X);
-        var baseAngle = MathF.Atan2(side.Y, side.X);
-        var halfArcRadians = (BaseCampSideArcDegrees * (MathF.PI / 180f)) * 0.5f;
-        var angle = baseAngle + (((float)Random.Shared.NextDouble() * 2f - 1f) * halfArcRadians);
+        var straightAngle = MathF.Atan2(outward.Y, outward.X);
+        var rightApproachRadians = BaseCampRightApproachDegrees * (MathF.PI / 180f);
+        var leftAllowanceRadians = BaseCampLeftApproachAllowanceDegrees * (MathF.PI / 180f);
+        var angle = straightAngle - (rightApproachRadians * (float)Random.Shared.NextDouble());
+        if (Random.Shared.NextDouble() < 0.15)
+        {
+            angle = straightAngle + (leftAllowanceRadians * (float)Random.Shared.NextDouble());
+        }
         var radius = GetRandomAethernetBandRadius(step);
         return new Vector3(
             step.InteractionCenter.X + (MathF.Cos(angle) * radius),
