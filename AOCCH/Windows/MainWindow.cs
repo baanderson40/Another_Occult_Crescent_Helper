@@ -153,7 +153,7 @@ public sealed class MainWindow : Window, IDisposable
     private string? GetPanicStopBlocker()
         => scanner.Snapshot.IsInSupportedTerritory ? null : "Panic Stop requires a supported territory.";
 
-    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null, Action? disabledClick = null)
+    private bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledTooltip = null, Vector2? iconOffset = null, Action? disabledClick = null)
     {
         const float IconScale = 0.85f;
         var buttonSize = new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight());
@@ -213,7 +213,7 @@ public sealed class MainWindow : Window, IDisposable
         iconPosition = new Vector2(MathF.Round(iconPosition.X), MathF.Round(iconPosition.Y));
         drawList.AddText(UiBuilder.IconFont, iconFontSize, iconPosition, iconColor, iconText);
 
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        if (configuration.ShowTooltips && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
             ImGui.SetTooltip(enabled || string.IsNullOrEmpty(disabledTooltip) ? tooltip : disabledTooltip);
         }

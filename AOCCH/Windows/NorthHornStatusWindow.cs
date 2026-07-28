@@ -85,7 +85,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             configuration.Save();
         }
         ImGui.SameLine();
-        DrawTooltipMarker("Draws a world-space line and marker to the nearest detected overworld treasure. It provides guidance only and does not start or control coffer automation.");
+        DrawTooltipMarker("Draws a visual guide line and marker in-game pointing to the closest coffer. Purely visual—it doesn't automate movement.");
 
         var enableCofferReporting = configuration.EnableCofferObservationSubmission;
         if (ImGui.Checkbox("Enable anonymous coffer position reporting", ref enableCofferReporting))
@@ -95,7 +95,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             configuration.Save();
         }
         ImGui.SameLine();
-        DrawTooltipMarker("When enabled, AOCCH reports confirmed coffer observations to help build shared coffer position data for future North Horn support. Reports include the zone, coffer type, position, plugin version, and timestamp. No character name, account name, chat, inventory, or other personal information is transmitted. Reports are queued locally and sent when possible. You can disable reporting at any time.");
+        DrawTooltipMarker("Anonymously sends confirmed coffer locations to help map out spawn points for North Horn. No personal, character, or chat data is ever sent.");
 
         ImGui.Separator();
         var doNotShowAgain = configuration.NorthHornStatusDismissedRevision == CurrentStatusRevision;
@@ -105,6 +105,8 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             configuration.Save();
             plugin.Logger.Info($"[NorthHornStatus] op=dismissal-change revision={CurrentStatusRevision} dismissed={doNotShowAgain}");
         }
+        ImGui.SameLine();
+        DrawTooltipMarker("Hides this update popup on launch until the next major update.");
     }
 
     private static void DrawStatusRow(string feature, string support, string progress)
@@ -118,10 +120,10 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
         ImGui.TextUnformatted(progress);
     }
 
-    private static void DrawTooltipMarker(string text)
+    private void DrawTooltipMarker(string text)
     {
         ImGui.TextDisabled("(?)");
-        if (!ImGui.IsItemHovered())
+        if (!configuration.ShowTooltips || !ImGui.IsItemHovered())
         {
             return;
         }

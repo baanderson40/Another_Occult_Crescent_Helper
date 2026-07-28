@@ -139,6 +139,7 @@ public class Configuration : IPluginConfiguration
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;
+    public bool ShowTooltips { get; set; } = true;
     public bool EnableManualCurrencyShopping { get; set; }
     public int SilverStartThreshold { get; set; }
     public int GoldStartThreshold { get; set; }

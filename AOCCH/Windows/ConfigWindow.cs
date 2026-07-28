@@ -138,6 +138,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableCriticalEngagementFarming = enableCeFarming;
             configuration.Save();
         }
+        DrawSettingTooltip("Automatically joins and runs Critical Engagements during farm sessions. Turn this off to skip CEs entirely.");
 
         var prioritizeCe = configuration.PrioritizeCe;
         if (ImGui.Checkbox("Prioritize CE", ref prioritizeCe))
@@ -146,9 +147,13 @@ public class ConfigWindow : Window, IDisposable
             configuration.PrioritizeCe = prioritizeCe;
             configuration.Save();
         }
+        DrawSettingTooltip("Prioritizes available CEs over running FATEs or other activities.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Enabled Critical Engagements");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("Pick which CEs to join in this zone. Unchecked CEs will be ignored.");
         DrawCriticalEncounterCheckboxList();
     }
 
@@ -166,6 +171,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableFateFarming = enableFateFarming;
             configuration.Save();
         }
+        DrawSettingTooltip("Automatically farms FATEs during farm sessions. Turn this off if you don't want to farm FATEs.");
 
         var fatePriority = (int)configuration.FatePriority;
         ImGui.SetNextItemWidth(160);
@@ -175,6 +181,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.FatePriority = (FatePriority)fatePriority;
             configuration.Save();
         }
+        DrawSettingTooltip("Decides which FATE to head to next. 'Lowest Progress' targets newly spawned FATEs, while 'Nearest' picks whichever is closest.");
 
         ImGui.SetNextItemWidth(PotsNumericInputWidth);
         DrawClampedIntSetting(
@@ -184,9 +191,13 @@ public class ConfigWindow : Window, IDisposable
             50,
             value => configuration.FateDismountDistance = value,
             nameof(configuration.FateDismountDistance));
+        DrawSettingTooltip("How close to get to the FATE marker before dismounting (5 to 50 yalms).");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Enabled FATEs");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        DrawSettingTooltip("Pick which FATEs to farm in this zone. Unchecked FATEs will be skipped.");
         DrawFateCheckboxList();
     }
 
@@ -204,6 +215,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnablePotFarming = enablePotFarming;
             configuration.Save();
         }
+        DrawSettingTooltip("Enables automated pot FATE cycling and treasure hunting.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Route Setup");
@@ -221,6 +233,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.SetStartingPotFateId(territory.Key, nextFateId);
             configuration.Save();
         }
+        DrawSettingTooltip("Choose which pot FATE to kick off the route with in this zone. 'Auto' picks the best starting point for you.");
 
         DrawNarrowIntSetting(
             "Spawn Lead Minutes",
@@ -229,6 +242,7 @@ public class ConfigWindow : Window, IDisposable
             30,
             value => configuration.SpawnLeadMinutes = value,
             nameof(configuration.SpawnLeadMinutes));
+        DrawSettingTooltip("How many minutes before a pot FATE spawns to head over and wait for it.");
 
         DrawNarrowIntSetting(
             "Arrival Radius",
@@ -237,12 +251,13 @@ public class ConfigWindow : Window, IDisposable
             100,
             value => configuration.SpawnArrivalRadius = value,
             nameof(configuration.SpawnArrivalRadius));
+        DrawSettingTooltip("How close you need to be to the pot FATE marker before stopping to wait.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+        DrawSettingTooltip("This feature is experimental and is recommended for characters at max Knowledge level.");
 
         var useNinjaForDangerousArea = configuration.UseNinjaForDangerousArea;
         if (ImGui.Checkbox("Use Ninja For Dangerous Area", ref useNinjaForDangerousArea))
@@ -251,7 +266,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.UseNinjaForDangerousArea = useNinjaForDangerousArea;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, dangerous treasure candidates can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+        DrawSettingTooltip("Switches to Ninja and uses Hide to sneak through dangerous high-level areas on foot. (Experimental; recommended for max Knowledge level.)");
 
         using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
         {
@@ -262,7 +277,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.NinjaGearsetNumber = value,
                 nameof(configuration.NinjaGearsetNumber));
-            DrawSettingTooltip("This gearset value is linked with the overworld coffer Ninja gearset setting. Changing either one updates both.");
+            DrawSettingTooltip("Your Ninja gearset number. Used whenever sneak travel is required.");
 
             DrawNarrowIntSetting(
                 "FATE Gearset Number",
@@ -271,6 +286,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.FateGearsetNumber = value,
                 nameof(configuration.FateGearsetNumber));
+            DrawSettingTooltip("The gearset number you want to swap to when fighting FATEs.");
         }
 
         if (configuration.UseNinjaForDangerousArea)
@@ -286,7 +302,7 @@ public class ConfigWindow : Window, IDisposable
                 27,
                 value => configuration.PotKnowledgeHideOffset = value,
                 nameof(configuration.PotKnowledgeHideOffset));
-            DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 0 hides at equal level; negative values are more cautious.");
+            DrawSettingTooltip("Adjusts the mob level threshold for using Hide relative to your Knowledge level. Set to 0 to hide from mobs at your level or higher.");
 
             DrawNarrowIntSetting(
                 "Knowledge Threat Enter Range",
@@ -295,6 +311,7 @@ public class ConfigWindow : Window, IDisposable
                 50,
                 value => configuration.KnowledgeThreatEnterDistance = value,
                 nameof(configuration.KnowledgeThreatEnterDistance));
+            DrawSettingTooltip("Triggers Hide when a dangerous mob comes within this distance.");
             DrawNarrowIntSetting(
                 "Knowledge Threat Exit Range",
                 configuration.KnowledgeThreatExitDistance,
@@ -302,7 +319,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.KnowledgeThreatExitDistance = value,
                 nameof(configuration.KnowledgeThreatExitDistance));
-            DrawSettingTooltip("Shared with overworld coffers. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+            DrawSettingTooltip("Distance required to clear dangerous mobs before mounting back up. Keep this higher than Enter Range.");
 
             if (ImGui.CollapsingHeader("Fallback"))
             {
@@ -313,7 +330,7 @@ public class ConfigWindow : Window, IDisposable
                     20,
                     value => configuration.MaximumAggroLevel = value,
                     nameof(configuration.MaximumAggroLevel));
-                DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
+                DrawSettingTooltip("Mob aggro level limit used as a safety fallback when live zone knowledge data isn't loaded.");
 
                 DrawNarrowIntSetting(
                     "Fallback Hide Threshold Distance",
@@ -322,6 +339,7 @@ public class ConfigWindow : Window, IDisposable
                     500,
                     value => configuration.HideThresholdDistance = value,
                     nameof(configuration.HideThresholdDistance));
+                DrawSettingTooltip("Threat detection distance used as a fallback when live zone knowledge data isn't loaded.");
             }
         }
         else
@@ -333,7 +351,7 @@ public class ConfigWindow : Window, IDisposable
                 20,
                 value => configuration.MaximumAggroLevel = value,
                 nameof(configuration.MaximumAggroLevel));
-            DrawSettingTooltip("Candidates above this aggro level are skipped when Ninja travel is disabled.");
+            DrawSettingTooltip("Skips pot locations if nearby mobs exceed this level (used when Ninja travel is turned off).");
         }
 
         ImGui.Separator();
@@ -346,7 +364,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.ManageInstanceTime = manageInstanceTime;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, pot timing can respect the remaining instance window and exit buffer.");
+        DrawSettingTooltip("Tracks remaining instance time so you don't start a new pot cycle if you're about to get booted from the zone.");
 
         DrawNarrowIntSetting(
             "FATE Completion Budget Minutes",
@@ -355,6 +373,7 @@ public class ConfigWindow : Window, IDisposable
             60,
             value => configuration.FateCompletionBudgetMinutes = value,
             nameof(configuration.FateCompletionBudgetMinutes));
+        DrawSettingTooltip("Estimated time needed to finish a FATE. Won't start a FATE if a pot departure is coming up sooner than this.");
         DrawNarrowIntSetting(
             "Treasure Hunt Budget Minutes",
             configuration.TreasureHuntBudgetMinutes,
@@ -362,6 +381,7 @@ public class ConfigWindow : Window, IDisposable
             60,
             value => configuration.TreasureHuntBudgetMinutes = value,
             nameof(configuration.TreasureHuntBudgetMinutes));
+        DrawSettingTooltip("Estimated time needed to complete a treasure step before the next pot departure.");
         DrawNarrowIntSetting(
             "Instance Exit Buffer Minutes",
             configuration.InstanceExitBufferMinutes,
@@ -369,6 +389,7 @@ public class ConfigWindow : Window, IDisposable
             30,
             value => configuration.InstanceExitBufferMinutes = value,
             nameof(configuration.InstanceExitBufferMinutes));
+        DrawSettingTooltip("Safety margin left before the instance timer expires to safely leave or re-queue.");
 
         DrawNarrowIntSetting(
             "CE Fallback Cutoff Minutes",
@@ -377,6 +398,7 @@ public class ConfigWindow : Window, IDisposable
             30,
             value => configuration.CeFallbackCutoffMinutes = value,
             nameof(configuration.CeFallbackCutoffMinutes));
+        DrawSettingTooltip("Stops joining fallback CEs if a pot departure is scheduled within this many minutes.");
         DrawNarrowIntSetting(
             "FATE Fallback Cutoff Minutes",
             configuration.FateFallbackCutoffMinutes,
@@ -384,7 +406,7 @@ public class ConfigWindow : Window, IDisposable
             30,
             value => configuration.FateFallbackCutoffMinutes = value,
             nameof(configuration.FateFallbackCutoffMinutes));
-        DrawSettingTooltip("New fallback CE or non-pot FATE starts are held once the predicted pot departure is inside the configured cutoff window.");
+        DrawSettingTooltip("Stops starting fallback FATEs if a pot departure is scheduled within this many minutes.");
 
     }
 
@@ -409,7 +431,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableAutomaticTreasureCofferRoute = enableAutomaticTreasureCofferRoute;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, base-camp recovery can use Occult Treasuresight and automatically start the overworld coffer route once both threshold rules are satisfied.");
+        DrawSettingTooltip("Automatically scans for overworld coffers at base camp using Treasuresight and runs the route if enough coffers are reported.");
 
         DrawOverworldTreasureGuideSetting();
 
@@ -420,6 +442,7 @@ public class ConfigWindow : Window, IDisposable
             8,
             value => configuration.AutomaticTreasureCofferSilverThreshold = value,
             nameof(configuration.AutomaticTreasureCofferSilverThreshold));
+        DrawSettingTooltip("Minimum Silver Coffers needed from a Treasuresight scan to trigger the automatic route (0 = any).");
         DrawNarrowIntSetting(
             "Automatic Bronze Threshold",
             configuration.AutomaticTreasureCofferBronzeThreshold,
@@ -427,7 +450,7 @@ public class ConfigWindow : Window, IDisposable
             30,
             value => configuration.AutomaticTreasureCofferBronzeThreshold = value,
             nameof(configuration.AutomaticTreasureCofferBronzeThreshold));
-        DrawSettingTooltip("0 means any amount of that type. Both automatic threshold checks must pass. A 0/0 configuration starts the route when the survey finds at least one coffer of either type.");
+        DrawSettingTooltip("Minimum Bronze Coffers needed from a Treasuresight scan to trigger the automatic route (0 = any).");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Route Setup");
@@ -439,6 +462,7 @@ public class ConfigWindow : Window, IDisposable
             50,
             value => configuration.ArrivalDistance = value,
             nameof(configuration.ArrivalDistance));
+        DrawSettingTooltip("How close to get to a coffer spot before performing a final search and moving on.");
 
         var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
         if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
@@ -448,7 +472,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawSettingTooltip("Skips route entries explicitly marked for Ashkin time.");
+        DrawSettingTooltip("Bypasses high-level cavern coffers when aggressive Ashkin mobs are active at night.");
 
         var skipUnsafeWeatherRoutes = configuration.SkipUnsafeWeatherRoutes;
         if (ImGui.Checkbox("Skip Unsafe-Weather Routes", ref skipUnsafeWeatherRoutes))
@@ -458,13 +482,13 @@ public class ConfigWindow : Window, IDisposable
             configuration.Save();
         }
 
-        DrawSettingTooltip("During unsafe weather, skips the Abandoned Ascent 7 route. Heathcliff_10 uses Ninja Hide when enabled, or is skipped when Ninja travel is disabled.");
+        DrawSettingTooltip("Avoids dangerous route paths when unsafe weather spawns aggressive mobs.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("This feature is still experimental and designed for characters at maximum Knowledge level.");
+        DrawSettingTooltip("This feature is experimental and is recommended for characters at max Knowledge level.");
 
         var useNinjaForDangerousVisibleCoffers = configuration.UseNinjaForDangerousVisibleCoffers;
         if (ImGui.Checkbox("Use Ninja For Dangerous Coffers", ref useNinjaForDangerousVisibleCoffers))
@@ -473,7 +497,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.UseNinjaForDangerousVisibleCoffers = useNinjaForDangerousVisibleCoffers;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, dangerous overworld coffer route spots can switch to the configured Ninja gearset, use Hide, and finish the last stretch on foot.");
+        DrawSettingTooltip("Switches to Ninja and uses Hide to safely reach dangerous coffer spots on foot. (Experimental; recommended for max Knowledge level.)");
 
         using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
         {
@@ -484,7 +508,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.VisibleCofferNinjaGearsetNumber = value,
                 nameof(configuration.VisibleCofferNinjaGearsetNumber));
-            DrawSettingTooltip("This gearset value is linked with the Pots tab Ninja gearset setting. Changing either one updates both.");
+            DrawSettingTooltip("Your Ninja gearset number. Used whenever sneak travel is required.");
 
             DrawNarrowIntSetting(
                 "FATE Gearset Number",
@@ -493,6 +517,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.FateGearsetNumber = value,
                 nameof(configuration.FateGearsetNumber));
+            DrawSettingTooltip("The gearset number you want to swap to when fighting FATEs during a coffer run.");
         }
 
         if (configuration.UseNinjaForDangerousVisibleCoffers)
@@ -508,7 +533,7 @@ public class ConfigWindow : Window, IDisposable
                 27,
                 value => configuration.VisibleCofferKnowledgeHideOffset = value,
                 nameof(configuration.VisibleCofferKnowledgeHideOffset));
-            DrawSettingTooltip("Hide for entities at or above your Knowledge level plus this offset. 4 means a Knowledge 20 player hides at level 24 and above.");
+            DrawSettingTooltip("Adjusts the mob level threshold for using Hide relative to your Knowledge level. Set to 0 to hide from mobs at your level or higher.");
 
             DrawNarrowIntSetting(
                 "Knowledge Threat Enter Range",
@@ -517,6 +542,7 @@ public class ConfigWindow : Window, IDisposable
                 50,
                 value => configuration.KnowledgeThreatEnterDistance = value,
                 nameof(configuration.KnowledgeThreatEnterDistance));
+            DrawSettingTooltip("Triggers Hide when a dangerous mob gets within this distance.");
             DrawNarrowIntSetting(
                 "Knowledge Threat Exit Range",
                 configuration.KnowledgeThreatExitDistance,
@@ -524,7 +550,7 @@ public class ConfigWindow : Window, IDisposable
                 100,
                 value => configuration.KnowledgeThreatExitDistance = value,
                 nameof(configuration.KnowledgeThreatExitDistance));
-            DrawSettingTooltip("Shared with pots. A nearby high-level entity starts Hide inside the enter range. Hidden travel resumes mounted movement only after none remain inside the exit range.");
+            DrawSettingTooltip("Distance required to clear dangerous mobs before mounting back up. Keep this higher than Enter Range.");
 
             if (ImGui.CollapsingHeader("Fallback"))
             {
@@ -535,7 +561,7 @@ public class ConfigWindow : Window, IDisposable
                     28,
                     value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
                     nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-                DrawSettingTooltip("Used only when live Foray knowledge data is unavailable.");
+                DrawSettingTooltip("Aggro level limit used as a safety fallback when live zone knowledge data isn't loaded.");
 
                 DrawNarrowIntSetting(
                     "Fallback Hide Threshold Distance",
@@ -544,6 +570,7 @@ public class ConfigWindow : Window, IDisposable
                     500,
                     value => configuration.VisibleCofferHideThresholdDistance = value,
                     nameof(configuration.VisibleCofferHideThresholdDistance));
+                DrawSettingTooltip("Threat detection distance used as a fallback when live zone knowledge data isn't loaded.");
             }
         }
         else
@@ -555,7 +582,7 @@ public class ConfigWindow : Window, IDisposable
                 28,
                 value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
                 nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-            DrawSettingTooltip("Route spots above this aggro level are skipped when Ninja travel is disabled.");
+            DrawSettingTooltip("Skips coffer spots if nearby mobs exceed this level (used when Ninja travel is turned off).");
         }
 
     }
@@ -571,7 +598,7 @@ public class ConfigWindow : Window, IDisposable
         }
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("Draws a world-space line and marker to the nearest detected overworld treasure. It does not start or control coffer automation.");
+        DrawSettingTooltip("Draws a visual guide line and marker in-game pointing to the closest coffer. Purely visual—it doesn't automate movement.");
     }
 
     private void DrawSettingsTab()
@@ -585,7 +612,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableCofferObservationSubmission = enableCofferObservationSubmission;
             configuration.Save();
         }
-        DrawSettingTooltip("When enabled, confirmed coffer positions are submitted anonymously to the public observation endpoint. No character or account identity is transmitted.");
+        DrawSettingTooltip("Anonymously sends confirmed coffer locations to help map out spawn points for the community. No character or account data is ever sent.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Combat");
@@ -605,7 +632,9 @@ public class ConfigWindow : Window, IDisposable
         DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
 
         DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
+        DrawSettingTooltip("Max targeting range for melee jobs before engaging (1.1 to 30 yalms).");
         DrawTargetRangeSetting("Ranged Target Range", configuration.RangedTargetRange, value => configuration.RangedTargetRange = value, nameof(configuration.RangedTargetRange));
+        DrawSettingTooltip("Max targeting range for ranged and caster jobs before engaging (1.1 to 30 yalms).");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Automation");
@@ -617,6 +646,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableBuffRotation = enableBuffRotation;
             configuration.Save();
         }
+        DrawSettingTooltip("Automatically applies job and foray buff actions during combat and route travel.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Movement");
@@ -628,6 +658,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.UseReturn = useReturn;
             configuration.Save();
         }
+        DrawSettingTooltip("Uses the Return spell to quickly teleport back to base camp when needed.");
 
         var minimumMountingRange = configuration.MinimumMountingRange;
         ImGui.SetNextItemWidth(SettingsNumericInputWidth);
@@ -638,6 +669,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.MinimumMountingRange = nextValue;
             configuration.Save();
         }
+        DrawSettingTooltip("Only mounts up if your destination is further away than this distance. Walks instead for shorter distances.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Interface");
@@ -651,6 +683,16 @@ public class ConfigWindow : Window, IDisposable
             configuration.MainWindowStatusTextScalePercent = nextValue;
             configuration.Save();
         }
+        DrawSettingTooltip("Adjusts the status font size in the main window (85% to 150%).");
+
+        var showTooltips = configuration.ShowTooltips;
+        if (ImGui.Checkbox("Show Tooltips", ref showTooltips))
+        {
+            logger.Info($"[Config] op=setting-change key=ShowTooltips old={configuration.ShowTooltips} new={showTooltips}");
+            configuration.ShowTooltips = showTooltips;
+            configuration.Save();
+        }
+        DrawSettingTooltip("Shows helpful descriptions when you hover over settings and interface buttons.");
     }
 
     private void DrawTargetRangeSetting(string label, decimal currentValue, Action<decimal> setter, string key)
@@ -689,6 +731,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.EnableManualCurrencyShopping = enableManualCurrencyShopping;
             configuration.Save();
         }
+        DrawSettingTooltip("Automatically buys items from zone vendors based on your shopping list.");
 
         ImGui.TextWrapped($"Shopping: {plugin.ManualCurrencyShoppingController.CurrentStatusSummary}");
 
@@ -700,6 +743,15 @@ public class ConfigWindow : Window, IDisposable
             ImGui.TableSetupColumn("Reserved", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableSetupColumn("Threshold", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableHeadersRow();
+
+            ImGui.TableSetColumnIndex(1);
+            ImGui.SameLine();
+            ImGui.TextDisabled("(?)");
+            DrawSettingTooltip("Amount of this currency to save and never spend automatically.");
+            ImGui.TableSetColumnIndex(2);
+            ImGui.SameLine();
+            ImGui.TextDisabled("(?)");
+            DrawSettingTooltip("Triggers a vendor visit once you hold at least this much currency.");
 
             foreach (var currency in shoppingPages.GroupBy(page => page.CurrencyItemId).Select(group => group.First()))
             {
@@ -782,9 +834,9 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextUnformatted("Shopping Priority List");
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        if (ImGui.IsItemHovered())
+        if (configuration.ShowTooltips && ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Keep maintains stock. Buy is one-off. Per item priority is Keep, then Buy, then Keep Buying. Only one item can be marked Keep Buying at a time.");
+            ImGui.SetTooltip("Order matters—items at the top get bought first. Items process Keep targets first, then Buy targets, then Keep Buying.");
         }
         var activeTargetIndices = configuration.CurrencyShopTargets
             .Select((target, index) => (Target: target, Index: index))
@@ -864,6 +916,7 @@ public class ConfigWindow : Window, IDisposable
                             target.KeepAmount = Math.Max(0, keepAmount);
                             configuration.Save();
                         }
+                        DrawSettingTooltip("Target stock to keep in your inventory. AOCCH buys enough to maintain this amount.");
 
                         ImGui.TableNextColumn();
                         var buyAmount = target.BuyAmount;
@@ -873,6 +926,7 @@ public class ConfigWindow : Window, IDisposable
                             target.BuyAmount = Math.Max(0, buyAmount);
                             configuration.Save();
                         }
+                        DrawSettingTooltip("One-time purchase quantity. Once bought, it won't keep re-buying.");
 
                         ImGui.TableNextColumn();
                         var keepBuying = target.KeepBuying;
@@ -889,6 +943,7 @@ public class ConfigWindow : Window, IDisposable
                             target.KeepBuying = keepBuying;
                             configuration.Save();
                         }
+                        DrawSettingTooltip("Continuously dumps extra currency into this item whenever available. Only one item can have this set at a time.");
 
                         ImGui.TableNextColumn();
                         if (DrawIconButton(FontAwesomeIcon.Trash, $"shopping-remove-{i}", "Remove", true, iconButtonSize))
@@ -939,6 +994,7 @@ public class ConfigWindow : Window, IDisposable
             logger.Info($"[Config] op=setting-change key=CurrencyReserve currencyItemId={currencyItemId} new={reserve.ReserveAmount}");
             configuration.Save();
         }
+        DrawSettingTooltip("Amount of this currency to save and never spend automatically.");
 
         ImGui.TableNextColumn();
         var thresholdValue = threshold;
@@ -955,6 +1011,7 @@ public class ConfigWindow : Window, IDisposable
             thresholdSetting.StartThreshold = Math.Clamp(thresholdValue, 0, 9999);
             configuration.Save();
         }
+        DrawSettingTooltip("Triggers a vendor visit once you hold at least this much currency.");
     }
 
     private void NormalizeShoppingTargetPriorities()
@@ -971,7 +1028,7 @@ public class ConfigWindow : Window, IDisposable
         }
     }
 
-    private static bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled, Vector2 size)
+    private bool DrawIconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled, Vector2 size)
     {
         var clicked = false;
         ImGui.BeginDisabled(!enabled);
@@ -998,7 +1055,7 @@ public class ConfigWindow : Window, IDisposable
             rectMin.Y + ((rectMax.Y - rectMin.Y) - iconSize.Y) * 0.5f);
         drawList.AddText(UiBuilder.IconFont, iconFontSize, iconPosition, iconColor, iconText);
 
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        if (configuration.ShowTooltips && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
             ImGui.SetTooltip(tooltip);
         }
@@ -1067,9 +1124,9 @@ public class ConfigWindow : Window, IDisposable
         return $"{label} ({hideLevel})";
     }
 
-    private static void DrawSettingTooltip(string text)
+    private void DrawSettingTooltip(string text)
     {
-        if (!ImGui.IsItemHovered())
+        if (!configuration.ShowTooltips || !ImGui.IsItemHovered())
         {
             return;
         }
