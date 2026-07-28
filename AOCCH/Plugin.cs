@@ -92,6 +92,7 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow MainWindow { get; init; }
     private DebugWindow DebugWindow { get; init; }
     private DependencyWindow DependencyWindow { get; init; }
+    private NorthHornStatusWindow NorthHornStatusWindow { get; init; }
     private bool isDisposing;
     private string lastTerritoryKey = string.Empty;
     private string lastDependencyState = string.Empty;
@@ -151,12 +152,14 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow = new MainWindow(this, Configuration, Scanner, MovementController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, FarmSessionController, TreasureCofferFarmController);
         DebugWindow = new DebugWindow(this, Configuration, Scanner, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, PotFarmController, DangerousTreasureTravelController, FarmSessionController, TreasureCofferFarmController);
         DependencyWindow = new DependencyWindow(this);
+        NorthHornStatusWindow = new NorthHornStatusWindow(this, Configuration);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(LogWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(DebugWindow);
         WindowSystem.AddWindow(DependencyWindow);
+        WindowSystem.AddWindow(NorthHornStatusWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -201,6 +204,7 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.IsOpen = false;
         DebugWindow.IsOpen = false;
         DependencyWindow.IsOpen = false;
+        NorthHornStatusWindow.Close();
 
         WindowSystem.RemoveAllWindows();
 
@@ -209,6 +213,7 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
         DebugWindow.Dispose();
         DependencyWindow.Dispose();
+        NorthHornStatusWindow.Dispose();
         AutomaticTreasureCofferDebugController.Dispose();
         TreasureGuideRenderer.Dispose();
         ManualCurrencyShoppingController.Dispose();
@@ -277,6 +282,17 @@ public sealed class Plugin : IDalamudPlugin
 
     public void OpenDependencyUi()
         => DependencyWindow.IsOpen = true;
+
+    public void OpenNorthHornStatusPreview()
+    {
+        if (isDisposing)
+        {
+            return;
+        }
+
+        NorthHornStatusWindow.Open(debugPreview: true);
+        Logger.Info("[Plugin] op=ui-action action=open-north-horn-status-preview");
+    }
 
     private void OnCofferOpened(VisibleCofferMatch match)
     {
@@ -991,6 +1007,22 @@ public sealed class Plugin : IDalamudPlugin
         var territory = OccultCrescentData.GetTerritoryOrNull(territoryType);
         var newTerritoryKey = territory?.Key ?? string.Empty;
         var territoryChanged = !string.Equals(lastTerritoryKey, newTerritoryKey, StringComparison.OrdinalIgnoreCase);
+
+        if (territoryChanged && string.Equals(newTerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase))
+        {
+            if (NorthHornStatusWindow.ShouldOpenAutomatically)
+            {
+                NorthHornStatusWindow.Open(debugPreview: false);
+                Logger.Info($"[Plugin] op=north-horn-status-auto-open state=open territoryId={territoryType} revision={NorthHornStatusWindow.CurrentStatusRevision}");
+            }
+        }
+        else if (!string.Equals(newTerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase)
+                 && NorthHornStatusWindow.IsOpen
+                 && !NorthHornStatusWindow.IsDebugPreview)
+        {
+            NorthHornStatusWindow.Close();
+            Logger.Info($"[Plugin] op=north-horn-status-auto-open state=closed territory={territoryType}");
+        }
 
         if (territory != null)
         {
