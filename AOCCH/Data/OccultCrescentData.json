@@ -1380,6 +1380,66 @@
         "potTreasure": false,
         "buffRotation": false
       },
+      "aethernetInteractDistanceMin": 3.15,
+      "aethernetInteractDistanceMax": 4.25,
+      "mountedTravelSpeed": 14.13,
+      "aethernets": [
+        {
+          "name": "BaseCamp",
+          "placeNameId": 5571,
+          "baseId": 2015429,
+          "position": { "x": 880.0, "y": 259.74, "z": 880.06 },
+          "destination": { "x": 906.261, "y": 259.993, "z": 906.067 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.5,
+          "isBaseCamp": true
+        },
+        {
+          "name": "SinkingSanctuary",
+          "placeNameId": 5572,
+          "baseId": 2015430,
+          "position": { "x": 357.67, "y": 45.77, "z": -554.31 },
+          "destination": { "x": 357.49408, "y": 45.157375, "z": -557.7772 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.25
+        },
+        {
+          "name": "SuspendedMasonry",
+          "placeNameId": 5573,
+          "baseId": 2015431,
+          "position": { "x": -547.25, "y": 68.0, "z": 594.4 },
+          "destination": { "x": -548.8563, "y": 67.19291, "z": 596.81903 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.25
+        },
+        {
+          "name": "MolderingOutskirts",
+          "placeNameId": 5574,
+          "baseId": 2015432,
+          "position": { "x": -388.57, "y": 41.22, "z": -440.52 },
+          "destination": { "x": -387.1969, "y": 39.273586, "z": -437.6047 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.25
+        },
+        {
+          "name": "UnhallowedHamlet",
+          "placeNameId": 5575,
+          "baseId": 2015433,
+          "position": { "x": -13.36, "y": 3.14, "z": -40.51 },
+          "destination": { "x": -14.418, "y": 2.0063043, "z": -44.52833 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.25
+        },
+        {
+          "name": "CrownOfKarnak",
+          "placeNameId": 5576,
+          "baseId": 2015434,
+          "position": { "x": 451.68, "y": 70.93, "z": 528.84 },
+          "destination": { "x": 453.6789, "y": 69.99997, "z": 531.2918 },
+          "interactDistanceMin": 3.15,
+          "interactDistanceMax": 4.25
+        }
+      ],
       "criticalEncounters": [
         { "id": 49 },
         { "id": 50 },
