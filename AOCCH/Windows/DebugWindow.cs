@@ -300,9 +300,9 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Dump Live FATE/CE Tables"))
+        if (ImGui.Button("Generate Event Data"))
         {
-            plugin.LogLiveEventTablesDebug();
+            plugin.GenerateEventDataDebug();
         }
 
         ImGui.Separator();
@@ -621,7 +621,7 @@ public sealed class DebugWindow : Window, IDisposable
             return;
         }
 
-        if (snapshot.Fates.Count == 0)
+        if (snapshot.Fates.Count == 0 && snapshot.PotFates.Count == 0)
         {
             ImGui.TextUnformatted("No active FATEs detected.");
             return;
@@ -646,6 +646,12 @@ public sealed class DebugWindow : Window, IDisposable
             {
                 ImGui.TextWrapped($"  {metadataText}");
             }
+        }
+
+        foreach (var fate in snapshot.PotFates)
+        {
+            ImGui.TextWrapped($"- [Pot] {fate.Name} ({fate.Id})");
+            ImGui.TextWrapped($"  [{fate.State}] {fate.Progress}% | Distance: {FormatDistance(fate.DistanceToPlayer)} | Radius: {fate.Radius:0.0} | Pos: {FormatVector3(fate.Position)}");
         }
     }
 

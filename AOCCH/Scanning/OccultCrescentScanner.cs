@@ -196,19 +196,15 @@ public sealed class OccultCrescentScanner : IDisposable
 
             if (isInSupportedTerritory)
             {
-                if (canFarmCriticalEncounters)
-                {
-                    currentCriticalEncounterId = ScanCriticalEncounters(territory!, criticalEncounters, unknownCriticalEncounters);
-                    currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
-                        ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
-                    selectedCriticalEncounter = SelectCriticalEncounter(criticalEncounters);
-                }
+                // Keep the live event lists complete for diagnostics. Feature flags only
+                // affect candidate selection and automation, not event discovery.
+                currentCriticalEncounterId = ScanCriticalEncounters(territory!, canFarmCriticalEncounters, criticalEncounters, unknownCriticalEncounters);
+                currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
+                    ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
+                selectedCriticalEncounter = canFarmCriticalEncounters ? SelectCriticalEncounter(criticalEncounters) : null;
 
-                if (canFarmFates || canRunPotTreasure)
-                {
-                    ScanFates(territory!, canFarmFates, canRunPotTreasure, fates, potFates, out activePotFate);
-                    selectedFate = canFarmFates ? SelectFate(fates) : null;
-                }
+                ScanFates(territory!, canFarmFates, canRunPotTreasure, fates, potFates, out activePotFate);
+                selectedFate = canFarmFates ? SelectFate(fates) : null;
 
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
                 LogUnknownActiveMetadata(territory!, unknownCriticalEncounters, fates);
@@ -237,10 +233,8 @@ public sealed class OccultCrescentScanner : IDisposable
                 if (canRunVisibleCofferRoute || canSubmitCofferObservations)
                     ScanVisibleCoffers(territory!, visibleCoffers, canRunVisibleCofferRoute);
 
-                if (canFarmFates)
-                {
-                    LogNearbyFateEntityDiagnostics(selectedFate, playerPosition);
-                }
+                var diagnosticFate = fates.FirstOrDefault(fate => fate.IsInFate) ?? fates.FirstOrDefault();
+                LogNearbyFateEntityDiagnostics(diagnosticFate, playerPosition);
             }
             else
             {
@@ -296,6 +290,7 @@ public sealed class OccultCrescentScanner : IDisposable
 
     private unsafe uint ScanCriticalEncounters(
         OccultCrescentTerritoryData territory,
+        bool canFarmCriticalEncounters,
         List<ActiveCriticalEncounter> criticalEncounters,
         List<ActiveCriticalEncounter> unknownCriticalEncounters)
     {
@@ -317,6 +312,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var metadata = territory.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == dynamicEvent.DynamicEventId);
             var stateCode = (int)dynamicEvent.State;
             var isCandidate = metadata != null
+                && canFarmCriticalEncounters
                 && configuration.EnableCriticalEngagementFarming
                 && configuration.IsCriticalEncounterEnabled(territory.Key, dynamicEvent.DynamicEventId)
                 && IsPreBattleCeState(stateCode);
@@ -380,11 +376,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var metadata = territory.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.FateId);
             var name = fate.Name.ToString();
             var (fateLocation, locationSource) = ResolveFateLocation(fate, metadata);
-            var isPotFate = canRunPotTreasure && IsPotFate(fate.FateId);
-            if (!canFarmFates && !isPotFate)
-            {
-                continue;
-            }
+            var isPotFate = IsPotFate(fate.FateId);
 
             var isExcluded = metadata == null
                 || isPotFate
@@ -413,7 +405,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 : float.MaxValue;
             var liveTarget = TrySelectLiveFateTarget(fate.FateId, fateLocation, playerPosition);
 
-            if (isPotFate)
+            if (canRunPotTreasure && isPotFate)
             {
                 potFatesById.TryGetValue(fate.FateId, out var potMetadata);
                 var activePot = new ActivePotFate

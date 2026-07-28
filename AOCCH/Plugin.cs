@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Text.Json;
 using System.Threading;
 
 using AOCCH.Data;
@@ -859,22 +860,65 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print($"Configured FATE/CE tables logged for {OccultCrescentData.Territories.Count} territories.");
     }
 
-    internal void LogLiveEventTablesDebug()
+    internal void GenerateEventDataDebug()
     {
         var snapshot = Scanner.Snapshot;
-        Logger.Info($"[Plugin] op=debug-live-event-tables territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} fates={snapshot.Fates.Count} unknownCes={snapshot.UnknownCriticalEncounters.Count} ces={snapshot.CriticalEncounters.Count}");
-        foreach (var fate in snapshot.Fates)
+        var territory = Scanner.ActiveTerritoryData;
+        var playerPosition = ObjectTable.LocalPlayer?.Position;
+        var fates = snapshot.Fates
+            .Select(fate =>
+            {
+                var metadata = territory?.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.Id);
+                return new
+                {
+                    id = fate.Id,
+                    name = fate.Name,
+                    demiatma = metadata?.Demiatma,
+                    note = metadata?.Note,
+                    aethernet = metadata?.Aethernet,
+                    startPosition = CreatePosition(fate.Position),
+                };
+            })
+            .ToArray();
+        var criticalEncounters = snapshot.CriticalEncounters
+            .Concat(snapshot.UnknownCriticalEncounters)
+            .Select(encounter =>
+            {
+                var metadata = territory?.CriticalEncounters.FirstOrDefault(knownEncounter => knownEncounter.Id == encounter.Id);
+                return new
+                {
+                    id = encounter.Id,
+                    name = encounter.Name,
+                    preferredAethernet = metadata?.PreferredAethernet ?? string.Empty,
+                    priority = metadata?.Priority > 0 ? metadata.Priority : 100,
+                    engageRadius = metadata?.EngageRadius > 0 ? metadata.EngageRadius : 20f,
+                    stagingPoint = playerPosition.HasValue
+                        ? CreatePosition(playerPosition.Value)
+                        : null,
+                };
+            })
+            .ToArray();
+        var json = JsonSerializer.Serialize(new
         {
-            Logger.Info($"[Plugin] op=debug-live-fate id={fate.Id} name='{fate.Name}' state={fate.State} stateCode={fate.StateCode} progress={fate.Progress} radius={fate.Radius:0.0} pos=<{fate.Position.X:0.0},{fate.Position.Y:0.0},{fate.Position.Z:0.0}> knownMetadata={fate.HasKnownMetadata} excluded={fate.IsExcluded} candidate={fate.IsCandidate} inFate={fate.IsInFate} liveTargetObjectId={fate.LiveTargetObjectId:X}");
-        }
+            fates,
+            criticalEncounters,
+        }, new JsonSerializerOptions { WriteIndented = true });
 
-        foreach (var encounter in snapshot.CriticalEncounters.Concat(snapshot.UnknownCriticalEncounters))
+        Logger.Info($"[Plugin] op=debug-event-data territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} fates={fates.Length} potFates={snapshot.PotFates.Count} ces={criticalEncounters.Length} playerPosition={(playerPosition.HasValue ? FormatVector3(playerPosition.Value) : "unavailable")}");
+        Logger.Info("[Plugin] op=debug-event-data-json-begin");
+        foreach (var line in json.Split('\n'))
         {
-            Logger.Info($"[Plugin] op=debug-live-ce id={encounter.Id} name='{encounter.Name}' state={encounter.State} stateCode={encounter.StateCode} progress={encounter.Progress} startTimestamp={encounter.StartTimestamp} knownMetadata={encounter.HasKnownMetadata} candidate={encounter.IsCandidate}");
+            Logger.Info($"[Plugin] op=debug-event-data-json {line.TrimEnd('\r')}");
         }
-
-        ChatGui.Print($"Live FATE/CE tables logged: fates={snapshot.Fates.Count}, CEs={snapshot.CriticalEncounters.Count + snapshot.UnknownCriticalEncounters.Count}.");
+        Logger.Info("[Plugin] op=debug-event-data-json-end");
+        ChatGui.Print($"Event data generated: fates={fates.Length}, CEs={criticalEncounters.Length}. See the log for paste-ready JSON.");
     }
+
+    private static object CreatePosition(Vector3 position)
+        => new { x = position.X, y = position.Y, z = position.Z };
+
+    private static string FormatVector3(Vector3 position)
+        => $"<{position.X:0.000}, {position.Y:0.000}, {position.Z:0.000}>";
 
     internal unsafe void RunProbeForay()
     {
