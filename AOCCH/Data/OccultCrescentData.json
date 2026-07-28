@@ -1375,10 +1375,173 @@
       "features": {
         "fates": false,
         "criticalEncounters": false,
-        "shopping": false,
+        "shopping": true,
         "visibleCoffers": false,
         "potTreasure": false,
         "buffRotation": false
+      },
+      "shopping": {
+        "vendors": [
+          {
+            "dataId": 1059485,
+            "name": "Expedition Antiquarian",
+            "preferredAethernet": "BaseCamp"
+          }
+        ],
+        "pages": [
+          {
+            "menuIndex": 0,
+            "menuLabel": "Enlightenment Silver Obol Exchange (IL 780)",
+            "currencyItemId": 51975,
+            "currencyName": "Enlightenment Silver Obol",
+            "tabs": [
+              {
+                "tabId": 1,
+                "tabLabel": "Armor",
+                "items": [
+                  { "itemId": 51811, "name": "Phantom Vision Mask of Fending", "cost": 4000, "rowIndex": 0 },
+                  { "itemId": 51831, "name": "Phantom Vision Mask of Maiming", "cost": 4000, "rowIndex": 1 },
+                  { "itemId": 51851, "name": "Phantom Vision Turban of Striking", "cost": 4000, "rowIndex": 2 },
+                  { "itemId": 51891, "name": "Phantom Vision Turban of Scouting", "cost": 4000, "rowIndex": 3 },
+                  { "itemId": 51871, "name": "Phantom Vision Turban of Aiming", "cost": 4000, "rowIndex": 4 },
+                  { "itemId": 51931, "name": "Phantom Vision Nightcap of Casting", "cost": 4000, "rowIndex": 5 },
+                  { "itemId": 51911, "name": "Phantom Vision Nightcap of Healing", "cost": 4000, "rowIndex": 6 },
+                  { "itemId": 51812, "name": "Phantom Vision Corselet of Fending", "cost": 4000, "rowIndex": 7 },
+                  { "itemId": 51832, "name": "Phantom Vision Corselet of Maiming", "cost": 4000, "rowIndex": 8 },
+                  { "itemId": 51852, "name": "Phantom Vision Robe of Striking", "cost": 4000, "rowIndex": 9 },
+                  { "itemId": 51892, "name": "Phantom Vision Robe of Scouting", "cost": 4000, "rowIndex": 10 },
+                  { "itemId": 51872, "name": "Phantom Vision Robe of Aiming", "cost": 4000, "rowIndex": 11 },
+                  { "itemId": 51932, "name": "Phantom Vision Acton of Casting", "cost": 4000, "rowIndex": 12 },
+                  { "itemId": 51912, "name": "Phantom Vision Acton of Healing", "cost": 4000, "rowIndex": 13 },
+                  { "itemId": 51813, "name": "Phantom Vision Vambraces of Fending", "cost": 4000, "rowIndex": 14 },
+                  { "itemId": 51833, "name": "Phantom Vision Vambraces of Maiming", "cost": 4000, "rowIndex": 15 },
+                  { "itemId": 51853, "name": "Phantom Vision Wristwraps of Striking", "cost": 4000, "rowIndex": 16 },
+                  { "itemId": 51893, "name": "Phantom Vision Wristwraps of Scouting", "cost": 4000, "rowIndex": 17 },
+                  { "itemId": 51873, "name": "Phantom Vision Wristwraps of Aiming", "cost": 4000, "rowIndex": 18 },
+                  { "itemId": 51933, "name": "Phantom Vision Wristwraps of Casting", "cost": 4000, "rowIndex": 19 },
+                  { "itemId": 51913, "name": "Phantom Vision Wristwraps of Healing", "cost": 4000, "rowIndex": 20 },
+                  { "itemId": 51814, "name": "Phantom Vision Bottoms of Fending", "cost": 4000, "rowIndex": 21 },
+                  { "itemId": 51834, "name": "Phantom Vision Bottoms of Maiming", "cost": 4000, "rowIndex": 22 },
+                  { "itemId": 51854, "name": "Phantom Vision Sarouel of Striking", "cost": 4000, "rowIndex": 23 },
+                  { "itemId": 51894, "name": "Phantom Vision Sarouel of Scouting", "cost": 4000, "rowIndex": 24 },
+                  { "itemId": 51874, "name": "Phantom Vision Sarouel of Aiming", "cost": 4000, "rowIndex": 25 },
+                  { "itemId": 51934, "name": "Phantom Vision Sarouel of Casting", "cost": 4000, "rowIndex": 26 },
+                  { "itemId": 51914, "name": "Phantom Vision Sarouel of Healing", "cost": 4000, "rowIndex": 27 },
+                  { "itemId": 51815, "name": "Phantom Vision Sollerets of Fending", "cost": 4000, "rowIndex": 28 },
+                  { "itemId": 51835, "name": "Phantom Vision Sollerets of Maiming", "cost": 4000, "rowIndex": 29 },
+                  { "itemId": 51855, "name": "Phantom Vision Boots of Striking", "cost": 4000, "rowIndex": 30 },
+                  { "itemId": 51895, "name": "Phantom Vision Boots of Scouting", "cost": 4000, "rowIndex": 31 },
+                  { "itemId": 51875, "name": "Phantom Vision Boots of Aiming", "cost": 4000, "rowIndex": 32 },
+                  { "itemId": 51935, "name": "Phantom Vision Crakows of Casting", "cost": 4000, "rowIndex": 33 },
+                  { "itemId": 51915, "name": "Phantom Vision Crakows of Healing", "cost": 4000, "rowIndex": 34 }
+                ]
+              }
+            ]
+          },
+          {
+            "menuIndex": 1,
+            "menuLabel": "Enlightenment Silver Obol Exchange (Other)",
+            "currencyItemId": 51975,
+            "currencyName": "Enlightenment Silver Obol",
+            "tabs": [
+              {
+                "tabId": 1,
+                "tabLabel": "Armor",
+                "items": [
+                  { "itemId": 51952, "name": "Tule Tunic", "cost": 1000, "rowIndex": 14 },
+                  { "itemId": 51953, "name": "Tule Halfgloves", "cost": 1000, "rowIndex": 15 },
+                  { "itemId": 51954, "name": "Tule Trousers", "cost": 1000, "rowIndex": 16 },
+                  { "itemId": 51955, "name": "Tule Longboots", "cost": 1000, "rowIndex": 17 }
+                ]
+              },
+              {
+                "tabId": 3,
+                "tabLabel": "Other",
+                "items": [
+                  { "itemId": 51967, "name": "Ninja's Soul Shard", "cost": 1000, "rowIndex": 0 },
+                  { "itemId": 51968, "name": "Black Mage's Soul Shard", "cost": 1000, "rowIndex": 1 },
+                  { "itemId": 51969, "name": "White Mage's Soul Shard", "cost": 1000, "rowIndex": 2 },
+                  { "itemId": 51973, "name": "Red Mage's Soul Shard", "cost": 1000, "rowIndex": 3 },
+                  { "itemId": 51966, "name": "North Horn Riding Map", "cost": 3000, "rowIndex": 4 },
+                  { "itemId": 52284, "name": "Nymian Uolosapa", "cost": 500, "rowIndex": 5 },
+                  { "itemId": 52366, "name": "Dungeon (Dawntrail) Orchestrion Roll", "cost": 1000, "rowIndex": 6 },
+                  { "itemId": 52367, "name": "Sealed Away (Dawntrail) Orchestrion Roll", "cost": 1000, "rowIndex": 7 },
+                  { "itemId": 51283, "name": "Crescent Stone Pillar", "cost": 400, "rowIndex": 8 },
+                  { "itemId": 51284, "name": "Crescent Wall Rack", "cost": 400, "rowIndex": 9 },
+                  { "itemId": 51282, "name": "Winged Scalekin Fossil", "cost": 400, "rowIndex": 10 },
+                  { "itemId": 47741, "name": "Occult Potion", "cost": 40, "rowIndex": 11 },
+                  { "itemId": 47740, "name": "Occult Coffer", "cost": 40, "rowIndex": 12 },
+                  { "itemId": 51978, "name": "Final Final Fixative", "cost": 1200, "rowIndex": 13 },
+                  { "itemId": 41759, "name": "Savage Aim Materia XI", "cost": 100, "rowIndex": 18 },
+                  { "itemId": 41772, "name": "Savage Aim Materia XII", "cost": 200, "rowIndex": 19 },
+                  { "itemId": 41760, "name": "Savage Might Materia XI", "cost": 100, "rowIndex": 20 },
+                  { "itemId": 41773, "name": "Savage Might Materia XII", "cost": 200, "rowIndex": 21 },
+                  { "itemId": 41758, "name": "Heavens' Eye Materia XI", "cost": 100, "rowIndex": 22 },
+                  { "itemId": 41771, "name": "Heavens' Eye Materia XII", "cost": 200, "rowIndex": 23 },
+                  { "itemId": 41768, "name": "Quickarm Materia XI", "cost": 100, "rowIndex": 24 },
+                  { "itemId": 41781, "name": "Quickarm Materia XII", "cost": 200, "rowIndex": 25 },
+                  { "itemId": 41769, "name": "Quicktongue Materia XI", "cost": 100, "rowIndex": 26 },
+                  { "itemId": 41782, "name": "Quicktongue Materia XII", "cost": 200, "rowIndex": 27 },
+                  { "itemId": 41761, "name": "Battledance Materia XI", "cost": 100, "rowIndex": 28 },
+                  { "itemId": 41774, "name": "Battledance Materia XII", "cost": 200, "rowIndex": 29 },
+                  { "itemId": 41757, "name": "Piety Materia XI", "cost": 100, "rowIndex": 30 },
+                  { "itemId": 41770, "name": "Piety Materia XII", "cost": 200, "rowIndex": 31 }
+                ]
+              }
+            ]
+          },
+          {
+            "menuIndex": 2,
+            "menuLabel": "Enlightenment Gold Obol Exchange",
+            "currencyItemId": 51976,
+            "currencyName": "Enlightenment Gold Obol",
+            "tabs": [
+              {
+                "tabId": 1,
+                "tabLabel": "Armor",
+                "items": [
+                  { "itemId": 51957, "name": "Torna Tunic", "cost": 1600, "rowIndex": 9 },
+                  { "itemId": 51958, "name": "Torna Wristlets", "cost": 1600, "rowIndex": 10 },
+                  { "itemId": 51960, "name": "Torna Boots", "cost": 1600, "rowIndex": 11 },
+                  { "itemId": 51961, "name": "Carwen Bandana", "cost": 1600, "rowIndex": 12 },
+                  { "itemId": 51962, "name": "Carwen Tunic", "cost": 1600, "rowIndex": 13 },
+                  { "itemId": 51963, "name": "Carwen Armlets", "cost": 1600, "rowIndex": 14 },
+                  { "itemId": 51964, "name": "Carwen Tights", "cost": 1600, "rowIndex": 15 },
+                  { "itemId": 51965, "name": "Carwen Boots", "cost": 1600, "rowIndex": 16 }
+                ]
+              },
+              {
+                "tabId": 3,
+                "tabLabel": "Other",
+                "items": [
+                  { "itemId": 51970, "name": "Dragoon's Soul Shard", "cost": 1600, "rowIndex": 0 },
+                  { "itemId": 51971, "name": "Summoner's Soul Shard", "cost": 1600, "rowIndex": 1 },
+                  { "itemId": 52368, "name": "To the North Mountain (Dawntrail) Orchestrion Roll", "cost": 1600, "rowIndex": 2 },
+                  { "itemId": 51286, "name": "Blue Crescent Moon", "cost": 800, "rowIndex": 3 },
+                  { "itemId": 51287, "name": "Yellow Crescent Cube", "cost": 800, "rowIndex": 4 },
+                  { "itemId": 51288, "name": "Red Crescent Crystal", "cost": 800, "rowIndex": 5 },
+                  { "itemId": 47741, "name": "Occult Potion", "cost": 50, "rowIndex": 6 },
+                  { "itemId": 47740, "name": "Occult Coffer", "cost": 50, "rowIndex": 7 },
+                  { "itemId": 51978, "name": "Final Final Fixative", "cost": 1920, "rowIndex": 8 },
+                  { "itemId": 41759, "name": "Savage Aim Materia XI", "cost": 160, "rowIndex": 17 },
+                  { "itemId": 41772, "name": "Savage Aim Materia XII", "cost": 320, "rowIndex": 18 },
+                  { "itemId": 41760, "name": "Savage Might Materia XI", "cost": 160, "rowIndex": 19 },
+                  { "itemId": 41773, "name": "Savage Might Materia XII", "cost": 320, "rowIndex": 20 },
+                  { "itemId": 41758, "name": "Heavens' Eye Materia XI", "cost": 160, "rowIndex": 21 },
+                  { "itemId": 41771, "name": "Heavens' Eye Materia XII", "cost": 320, "rowIndex": 22 },
+                  { "itemId": 41768, "name": "Quickarm Materia XI", "cost": 160, "rowIndex": 23 },
+                  { "itemId": 41781, "name": "Quickarm Materia XII", "cost": 320, "rowIndex": 24 },
+                  { "itemId": 41769, "name": "Quicktongue Materia XI", "cost": 160, "rowIndex": 25 },
+                  { "itemId": 41782, "name": "Quicktongue Materia XII", "cost": 320, "rowIndex": 26 },
+                  { "itemId": 41761, "name": "Battledance Materia XI", "cost": 160, "rowIndex": 27 },
+                  { "itemId": 41774, "name": "Battledance Materia XII", "cost": 320, "rowIndex": 28 },
+                  { "itemId": 41757, "name": "Piety Materia XI", "cost": 160, "rowIndex": 29 },
+                  { "itemId": 41770, "name": "Piety Materia XII", "cost": 320, "rowIndex": 30 }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "aethernetInteractDistanceMin": 3.15,
       "aethernetInteractDistanceMax": 4.25,
