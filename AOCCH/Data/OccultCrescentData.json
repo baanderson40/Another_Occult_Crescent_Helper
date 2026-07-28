@@ -12,6 +12,11 @@
         "potTreasure": true,
         "buffRotation": true
       },
+      "buffRotation": {
+        "buffZoneCenter": { "x": 836.07, "y": 73.12, "z": -709.45 },
+        "buffZoneRadiusMin": 2.5,
+        "buffZoneRadiusMax": 4.5
+      },
       "visibleCoffers": {
         "baseIds": [2014741, 2014742, 2014743],
         "objectKinds": ["Treasure"],
@@ -1378,7 +1383,12 @@
         "shopping": true,
         "visibleCoffers": false,
         "potTreasure": false,
-        "buffRotation": false
+        "buffRotation": true
+      },
+      "buffRotation": {
+        "buffZoneCenter": { "x": 885.009, "y": 258.500, "z": 874.735 },
+        "buffZoneRadiusMin": 2.5,
+        "buffZoneRadiusMax": 4.5
       },
       "shopping": {
         "vendors": [

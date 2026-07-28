@@ -24,9 +24,6 @@ public sealed class BuffRotationController : IDisposable
     private const float DismountTimeoutSeconds = 4f;
     private const int BuffVerifyRetries = 3;
     private const int DismountRetries = 2;
-    private static readonly Vector3 BuffZoneCenter = new(836.07f, 73.12f, -709.45f);
-    private const float BuffZoneRadiusMin = 2.5f;
-    private const float BuffZoneRadiusMax = 4.5f;
 
     private static readonly BuffAction[] BuffActions =
     [
@@ -259,7 +256,7 @@ public sealed class BuffRotationController : IDisposable
             return true;
         }
 
-        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation || !HasBuffZoneProfile())
         {
             SetFailure(scanner.Snapshot.IsInSupportedTerritory
                 ? $"Buff rotation is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
@@ -376,7 +373,7 @@ public sealed class BuffRotationController : IDisposable
             return;
         }
 
-        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation)
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunBuffRotation || !HasBuffZoneProfile())
         {
             SetFailure("Buff rotation stopped because its territory feature became unavailable.", critical: false);
             return;
@@ -940,8 +937,13 @@ public sealed class BuffRotationController : IDisposable
             return false;
         }
 
-        var distance = CalculateFlatDistance(position.Value, BuffZoneCenter);
-        return distance >= BuffZoneRadiusMin && distance <= BuffZoneRadiusMax;
+        if (!TryGetBuffZoneProfile(out var profile))
+        {
+            return false;
+        }
+
+        var distance = CalculateFlatDistance(position.Value, profile.BuffZoneCenter.ToVector3());
+        return distance >= profile.BuffZoneRadiusMin && distance <= profile.BuffZoneRadiusMax;
     }
 
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
@@ -951,16 +953,22 @@ public sealed class BuffRotationController : IDisposable
         return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
 
-    private static List<Vector3> BuildBuffZoneTargets(Vector3 playerPosition)
+    private List<Vector3> BuildBuffZoneTargets(Vector3 playerPosition)
     {
+        if (!TryGetBuffZoneProfile(out var profile))
+        {
+            return [];
+        }
+
+        var buffZoneCenter = profile.BuffZoneCenter.ToVector3();
         var targets = new List<Vector3>();
-        var direction = playerPosition - BuffZoneCenter;
+        var direction = playerPosition - buffZoneCenter;
         direction.Y = 0f;
 
         if (direction.LengthSquared() > 0.001f)
         {
             direction = Vector3.Normalize(direction);
-            targets.Add(BuffZoneCenter + (direction * BuffZoneRadiusMin));
+            targets.Add(buffZoneCenter + (direction * profile.BuffZoneRadiusMin));
         }
 
         var angles = new[] { 0f, 72f, 144f, 216f, 288f };
@@ -968,13 +976,32 @@ public sealed class BuffRotationController : IDisposable
         {
             var radians = MathF.PI * angle / 180f;
             targets.Add(new Vector3(
-                BuffZoneCenter.X + (MathF.Cos(radians) * BuffZoneRadiusMin),
-                BuffZoneCenter.Y,
-                BuffZoneCenter.Z + (MathF.Sin(radians) * BuffZoneRadiusMin)));
+                buffZoneCenter.X + (MathF.Cos(radians) * profile.BuffZoneRadiusMin),
+                buffZoneCenter.Y,
+                buffZoneCenter.Z + (MathF.Sin(radians) * profile.BuffZoneRadiusMin)));
         }
 
         return targets;
     }
+
+    private bool TryGetBuffZoneProfile(out AOCCH.Data.BuffRotationData profile)
+    {
+        var territory = scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            profile = new AOCCH.Data.BuffRotationData();
+            return false;
+        }
+
+        profile = territory.BuffRotation;
+        var center = profile.BuffZoneCenter;
+        return !(center.X == 0f && center.Y == 0f && center.Z == 0f)
+            && profile.BuffZoneRadiusMin > 0f
+            && profile.BuffZoneRadiusMax >= profile.BuffZoneRadiusMin;
+    }
+
+    private bool HasBuffZoneProfile()
+        => TryGetBuffZoneProfile(out _);
 
     private unsafe bool TryReadOccultCrescentState(out byte currentJob, out byte[] levels)
     {

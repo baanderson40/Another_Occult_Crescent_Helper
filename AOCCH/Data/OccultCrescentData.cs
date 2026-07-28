@@ -66,6 +66,7 @@ public sealed class OccultCrescentTerritoryData
     public List<DropData> Drops { get; init; } = [];
     public VisibleCofferData VisibleCoffers { get; init; } = new();
     public PotTreasureBehaviorData PotTreasure { get; init; } = new();
+    public BuffRotationData BuffRotation { get; init; } = new();
 
     public AethernetData? GetBaseCampAethernet()
         => Aethernets.FirstOrDefault(aethernet => aethernet.IsBaseCamp);
@@ -79,6 +80,13 @@ public sealed class TerritoryFeatureAvailability
     public bool VisibleCoffers { get; init; }
     public bool PotTreasure { get; init; }
     public bool BuffRotation { get; init; }
+}
+
+public sealed class BuffRotationData
+{
+    public Vector3Data BuffZoneCenter { get; init; } = new();
+    public float BuffZoneRadiusMin { get; init; } = 2.5f;
+    public float BuffZoneRadiusMax { get; init; } = 4.5f;
 }
 
 public sealed class AethernetData
