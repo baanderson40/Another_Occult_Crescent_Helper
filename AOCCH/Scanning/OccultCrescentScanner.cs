@@ -8,6 +8,7 @@ using AOCCH.Logging;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using TreasureFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure.TreasureFlags;
@@ -17,7 +18,8 @@ namespace AOCCH.Scanning;
 public sealed class OccultCrescentScanner : IDisposable
 {
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMilliseconds(500);
-    private const float VisibleCofferDiagnosticRadius = 60f;
+    private const float ManualRevealAttributionRadius = 8f;
+    private static readonly TimeSpan ManualRevealAttributionWindow = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan VisibleCofferDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private const float FateEntityDiagnosticPlayerRadius = 40f;
     private const float FateEntityDiagnosticPadding = 15f;
@@ -26,6 +28,13 @@ public sealed class OccultCrescentScanner : IDisposable
     private static readonly TimeSpan FateEntityDiagnosticLogInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForayThreatDiagnosticLogInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan UnknownMetadataWarningInterval = TimeSpan.FromSeconds(60);
+    private static readonly InventoryType[] NormalInventoryContainers =
+    [
+        InventoryType.Inventory1,
+        InventoryType.Inventory2,
+        InventoryType.Inventory3,
+        InventoryType.Inventory4,
+    ];
 
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
@@ -38,6 +47,9 @@ public sealed class OccultCrescentScanner : IDisposable
     private Dictionary<uint, PotFateData> potFatesById;
     private readonly object gate = new();
     private readonly Dictionary<ulong, TrackedVisibleCoffer> trackedVisibleCoffers = [];
+    private readonly Dictionary<ulong, TrackedRevealCoffer> trackedRevealCoffers = [];
+    private readonly Dictionary<uint, uint> previousInventoryItemCounts = [];
+    private bool hasPreviousInventorySnapshot;
 
     public event Action<VisibleCoffer>? CofferOpened;
 
@@ -112,6 +124,9 @@ public sealed class OccultCrescentScanner : IDisposable
     private void OnTerritoryChanged(uint territoryType)
     {
         trackedVisibleCoffers.Clear();
+        trackedRevealCoffers.Clear();
+        previousInventoryItemCounts.Clear();
+        hasPreviousInventorySnapshot = false;
         var territory = catalog.GetTerritoryOrNull(territoryType);
         logger.Info(territory != null
             ? $"[Scanner] op=territory-change territoryId={territoryType} territoryKey={territory.Key} supported=true state=entered"
@@ -216,8 +231,11 @@ public sealed class OccultCrescentScanner : IDisposable
                 if (configuration.EnableOverworldTreasureGuide)
                     ScanDetectedTreasures(detectedTreasures, playerPosition);
 
-                if (canRunVisibleCofferRoute)
-                    ScanVisibleCoffers(territory!, visibleCoffers);
+                var canSubmitCofferObservations = configuration.EnableCofferObservationSubmission
+                    && (territory!.VisibleCoffers.ObjectKinds.Count > 0
+                        || territory.VisibleCoffers.BaseIds.Count > 0);
+                if (canRunVisibleCofferRoute || canSubmitCofferObservations)
+                    ScanVisibleCoffers(territory!, visibleCoffers, canRunVisibleCofferRoute);
 
                 if (canFarmFates)
                 {
@@ -525,10 +543,13 @@ public sealed class OccultCrescentScanner : IDisposable
         detectedTreasures.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
     }
 
-    private void ScanVisibleCoffers(OccultCrescentTerritoryData territory, List<VisibleCoffer> visibleCoffers)
+    private void ScanVisibleCoffers(
+        OccultCrescentTerritoryData territory,
+        List<VisibleCoffer> visibleCoffers,
+        bool includeRouteCandidates)
     {
         var playerPosition = objectTable.LocalPlayer?.Position;
-        var nearbyTreasureObjects = new List<string>();
+        var activeTreasureObjectIds = new HashSet<ulong>();
         var recognizedObjectIds = new HashSet<ulong>();
 
         foreach (var gameObject in objectTable)
@@ -540,20 +561,23 @@ public sealed class OccultCrescentScanner : IDisposable
 
             var objectKind = objectEntry.ObjectKind.ToString();
             var isTreasureKind = objectKind.StartsWith("Treasure", StringComparison.OrdinalIgnoreCase);
-            if (isTreasureKind)
+
+            if (!objectEntry.IsValid())
             {
-                var treasureDistanceToPlayer = playerPosition.HasValue
-                    ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position)
-                    : float.MaxValue;
-                if (treasureDistanceToPlayer <= VisibleCofferDiagnosticRadius)
-                {
-                    nearbyTreasureObjects.Add(
-                        $"name='{objectEntry.Name}' kind={objectKind} baseId={objectEntry.BaseId} objectId={objectEntry.GameObjectId:X} distance={treasureDistanceToPlayer:0.0}y targetable={objectEntry.IsTargetable} valid={objectEntry.IsValid()}");
-                }
+                continue;
             }
 
-            if (!CofferRecognition.TryRecognize(territory.VisibleCoffers, objectEntry, out var recognitionSource)
-                || !objectEntry.IsValid())
+            var isOverworldCoffer = CofferRecognition.TryRecognize(
+                territory.VisibleCoffers,
+                objectEntry,
+                out var recognitionSource);
+            var revealRecognitionSource = string.Empty;
+            var isRevealCoffer = !isOverworldCoffer
+                && CofferRecognition.TryRecognizePotReveal(
+                    territory.VisibleCoffers,
+                    objectEntry,
+                    out revealRecognitionSource);
+            if (!isOverworldCoffer && !isRevealCoffer)
             {
                 continue;
             }
@@ -563,6 +587,13 @@ public sealed class OccultCrescentScanner : IDisposable
             var distanceToPlayer = playerPosition.HasValue
                 ? CalculateFlatDistance(playerPosition.Value, objectEntry.Position)
                 : float.MaxValue;
+            var cofferPosition = objectEntry.Position;
+            if (isRevealCoffer
+                && playerPosition.HasValue
+                && MathF.Abs(cofferPosition.Y + 500f) < 0.5f)
+            {
+                cofferPosition = new Vector3(cofferPosition.X, playerPosition.Value.Y, cofferPosition.Z);
+            }
 
             var coffer = new VisibleCoffer
             {
@@ -571,29 +602,45 @@ public sealed class OccultCrescentScanner : IDisposable
                 Name = objectEntry.Name.ToString(),
                 ObjectKind = objectKind,
                 RecognitionSource = recognitionSource,
-                Position = objectEntry.Position,
+                Position = cofferPosition,
                 DistanceToPlayer = distanceToPlayer,
                 IsTargetable = objectEntry.IsTargetable,
             };
 
-            var isOpened = TreasureObjectState.TryReadTreasureFlags(objectEntry, out var treasureFlags)
+            var isOpened = isOverworldCoffer
+                && TreasureObjectState.TryReadTreasureFlags(objectEntry, out var treasureFlags)
                 && treasureFlags.HasFlag(TreasureFlags.Opened);
-            var hasPrevious = trackedVisibleCoffers.TryGetValue(objectEntry.GameObjectId, out var previous);
-            if (hasPrevious
-                && (previous.DataId != coffer.DataId || !string.Equals(previous.Name, coffer.Name, StringComparison.Ordinal)))
+            if (isOverworldCoffer)
             {
-                hasPrevious = false;
+                var hasPrevious = trackedVisibleCoffers.TryGetValue(objectEntry.GameObjectId, out var previous);
+                if (hasPrevious
+                    && (previous.DataId != coffer.DataId || !string.Equals(previous.Name, coffer.Name, StringComparison.Ordinal)))
+                {
+                    hasPrevious = false;
+                }
+
+                if (hasPrevious && !previous.IsOpened && isOpened)
+                {
+                    NotifyCofferOpened(coffer);
+                }
+
+                trackedVisibleCoffers[objectEntry.GameObjectId] = new TrackedVisibleCoffer(coffer.DataId, coffer.Name, isOpened);
+                if (includeRouteCandidates && !isOpened && objectEntry.IsTargetable)
+                {
+                    visibleCoffers.Add(coffer);
+                }
+            }
+            else
+            {
+                trackedRevealCoffers[objectEntry.GameObjectId] = new TrackedRevealCoffer(
+                    coffer,
+                    DateTimeOffset.UtcNow,
+                    revealRecognitionSource);
             }
 
-            if (hasPrevious && !previous.IsOpened && isOpened)
+            if (isTreasureKind && !isOpened)
             {
-                NotifyCofferOpened(coffer);
-            }
-
-            trackedVisibleCoffers[objectEntry.GameObjectId] = new TrackedVisibleCoffer(coffer.DataId, coffer.Name, isOpened);
-            if (!isOpened && objectEntry.IsTargetable)
-            {
-                visibleCoffers.Add(coffer);
+                activeTreasureObjectIds.Add(objectEntry.GameObjectId);
             }
         }
 
@@ -601,6 +648,17 @@ public sealed class OccultCrescentScanner : IDisposable
         {
             trackedVisibleCoffers.Remove(objectId);
         }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var objectId in trackedRevealCoffers
+                     .Where(entry => now - entry.Value.LastSeenAt > ManualRevealAttributionWindow)
+                     .Select(entry => entry.Key)
+                     .ToList())
+        {
+            trackedRevealCoffers.Remove(objectId);
+        }
+
+        DetectManualRevealInventoryDelta(playerPosition);
 
         visibleCoffers.Sort((left, right) => left.DistanceToPlayer.CompareTo(right.DistanceToPlayer));
 
@@ -616,12 +674,12 @@ public sealed class OccultCrescentScanner : IDisposable
                 $"[Scanner] op=visible-coffer-scan territoryKey={territory.Key} count={visibleCoffers.Count} entries={summary}");
         }
 
-        if (visibleCoffers.Count == 0 && nearbyTreasureObjects.Count > 0)
+        if (activeTreasureObjectIds.Count > 0)
         {
             logger.DebugThrottled(
-                "visible-coffer-diagnostics",
+                "visible-coffer-observation-results",
                 VisibleCofferDiagnosticLogInterval,
-                $"[Scanner] op=visible-coffer-unrecognized territoryKey={territory.Key} entries={string.Join(" | ", nearbyTreasureObjects)}");
+                $"[Scanner] op=coffer-observation-scan territoryKey={territory.Key} recognized={activeTreasureObjectIds.Count} routeCandidates={visibleCoffers.Count} routeEnabled={includeRouteCandidates}");
         }
     }
 
@@ -638,6 +696,113 @@ public sealed class OccultCrescentScanner : IDisposable
     }
 
     private readonly record struct TrackedVisibleCoffer(uint DataId, string Name, bool IsOpened);
+
+    private readonly record struct TrackedRevealCoffer(
+        VisibleCoffer Coffer,
+        DateTimeOffset LastSeenAt,
+        string RecognitionSource);
+
+    private unsafe void DetectManualRevealInventoryDelta(Vector3? playerPosition)
+    {
+        if (!configuration.EnableCofferObservationSubmission)
+        {
+            previousInventoryItemCounts.Clear();
+            hasPreviousInventorySnapshot = false;
+            return;
+        }
+
+        if (!TryCaptureNormalInventorySnapshot(out var currentItemCounts))
+        {
+            hasPreviousInventorySnapshot = false;
+            return;
+        }
+
+        if (!hasPreviousInventorySnapshot)
+        {
+            previousInventoryItemCounts.Clear();
+            foreach (var pair in currentItemCounts)
+            {
+                previousInventoryItemCounts[pair.Key] = pair.Value;
+            }
+
+            hasPreviousInventorySnapshot = true;
+            return;
+        }
+
+        var hasPositiveDelta = currentItemCounts.Any(pair =>
+            pair.Value > previousInventoryItemCounts.GetValueOrDefault(pair.Key));
+        previousInventoryItemCounts.Clear();
+        foreach (var pair in currentItemCounts)
+        {
+            previousInventoryItemCounts[pair.Key] = pair.Value;
+        }
+
+        if (!hasPositiveDelta || !playerPosition.HasValue)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var candidate = trackedRevealCoffers.Values
+            .Where(entry => now - entry.LastSeenAt <= ManualRevealAttributionWindow)
+            .Select(entry => new
+            {
+                entry.Coffer,
+                entry.RecognitionSource,
+                Distance = CalculateFlatDistance(playerPosition.Value, entry.Coffer.Position),
+            })
+            .Where(entry => entry.Distance <= ManualRevealAttributionRadius)
+            .OrderBy(entry => entry.Distance)
+            .FirstOrDefault();
+        if (candidate == null)
+        {
+            logger.Debug("[Scanner] op=manual-reveal-inventory-delta ignored=true reason=no-nearby-reveal-coffer");
+            return;
+        }
+
+        trackedRevealCoffers.Remove(candidate.Coffer.GameObjectId);
+        logger.Info(
+            $"[Scanner] op=manual-reveal-open-confirmed method=inventory-delta objectId={candidate.Coffer.GameObjectId:X} baseId={candidate.Coffer.DataId} " +
+            $"position=<{candidate.Coffer.Position.X:0.0},{candidate.Coffer.Position.Y:0.0},{candidate.Coffer.Position.Z:0.0}> " +
+            $"distance={candidate.Distance:0.0}y recognition={candidate.RecognitionSource}");
+        NotifyCofferOpened(candidate.Coffer);
+    }
+
+    private static unsafe bool TryCaptureNormalInventorySnapshot(out Dictionary<uint, uint> itemCounts)
+    {
+        itemCounts = [];
+        var inventoryManager = InventoryManager.Instance();
+        if (inventoryManager == null)
+        {
+            return false;
+        }
+
+        foreach (var containerType in NormalInventoryContainers)
+        {
+            var container = inventoryManager->GetInventoryContainer(containerType);
+            if (container == null || !container->IsLoaded || container->Size <= 0 || container->Items == null)
+            {
+                itemCounts.Clear();
+                return false;
+            }
+
+            for (var i = 0; i < container->Size; i++)
+            {
+                var item = container->GetInventorySlot(i);
+                if (item == null || item->IsEmpty() || item->ItemId == 0)
+                {
+                    continue;
+                }
+
+                var quantity = checked((uint)item->Quantity);
+                itemCounts[item->ItemId] = itemCounts.TryGetValue(item->ItemId, out var count)
+                    ? count + quantity
+                    : quantity;
+            }
+        }
+
+        return true;
+    }
 
     private void ScanNearbyForayEntities(List<ForayThreatEntity> entities, Vector3? playerPosition)
     {

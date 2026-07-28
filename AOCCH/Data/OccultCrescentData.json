@@ -1371,7 +1371,7 @@
     {
       "key": "northHorn",
       "displayName": "North Horn",
-      "territoryTypeId": 9999,
+      "territoryTypeId": 1346,
       "features": {
         "fates": false,
         "criticalEncounters": false,
@@ -1379,6 +1379,28 @@
         "visibleCoffers": false,
         "potTreasure": false,
         "buffRotation": false
+      },
+      "criticalEncounters": [
+        { "id": 49 },
+        { "id": 50 },
+        { "id": 51 },
+        { "id": 52 },
+        { "id": 53 },
+        { "id": 54 },
+        { "id": 55 },
+        { "id": 56 },
+        { "id": 57 },
+        { "id": 58 },
+        { "id": 59 },
+        { "id": 60 },
+        { "id": 61 },
+        { "id": 62 },
+        { "id": 63 }
+      ],
+      "visibleCoffers": {
+        "baseIds": [2014741, 2014742, 2014743],
+        "objectKinds": ["Treasure"],
+        "localizedNames": ["Treasure Coffer"]
       }
     }
   ]
