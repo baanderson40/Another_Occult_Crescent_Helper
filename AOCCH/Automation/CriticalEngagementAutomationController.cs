@@ -166,7 +166,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     public bool Start()
         => Start(scanner.Snapshot.EffectiveTarget.CriticalEncounter);
 
-    public bool Start(ActiveCriticalEncounter? target)
+    public bool Start(ActiveCriticalEncounter? target, bool resumeAfterRaise = false)
     {
         if (IsRunning)
         {
@@ -223,6 +223,17 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id})");
         movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
+
+        if (resumeAfterRaise && (snapshot.CurrentCriticalEncounterId == target.Id || IsInBattleState(target)))
+        {
+            movementController.Stop("Resuming active CE after raise; combat is already in progress.");
+            lastCombatSeenAt = DateTimeOffset.UtcNow;
+            autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) resumed after raise");
+            TransitionTo(CriticalEngagementAutomationState.InBattle, $"Resuming active CE {target.Name} ({target.Id}) after raise.");
+            logger.Info($"{BuildLogTag()} op=resume-in-combat target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) reason=active-after-raise");
+            return true;
+        }
+
         return BeginPlanning(target);
     }
 

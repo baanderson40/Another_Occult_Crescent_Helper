@@ -1250,7 +1250,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!criticalEngagementAutomationController.Start(ceTarget))
+        if (!criticalEngagementAutomationController.Start(ceTarget, resumeAfterRaise: true))
         {
             SetFailure(criticalEngagementAutomationController.LastError.Length == 0
                 ? $"Failed to resume CE {ceTarget.Name} ({ceTarget.Id}) after raise."
@@ -1301,7 +1301,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!fateAutomationController.Start(fateTarget, completionBehavior))
+        if (!fateAutomationController.Start(fateTarget, completionBehavior, resumeAfterRaise: true))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to resume {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise."

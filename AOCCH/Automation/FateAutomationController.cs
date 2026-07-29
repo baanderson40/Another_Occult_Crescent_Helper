@@ -228,7 +228,7 @@ public sealed class FateAutomationController : IDisposable
     public bool Start(ActivePotFate? target, Vector3? initialDestinationOverride, float? initialArrivalToleranceOverride, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.CompleteInPlace)
         => Start(target?.ToFateRunTarget(), completionBehavior, initialDestinationOverride, initialArrivalToleranceOverride);
 
-    public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase, Vector3? initialDestinationOverride = null, float? initialArrivalToleranceOverride = null)
+    public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase, Vector3? initialDestinationOverride = null, float? initialArrivalToleranceOverride = null, bool resumeAfterRaise = false)
     {
         if (IsRunning)
         {
@@ -302,6 +302,18 @@ public sealed class FateAutomationController : IDisposable
         logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior} initialDestinationOverride={(initialDestinationOverride.HasValue ? FormatVector(initialDestinationOverride.Value) : "none")} initialArrivalToleranceOverride={(initialArrivalToleranceOverride.HasValue ? $"{initialArrivalToleranceOverride.Value:0.0}" : "none")}");
         movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
+
+        if (resumeAfterRaise && IsFateActive(target) && (target.IsInFate || condition[ConditionFlag.InCombat]))
+        {
+            movementController.Stop("Resuming active FATE after raise; participation is already in progress.");
+            monitorStartedAt = DateTimeOffset.UtcNow;
+            lastCombatSeenAt = DateTimeOffset.UtcNow;
+            EnsureAutorotationApplied(target);
+            TransitionTo(FateAutomationState.Participating, $"Resuming active FATE {target.Name} ({target.Id}) after raise.");
+            logger.Info($"{BuildLogTag()} op=resume-in-combat target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} reason=active-after-raise");
+            return true;
+        }
+
         return BeginPlanning(target, initialDestinationOverride, initialArrivalToleranceOverride);
     }
 
