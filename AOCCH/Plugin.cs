@@ -24,6 +24,8 @@ using AOCCH.Windows;
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 
 namespace AOCCH;
 
@@ -858,6 +860,211 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         ChatGui.Print($"Configured FATE/CE tables logged for {OccultCrescentData.Territories.Count} territories.");
+    }
+
+    internal unsafe void LogLoadedLgbTreasuresDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-treasures territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-treasures-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-treasures-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var treasureCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.Treasure)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                treasureCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-treasure instanceKey={pair.Item1} layerKey={instance->Id.LayerKey} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-treasures-result available=true count={treasureCount}");
+        ChatGui.Print($"Loaded LGB treasure scan complete: {treasureCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbRevealCoffersDebug()
+    {
+        var territory = Scanner.ActiveTerritoryData;
+        var revealBaseIds = territory?.VisibleCoffers.BaseIds.ToHashSet() ?? [];
+        Logger.Info(
+            $"[Plugin] op=debug-lgb-reveal-coffers territory={ClientState.TerritoryType} " +
+            $"baseIds=[{string.Join(",", revealBaseIds.OrderBy(id => id))}] scan-start");
+
+        if (revealBaseIds.Count == 0)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=no-configured-base-ids");
+            ChatGui.Print("Loaded LGB reveal-coffer scan skipped: no configured BaseIds.");
+            return;
+        }
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var revealCofferCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventObject)
+                {
+                    continue;
+                }
+
+                var gameObjectInstance = (GameObjectLayoutInstance*)instance;
+                if (!revealBaseIds.Contains(gameObjectInstance->BaseId))
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                revealCofferCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-reveal-coffer instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} baseId={gameObjectInstance->BaseId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-reveal-coffers-result available=true count={revealCofferCount}");
+        ChatGui.Print($"Loaded LGB reveal-coffer scan complete: {revealCofferCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbEventRangesDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-event-ranges territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-ranges-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-ranges-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var eventRangeCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventRange)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                eventRangeCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-event-range instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-event-ranges-result available=true count={eventRangeCount}");
+        ChatGui.Print($"Loaded LGB EventRange scan complete: {eventRangeCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbEventObjectsDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-event-objects territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var eventObjectCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventObject)
+                {
+                    continue;
+                }
+
+                var gameObjectInstance = (GameObjectLayoutInstance*)instance;
+                var position = instance->GetTransformImpl()->Translation;
+                eventObjectCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-event-object instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} baseId={gameObjectInstance->BaseId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-event-objects-result available=true count={eventObjectCount}");
+        ChatGui.Print($"Loaded LGB EventObject scan complete: {eventObjectCount} entries logged.");
     }
 
     internal void GenerateEventDataDebug()

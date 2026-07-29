@@ -1378,8 +1378,8 @@
       "displayName": "North Horn",
       "territoryTypeId": 1346,
       "features": {
-        "fates": false,
-        "criticalEncounters": false,
+        "fates": true,
+        "criticalEncounters": true,
         "shopping": true,
         "visibleCoffers": false,
         "potTreasure": false,
@@ -1390,6 +1390,40 @@
         "buffZoneRadiusMin": 2.5,
         "buffZoneRadiusMax": 4.5
       },
+      "fates": [
+        { "id": 2074, "name": "Raging Thrall", "startPosition": { "x": 724.0, "y": 70.0, "z": 220.0 } },
+        { "id": 2075, "name": "Eye to Eye", "startPosition": { "x": 510.0, "y": 16.76658, "z": -30.0 } },
+        { "id": 2076, "name": "Shoreline Showdown", "startPosition": { "x": 95.0, "y": 10.0, "z": 470.0 } },
+        { "id": 2077, "name": "Waved Away", "startPosition": { "x": 330.0, "y": 0.0, "z": -250.0 } },
+        { "id": 2078, "name": "Allure of the Occult", "startPosition": { "x": -402.0, "y": 29.76808, "z": -253.0 } },
+        { "id": 2079, "name": "Inconstant Gardener", "startPosition": { "x": -170.0, "y": 30.0, "z": -500.0 } },
+        { "id": 2080, "name": "Territorial Dispute", "startPosition": { "x": -90.0, "y": 67.47852, "z": 866.0 } },
+        { "id": 2081, "name": "A Rotten Affair", "startPosition": { "x": -440.0, "y": 47.02659, "z": -790.0 } },
+        { "id": 2082, "name": "Gale-force Encounter", "startPosition": { "x": -855.7433, "y": 70.67716, "z": 482.1518 } },
+        { "id": 2083, "name": "Scale Model", "startPosition": { "x": -661.0049, "y": 87.0, "z": -54.0 } },
+        { "id": 2084, "name": "Thunderregnum", "startPosition": { "x": 140.0, "y": 37.0, "z": -708.0 } }
+      ],
+      "potFates": [
+        { "fateId": 2073, "name": "In a Pot of Bother", "centerPosition": { "x": -505.2822, "y": 53.14409, "z": 244.041 } },
+        { "fateId": 2072, "name": "Daylight Pottery", "centerPosition": { "x": 233.0, "y": 7.729229, "z": -470.0 } }
+      ],
+      "criticalEncounters": [
+        { "id": 49, "name": "Many Mouths to Feed", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -870.0, "y": 20.0, "z": -560.0 } },
+        { "id": 50, "name": "Doubled Trouble", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -215.0, "y": 18.0, "z": -65.0 } },
+        { "id": 51, "name": "Quarried Away", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -519.0, "y": 48.0, "z": -641.0 } },
+        { "id": 52, "name": "Forbidden Folios", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 659.0, "y": 132.0, "z": 659.0 } },
+        { "id": 53, "name": "Cursed Resurgence", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -688.0, "y": 90.0, "z": 150.0 } },
+        { "id": 54, "name": "Imbalanced Diet", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 765.0, "y": 70.0, "z": 0.0 } },
+        { "id": 55, "name": "Web of Terror", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 170.0, "y": 4.0, "z": -136.0 } },
+        { "id": 56, "name": "A Beast Unleashed", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 238.0, "y": 15.0, "z": 367.0 } },
+        { "id": 57, "name": "Dark Artistry", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 224.0, "y": 52.0, "z": -860.0 } },
+        { "id": 58, "name": "Familiar Tactics", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -390.0, "y": 68.0, "z": 700.0 } },
+        { "id": 59, "name": "Appalling Behavior", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 807.0, "y": 61.0, "z": -562.0 } },
+        { "id": 60, "name": "Tiny Terror", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 152.0, "y": 70.0, "z": 716.0 } },
+        { "id": 61, "name": "Lost on the Wind", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -150.0, "y": 70.0, "z": -860.0 } },
+        { "id": 62, "name": "Ahead of the Competition", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -82.0, "y": 12.0, "z": 485.0 } },
+        { "id": 63, "name": "Accept No Imitators", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": 500.0, "y": 56.0, "z": -310.0 } }
+      ],
       "shopping": {
         "vendors": [
           {
@@ -1612,23 +1646,6 @@
           "interactDistanceMin": 3.15,
           "interactDistanceMax": 4.25
         }
-      ],
-      "criticalEncounters": [
-        { "id": 49 },
-        { "id": 50 },
-        { "id": 51 },
-        { "id": 52 },
-        { "id": 53 },
-        { "id": 54 },
-        { "id": 55 },
-        { "id": 56 },
-        { "id": 57 },
-        { "id": 58 },
-        { "id": 59 },
-        { "id": 60 },
-        { "id": 61 },
-        { "id": 62 },
-        { "id": 63 }
       ],
       "visibleCoffers": {
         "baseIds": [2014741, 2014742, 2014743],

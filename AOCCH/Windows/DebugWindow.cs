@@ -288,18 +288,39 @@ public sealed class DebugWindow : Window, IDisposable
             plugin.LogVisibleCoffersDebug();
         }
 
+        if (ImGui.Button("Dump Loaded LGB Treasures"))
+        {
+            plugin.LogLoadedLgbTreasuresDebug();
+        }
+
         ImGui.SameLine();
+        if (ImGui.Button("Dump Loaded LGB Reveal Coffers"))
+        {
+            plugin.LogLoadedLgbRevealCoffersDebug();
+        }
+
+        if (ImGui.Button("Dump Loaded LGB EventRanges"))
+        {
+            plugin.LogLoadedLgbEventRangesDebug();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump Loaded LGB EventObjects"))
+        {
+            plugin.LogLoadedLgbEventObjectsDebug();
+        }
+
         if (ImGui.Button("Dump Targeted Shop NPC"))
         {
             plugin.LogTargetedShopNpcDebug();
         }
 
+        ImGui.SameLine();
         if (ImGui.Button("Dump Configured FATE/CE Tables"))
         {
             plugin.LogConfiguredEventTablesDebug();
         }
 
-        ImGui.SameLine();
         if (ImGui.Button("Generate Event Data"))
         {
             plugin.GenerateEventDataDebug();
