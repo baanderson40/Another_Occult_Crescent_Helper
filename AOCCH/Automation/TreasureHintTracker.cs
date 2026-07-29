@@ -571,6 +571,7 @@ public sealed class TreasureHintTracker : IDisposable
     private HashSet<uint> GetDebugTreasureLogMessageIds()
     {
         var behavior = scanner.ActiveTerritoryData?.PotTreasure;
+        var cofferData = scanner.ActiveTerritoryData?.VisibleCoffers;
         var ids = new HashSet<uint>();
         if (behavior != null)
         {
@@ -583,8 +584,15 @@ public sealed class TreasureHintTracker : IDisposable
                 behavior.HintBeyondFarLogMessageId,
                 behavior.ElixirPromptLogMessageId,
                 behavior.BonusOfferLogMessageId,
-                behavior.CofferSurveyCountsLogMessageId,
-                behavior.CofferSurveyEmptyLogMessageId,
+            ]);
+        }
+
+        if (cofferData != null)
+        {
+            ids.UnionWith(
+            [
+                cofferData.CofferSurveyCountsLogMessageId,
+                cofferData.CofferSurveyEmptyLogMessageId,
             ]);
         }
 
@@ -595,13 +603,13 @@ public sealed class TreasureHintTracker : IDisposable
     private bool TryParseCofferSurveyLogMessage(ILogMessage message, out TreasureCofferSurveySnapshot parsedSurvey)
     {
         parsedSurvey = null!;
-        var behavior = scanner.ActiveTerritoryData?.PotTreasure;
-        if (behavior == null)
+        var cofferData = scanner.ActiveTerritoryData?.VisibleCoffers;
+        if (cofferData == null)
         {
             return false;
         }
 
-        if (message.LogMessageId == behavior.CofferSurveyCountsLogMessageId)
+        if (message.LogMessageId == cofferData.CofferSurveyCountsLogMessageId)
         {
             if (!TryParseCofferSurveyCounts(message, out var silverCount, out var bronzeCount))
             {
@@ -617,7 +625,7 @@ public sealed class TreasureHintTracker : IDisposable
             return true;
         }
 
-        if (message.LogMessageId != behavior.CofferSurveyEmptyLogMessageId)
+        if (message.LogMessageId != cofferData.CofferSurveyEmptyLogMessageId)
         {
             return false;
         }

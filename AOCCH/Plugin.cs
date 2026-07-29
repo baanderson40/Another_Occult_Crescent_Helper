@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Text.Json;
 using System.Threading;
 
 using AOCCH.Data;
@@ -23,6 +24,8 @@ using AOCCH.Windows;
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 
 namespace AOCCH;
 
@@ -859,22 +862,270 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print($"Configured FATE/CE tables logged for {OccultCrescentData.Territories.Count} territories.");
     }
 
-    internal void LogLiveEventTablesDebug()
+    internal unsafe void LogLoadedLgbTreasuresDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-treasures territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-treasures-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-treasures-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var treasureCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.Treasure)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                treasureCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-treasure instanceKey={pair.Item1} layerKey={instance->Id.LayerKey} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-treasures-result available=true count={treasureCount}");
+        ChatGui.Print($"Loaded LGB treasure scan complete: {treasureCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbRevealCoffersDebug()
+    {
+        var territory = Scanner.ActiveTerritoryData;
+        var revealBaseIds = territory?.VisibleCoffers.BaseIds.ToHashSet() ?? [];
+        Logger.Info(
+            $"[Plugin] op=debug-lgb-reveal-coffers territory={ClientState.TerritoryType} " +
+            $"baseIds=[{string.Join(",", revealBaseIds.OrderBy(id => id))}] scan-start");
+
+        if (revealBaseIds.Count == 0)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=no-configured-base-ids");
+            ChatGui.Print("Loaded LGB reveal-coffer scan skipped: no configured BaseIds.");
+            return;
+        }
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-reveal-coffers-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var revealCofferCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventObject)
+                {
+                    continue;
+                }
+
+                var gameObjectInstance = (GameObjectLayoutInstance*)instance;
+                if (!revealBaseIds.Contains(gameObjectInstance->BaseId))
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                revealCofferCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-reveal-coffer instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} baseId={gameObjectInstance->BaseId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-reveal-coffers-result available=true count={revealCofferCount}");
+        ChatGui.Print($"Loaded LGB reveal-coffer scan complete: {revealCofferCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbEventRangesDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-event-ranges territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-ranges-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-ranges-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var eventRangeCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventRange)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                eventRangeCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-event-range instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-event-ranges-result available=true count={eventRangeCount}");
+        ChatGui.Print($"Loaded LGB EventRange scan complete: {eventRangeCount} entries logged.");
+    }
+
+    internal unsafe void LogLoadedLgbEventObjectsDebug()
+    {
+        Logger.Info($"[Plugin] op=debug-lgb-event-objects territory={ClientState.TerritoryType} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var eventObjectCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventObject)
+                {
+                    continue;
+                }
+
+                var gameObjectInstance = (GameObjectLayoutInstance*)instance;
+                var position = instance->GetTransformImpl()->Translation;
+                eventObjectCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-event-object instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} baseId={gameObjectInstance->BaseId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info($"[Plugin] op=debug-lgb-event-objects-result available=true count={eventObjectCount}");
+        ChatGui.Print($"Loaded LGB EventObject scan complete: {eventObjectCount} entries logged.");
+    }
+
+    internal void GenerateEventDataDebug()
     {
         var snapshot = Scanner.Snapshot;
-        Logger.Info($"[Plugin] op=debug-live-event-tables territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} fates={snapshot.Fates.Count} unknownCes={snapshot.UnknownCriticalEncounters.Count} ces={snapshot.CriticalEncounters.Count}");
-        foreach (var fate in snapshot.Fates)
+        var territory = Scanner.ActiveTerritoryData;
+        var playerPosition = ObjectTable.LocalPlayer?.Position;
+        var fates = snapshot.Fates
+            .Select(fate =>
+            {
+                var metadata = territory?.Fates.FirstOrDefault(knownFate => knownFate.Id == fate.Id);
+                return new
+                {
+                    id = fate.Id,
+                    name = fate.Name,
+                    demiatma = metadata?.Demiatma,
+                    note = metadata?.Note,
+                    aethernet = metadata?.Aethernet,
+                    startPosition = CreatePosition(fate.Position),
+                };
+            })
+            .ToArray();
+        var criticalEncounters = snapshot.CriticalEncounters
+            .Concat(snapshot.UnknownCriticalEncounters)
+            .Select(encounter =>
+            {
+                var metadata = territory?.CriticalEncounters.FirstOrDefault(knownEncounter => knownEncounter.Id == encounter.Id);
+                return new
+                {
+                    id = encounter.Id,
+                    name = encounter.Name,
+                    preferredAethernet = metadata?.PreferredAethernet ?? string.Empty,
+                    priority = metadata?.Priority > 0 ? metadata.Priority : 100,
+                    engageRadius = metadata?.EngageRadius > 0 ? metadata.EngageRadius : 20f,
+                    stagingPoint = playerPosition.HasValue
+                        ? CreatePosition(playerPosition.Value)
+                        : null,
+                };
+            })
+            .ToArray();
+        var json = JsonSerializer.Serialize(new
         {
-            Logger.Info($"[Plugin] op=debug-live-fate id={fate.Id} name='{fate.Name}' state={fate.State} stateCode={fate.StateCode} progress={fate.Progress} radius={fate.Radius:0.0} pos=<{fate.Position.X:0.0},{fate.Position.Y:0.0},{fate.Position.Z:0.0}> knownMetadata={fate.HasKnownMetadata} excluded={fate.IsExcluded} candidate={fate.IsCandidate} inFate={fate.IsInFate} liveTargetObjectId={fate.LiveTargetObjectId:X}");
-        }
+            fates,
+            criticalEncounters,
+        }, new JsonSerializerOptions { WriteIndented = true });
 
-        foreach (var encounter in snapshot.CriticalEncounters.Concat(snapshot.UnknownCriticalEncounters))
+        Logger.Info($"[Plugin] op=debug-event-data territory={ClientState.TerritoryType} territoryKey={snapshot.TerritoryKey} fates={fates.Length} potFates={snapshot.PotFates.Count} ces={criticalEncounters.Length} playerPosition={(playerPosition.HasValue ? FormatVector3(playerPosition.Value) : "unavailable")}");
+        Logger.Info("[Plugin] op=debug-event-data-json-begin");
+        foreach (var line in json.Split('\n'))
         {
-            Logger.Info($"[Plugin] op=debug-live-ce id={encounter.Id} name='{encounter.Name}' state={encounter.State} stateCode={encounter.StateCode} progress={encounter.Progress} startTimestamp={encounter.StartTimestamp} knownMetadata={encounter.HasKnownMetadata} candidate={encounter.IsCandidate}");
+            Logger.Info($"[Plugin] op=debug-event-data-json {line.TrimEnd('\r')}");
         }
-
-        ChatGui.Print($"Live FATE/CE tables logged: fates={snapshot.Fates.Count}, CEs={snapshot.CriticalEncounters.Count + snapshot.UnknownCriticalEncounters.Count}.");
+        Logger.Info("[Plugin] op=debug-event-data-json-end");
+        ChatGui.Print($"Event data generated: fates={fates.Length}, CEs={criticalEncounters.Length}. See the log for paste-ready JSON.");
     }
+
+    private static object CreatePosition(Vector3 position)
+        => new { x = position.X, y = position.Y, z = position.Z };
+
+    private static string FormatVector3(Vector3 position)
+        => $"<{position.X:0.000}, {position.Y:0.000}, {position.Z:0.000}>";
 
     internal unsafe void RunProbeForay()
     {

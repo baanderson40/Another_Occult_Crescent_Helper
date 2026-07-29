@@ -818,8 +818,8 @@ public class ConfigWindow : Window, IDisposable
                             ItemId = selectedItem.ItemId,
                             MenuIndex = selectedPage.MenuIndex,
                             TabId = selectedTab.TabId,
-                            KeepAmount = 1,
-                            BuyAmount = 0,
+                            KeepAmount = 0,
+                            BuyAmount = 1,
                             KeepBuying = false,
                             Priority = configuration.CurrencyShopTargets.Count(target => string.Equals(target.TerritoryKey, territoryKey, StringComparison.OrdinalIgnoreCase)),
                         });

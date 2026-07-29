@@ -1250,7 +1250,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!criticalEngagementAutomationController.Start(ceTarget))
+        if (!criticalEngagementAutomationController.Start(ceTarget, resumeAfterRaise: true))
         {
             SetFailure(criticalEngagementAutomationController.LastError.Length == 0
                 ? $"Failed to resume CE {ceTarget.Name} ({ceTarget.Id}) after raise."
@@ -1301,7 +1301,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!fateAutomationController.Start(fateTarget, completionBehavior))
+        if (!fateAutomationController.Start(fateTarget, completionBehavior, resumeAfterRaise: true))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to resume {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise."
@@ -1387,6 +1387,14 @@ public sealed class FarmSessionController : IDisposable
         if (!configuration.EnableAutomaticTreasureCofferRoute)
         {
             SetAutomaticTreasureCofferStatus("Automatic overworld coffer mode is disabled.");
+            return false;
+        }
+
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
+        {
+            SetAutomaticTreasureCofferStatus(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Automatic overworld coffer mode is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Automatic overworld coffer mode requires a supported Occult Crescent territory.");
             return false;
         }
 

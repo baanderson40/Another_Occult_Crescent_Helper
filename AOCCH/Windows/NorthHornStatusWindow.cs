@@ -7,12 +7,12 @@ namespace AOCCH.Windows;
 
 public sealed class NorthHornStatusWindow : Window, IDisposable
 {
-    public const int CurrentStatusRevision = 1;
+    public const int CurrentStatusRevision = 2;
 
     private const int PotRevealCofferProgress = 0;
     private const int PotRevealCofferTotal = 30;
-    private const int OverworldCofferProgress = 0;
-    private const int OverworldCofferTotal = 71;
+    private const int OverworldCofferProgress = 68;
+    private const int OverworldCofferTotal = 68;
 
     private readonly Plugin plugin;
     private readonly Configuration configuration;
@@ -65,11 +65,11 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             ImGui.TableSetupColumn("Progress", ImGuiTableColumnFlags.WidthFixed, 105f);
             ImGui.TableHeadersRow();
 
-            DrawStatusRow("Critical Engagements", "Unsupported", "In progress");
-            DrawStatusRow("FATE Farming", "Unsupported", "In progress");
-            DrawStatusRow("Shopping", "Unsupported", "Planned");
+            DrawStatusRow("Critical Engagements", "Supported", "Available");
+            DrawStatusRow("FATE Farming", "Supported", "Available");
+            DrawStatusRow("Shopping", "Supported", "Available");
             DrawStatusRow("Pot / Reveal Coffers", "Unsupported", $"{PotRevealCofferProgress}/{PotRevealCofferTotal}");
-            DrawStatusRow("Overworld Coffers", "Unsupported", $"{OverworldCofferProgress}/{OverworldCofferTotal}");
+            DrawStatusRow("Overworld Coffers", "In progress", $"{OverworldCofferProgress}/{OverworldCofferTotal}");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");
 
