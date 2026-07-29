@@ -11,9 +11,6 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
 
     private const int PotRevealCofferProgress = 0;
     private const int PotRevealCofferTotal = 30;
-    private const int OverworldCofferProgress = 68;
-    private const int OverworldCofferTotal = 68;
-
     private readonly Plugin plugin;
     private readonly Configuration configuration;
     private bool isDebugPreview;
@@ -69,7 +66,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             DrawStatusRow("FATE Farming", "Supported", "Available");
             DrawStatusRow("Shopping", "Supported", "Available");
             DrawStatusRow("Pot / Reveal Coffers", "Unsupported", $"{PotRevealCofferProgress}/{PotRevealCofferTotal}");
-            DrawStatusRow("Overworld Coffers", "Supported", $"{OverworldCofferProgress}/{OverworldCofferTotal}");
+            DrawStatusRow("Overworld Coffers", "Partial", "Ninja mode untested");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");
 
