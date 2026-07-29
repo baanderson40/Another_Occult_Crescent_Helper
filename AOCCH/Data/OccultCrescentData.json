@@ -1886,6 +1886,18 @@
         },
         {
           "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9_PreRoute",
+          "position": {
+            "x": -901.035,
+            "y": 157.8,
+            "z": 643.081
+          },
+          "aggroLevel": 43,
+          "arrivalDistance": 3.0,
+          "routeOnly": true
+        },
+        {
+          "area": "SuspendedMasonry",
           "label": "SuspendedMasonry_9",
           "position": {
             "x": -800.397,
@@ -1894,6 +1906,18 @@
           },
           "aggroLevel": 42,
           "note": "LGB instance 12686356, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9_WindCurrent",
+          "position": {
+            "x": -899.5,
+            "y": 157.8,
+            "z": 628.992
+          },
+          "aggroLevel": 43,
+          "routeOnly": true,
+          "note": "Wind current transition to floating island; move to position and do not jump"
         },
         {
           "area": "SuspendedMasonry",
@@ -2500,7 +2524,15 @@
         },
         {
           "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9_PreRoute"
+        },
+        {
+          "area": "SuspendedMasonry",
           "label": "SuspendedMasonry_9"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9_WindCurrent"
         },
         {
           "area": "SuspendedMasonry",
