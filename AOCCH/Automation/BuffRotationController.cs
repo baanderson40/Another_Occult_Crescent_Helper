@@ -516,7 +516,7 @@ public sealed class BuffRotationController : IDisposable
             return;
         }
 
-        if (!movementController.PlanRouteToLocation(currentAction, baseCamp.Name, destination, 1f))
+        if (!movementController.PlanRouteToLocation(currentAction, baseCamp.Name, destination, 1f, shouldMountBeforeStep: false))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Buff rotation could not plan movement into the buff zone."

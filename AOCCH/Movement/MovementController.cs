@@ -299,7 +299,8 @@ public sealed class MovementController : IDisposable
         float arrivalTolerance,
         bool allowReturn = true,
         float? earlyDismountDistance = null,
-        Vector3? earlyDismountTarget = null)
+        Vector3? earlyDismountTarget = null,
+        bool shouldMountBeforeStep = true)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -316,7 +317,7 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        if (!routePlanner.TryPlanToLocation(territory, description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance, earlyDismountDistance, earlyDismountTarget))
+        if (!routePlanner.TryPlanToLocation(territory, description, preferredAethernet, destination, playerPosition.Value, out var route, out var failureReason, allowReturn, arrivalTolerance, earlyDismountDistance, earlyDismountTarget, shouldMountBeforeStep))
         {
             SetFailure(MovementState.Failed, failureReason);
             return false;
