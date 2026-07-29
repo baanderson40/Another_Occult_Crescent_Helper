@@ -110,6 +110,8 @@ public sealed class VisibleCofferData
     public List<byte> UnsafeWeatherIds { get; init; } = [];
     public int? AshkinStartEorzeaMinute { get; init; }
     public int? AshkinEndEorzeaMinute { get; init; }
+    public uint CofferSurveyCountsLogMessageId { get; init; }
+    public uint CofferSurveyEmptyLogMessageId { get; init; }
 }
 
 public sealed class VisibleCofferAreaAethernetData
@@ -157,8 +159,6 @@ public sealed class PotTreasureBehaviorData
     public uint HintBeyondFarLogMessageId { get; init; }
     public uint ElixirPromptLogMessageId { get; init; }
     public uint BonusOfferLogMessageId { get; init; }
-    public uint CofferSurveyCountsLogMessageId { get; init; }
-    public uint CofferSurveyEmptyLogMessageId { get; init; }
 }
 
 public sealed class TreasureCofferGroupData

@@ -1390,6 +1390,14 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
+        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunVisibleCofferRoute)
+        {
+            SetAutomaticTreasureCofferStatus(scanner.Snapshot.IsInSupportedTerritory
+                ? $"Automatic overworld coffer mode is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+                : "Automatic overworld coffer mode requires a supported Occult Crescent territory.");
+            return false;
+        }
+
         var dependencyReport = Plugin.Current?.GetNormalAutomationDependencyReport();
         if (dependencyReport is { IsReady: false })
         {

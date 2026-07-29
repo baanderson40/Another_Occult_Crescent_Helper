@@ -464,8 +464,6 @@ public static class OccultCrescentDataLoader
             territory.PotTreasure.HintBeyondFarLogMessageId,
             territory.PotTreasure.ElixirPromptLogMessageId,
             territory.PotTreasure.BonusOfferLogMessageId,
-            territory.PotTreasure.CofferSurveyCountsLogMessageId,
-            territory.PotTreasure.CofferSurveyEmptyLogMessageId,
         };
         if (logMessageIds.Any(id => id == 0))
         {
@@ -528,6 +526,19 @@ public static class OccultCrescentDataLoader
 
         ValidateUniqueIds(data.BaseIds, "visible coffer base", errors);
         ValidateNonzeroIds(data.BaseIds, "visible coffer base", errors);
+        var surveyLogMessageIds = new[]
+        {
+            data.CofferSurveyCountsLogMessageId,
+            data.CofferSurveyEmptyLogMessageId,
+        };
+        if (surveyLogMessageIds.Any(id => id == 0))
+        {
+            errors.Add("visible coffer data is missing one or more survey log message IDs");
+        }
+        else if (surveyLogMessageIds.Distinct().Count() != surveyLogMessageIds.Length)
+        {
+            errors.Add("visible coffer data has duplicate survey log message IDs");
+        }
         if (data.ObjectKinds.Count == 0 || data.ObjectKinds.Any(string.IsNullOrWhiteSpace))
         {
             errors.Add("visible coffers are enabled but object kinds are incomplete");

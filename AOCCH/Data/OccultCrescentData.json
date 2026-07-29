@@ -35,7 +35,9 @@
         ],
         "unsafeWeatherIds": [7, 62, 64, 192],
         "ashkinStartEorzeaMinute": 1350,
-        "ashkinEndEorzeaMinute": 240
+        "ashkinEndEorzeaMinute": 240,
+        "cofferSurveyCountsLogMessageId": 10965,
+        "cofferSurveyEmptyLogMessageId": 10966
       },
       "potTreasure": {
         "treasureBuffStatusId": 1531,
@@ -45,9 +47,7 @@
         "hintFarLogMessageId": 10988,
         "hintBeyondFarLogMessageId": 10989,
         "elixirPromptLogMessageId": 10990,
-        "bonusOfferLogMessageId": 10994,
-        "cofferSurveyCountsLogMessageId": 10965,
-        "cofferSurveyEmptyLogMessageId": 10966
+        "bonusOfferLogMessageId": 10994
       },
       "shopping": {
         "vendors": [
@@ -1650,7 +1650,9 @@
       "visibleCoffers": {
         "baseIds": [2014741, 2014742, 2014743],
         "objectKinds": ["Treasure"],
-        "localizedNames": ["Treasure Coffer"]
+        "localizedNames": ["Treasure Coffer"],
+        "cofferSurveyCountsLogMessageId": 10965,
+        "cofferSurveyEmptyLogMessageId": 10966
       }
     }
   ]
