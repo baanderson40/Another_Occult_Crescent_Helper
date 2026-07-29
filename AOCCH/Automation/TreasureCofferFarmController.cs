@@ -77,6 +77,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private DateTimeOffset hiddenHideDispatchRetryAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenHideVerificationDeadlineAt = DateTimeOffset.MinValue;
     private bool hiddenHideVerificationRetryUsed;
+    private int pendingAreaTransitionRouteIndex = -1;
 
     public TreasureCofferFarmController(
         IFramework framework,
@@ -295,6 +296,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
             activeSpotWeatherForcedHidden = false;
+            pendingAreaTransitionRouteIndex = -1;
             ResetHiddenTravelReadiness();
         }
 
@@ -354,6 +356,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
             activeSpotWeatherForcedHidden = false;
+            pendingAreaTransitionRouteIndex = -1;
             ResetHiddenTravelReadiness();
         }
 
@@ -408,6 +411,12 @@ public sealed class TreasureCofferFarmController : IDisposable
             case TreasureCofferFarmState.TravelingToThreatenedCoffer:
                 TickTravelingToThreatenedCoffer();
                 break;
+            case TreasureCofferFarmState.ReturningToBaseBetweenAreas:
+                TickReturningToBaseBetweenAreas();
+                break;
+            case TreasureCofferFarmState.TravelingToNextArea:
+                TickTravelingToNextArea();
+                break;
             case TreasureCofferFarmState.WaitingForInteractionHandoff:
                 TickWaitingForInteractionHandoff();
                 break;
@@ -439,6 +448,20 @@ public sealed class TreasureCofferFarmController : IDisposable
             }
 
             var routeEntry = territory.VisibleCofferFarmRoute[nextIndex];
+            if (RequiresAreaTransition(territory, routeEntry))
+            {
+                if (!TryFindNextEligibleAreaRouteIndex(territory, nextIndex, out var eligibleAreaRouteIndex))
+                {
+                    currentRouteIndex = territory.VisibleCofferFarmRoute.Count - 1;
+                    BeginReturnToBase();
+                    return;
+                }
+
+                routeEntry = territory.VisibleCofferFarmRoute[eligibleAreaRouteIndex];
+                BeginAreaTransition(eligibleAreaRouteIndex, routeEntry);
+                return;
+            }
+
             if (!GetSpotsByKey().TryGetValue(BuildKey(routeEntry.Area, routeEntry.Label), out var spot))
             {
                 SetFailure($"Overworld coffer route entry {routeEntry.Area}:{routeEntry.Label} is missing spot data.");
@@ -527,6 +550,191 @@ public sealed class TreasureCofferFarmController : IDisposable
             {
                 return;
             }
+        }
+    }
+
+    private bool RequiresAreaTransition(OccultCrescentTerritoryData territory, VisibleCofferFarmRouteEntryData nextRouteEntry)
+    {
+        if (!territory.VisibleCofferRoutePolicy.ReturnToBaseBetweenAreas)
+        {
+            return false;
+        }
+
+        var currentArea = activeRouteEntry?.Area;
+        if (string.IsNullOrWhiteSpace(currentArea))
+        {
+            currentArea = territory.GetBaseCampAethernet()?.Name;
+        }
+
+        return !string.Equals(currentArea, nextRouteEntry.Area, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryFindNextEligibleAreaRouteIndex(
+        OccultCrescentTerritoryData territory,
+        int startingRouteIndex,
+        out int eligibleRouteIndex)
+    {
+        eligibleRouteIndex = -1;
+        var spotsByKey = GetSpotsByKey();
+        var routeIndex = startingRouteIndex;
+
+        while (routeIndex < territory.VisibleCofferFarmRoute.Count)
+        {
+            var area = territory.VisibleCofferFarmRoute[routeIndex].Area;
+            var areaEndIndex = routeIndex;
+            var totalCoffers = 0;
+            var eligibleCoffers = 0;
+            var skippedLabels = new List<string>();
+
+            while (areaEndIndex < territory.VisibleCofferFarmRoute.Count
+                && string.Equals(territory.VisibleCofferFarmRoute[areaEndIndex].Area, area, StringComparison.OrdinalIgnoreCase))
+            {
+                var areaRouteEntry = territory.VisibleCofferFarmRoute[areaEndIndex];
+                if (spotsByKey.TryGetValue(BuildKey(areaRouteEntry.Area, areaRouteEntry.Label), out var spot)
+                    && !spot.RouteOnly)
+                {
+                    totalCoffers++;
+                    if (configuration.UseNinjaForDangerousVisibleCoffers || !IsDangerousByAggro(spot))
+                    {
+                        eligibleCoffers++;
+                    }
+                    else
+                    {
+                        skippedLabels.Add(spot.Label);
+                    }
+                }
+
+                areaEndIndex++;
+            }
+
+            var skippedSummary = skippedLabels.Count == 0
+                ? "none"
+                : string.Join(",", skippedLabels);
+            var decision = eligibleCoffers > 0 ? "visit" : "skip";
+            logger.Info(
+                $"{BuildLogTag()} op=area-eligibility area={area} decision={decision} totalCoffers={totalCoffers} eligibleCoffers={eligibleCoffers} skippedCoffers={skippedLabels.Count} skipped={skippedSummary} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} useNinja={configuration.UseNinjaForDangerousVisibleCoffers}" +
+                (eligibleCoffers > 0 ? string.Empty : " reason=no-coffers-within-aggro-limit"));
+
+            if (eligibleCoffers > 0)
+            {
+                eligibleRouteIndex = routeIndex;
+                return true;
+            }
+
+            routeIndex = areaEndIndex;
+        }
+
+        return false;
+    }
+
+    private void BeginAreaTransition(int routeIndex, VisibleCofferFarmRouteEntryData nextRouteEntry)
+    {
+        pendingAreaTransitionRouteIndex = routeIndex;
+        logger.Info($"{BuildLogTag()} op=area-transition-start from={activeRouteEntry?.Area ?? "BaseCamp"} to={nextRouteEntry.Area} routeIndex={routeIndex} forceAethernet={scanner.ActiveTerritoryData?.VisibleCofferRoutePolicy.ForceAethernetForAreaTransitions}");
+
+        if (!movementController.RecoverToBaseCamp())
+        {
+            SetFailure(movementController.LastError.Length == 0
+                ? $"Failed to return to Base Camp before transitioning to {nextRouteEntry.Area}."
+                : movementController.LastError);
+            pendingAreaTransitionRouteIndex = -1;
+            return;
+        }
+
+        TransitionTo(TreasureCofferFarmState.ReturningToBaseBetweenAreas, $"Returning to Base Camp before transitioning to {nextRouteEntry.Area}.");
+    }
+
+    private void TickReturningToBaseBetweenAreas()
+    {
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                if (pendingAreaTransitionRouteIndex < 0)
+                {
+                    SetFailure("Area transition reached Base Camp without a pending route entry.");
+                    return;
+                }
+
+                var territory = scanner.ActiveTerritoryData;
+                var routeEntry = territory?.VisibleCofferFarmRoute.ElementAtOrDefault(pendingAreaTransitionRouteIndex);
+                if (territory == null || routeEntry == null)
+                {
+                    SetFailure("Area transition lost its next route entry after returning to Base Camp.");
+                    return;
+                }
+
+                var preferredAethernet = territory.VisibleCoffers.AreaAethernetMappings
+                    .FirstOrDefault(mapping => string.Equals(mapping.Area, routeEntry.Area, StringComparison.OrdinalIgnoreCase))
+                    ?.Aethernet;
+                if (string.IsNullOrWhiteSpace(preferredAethernet))
+                {
+                    SetFailure($"Area transition has no aethernet mapping for {routeEntry.Area}.");
+                    return;
+                }
+
+                var destinationAethernet = territory.Aethernets
+                    .FirstOrDefault(aethernet => string.Equals(aethernet.Name, preferredAethernet, StringComparison.OrdinalIgnoreCase));
+                if (destinationAethernet == null)
+                {
+                    SetFailure($"Area transition has no configured aethernet named {preferredAethernet} for {routeEntry.Area}.");
+                    return;
+                }
+
+                movementController.Stop($"Reached Base Camp before transitioning to {routeEntry.Area}.");
+                if (!movementController.PlanRouteToLocation(
+                        $"North Horn area transition to {routeEntry.Area}",
+                        preferredAethernet,
+                        destinationAethernet.Destination.ToVector3(),
+                        destinationAethernet.InteractDistanceMax,
+                        allowReturn: false,
+                        shouldMountBeforeStep: true,
+                        forceAethernet: territory.VisibleCofferRoutePolicy.ForceAethernetForAreaTransitions)
+                    || !movementController.StartPlannedRoute())
+                {
+                    SetFailure(movementController.LastError.Length == 0
+                        ? $"Failed to start aethernet travel to {routeEntry.Area}."
+                        : movementController.LastError);
+                    return;
+                }
+
+                TransitionTo(TreasureCofferFarmState.TravelingToNextArea, $"Traveling by aethernet to {routeEntry.Area}.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                SetFailure($"Failed to return to Base Camp during area transition: {movementController.LastError}");
+                return;
+        }
+    }
+
+    private void TickTravelingToNextArea()
+    {
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                if (pendingAreaTransitionRouteIndex < 0)
+                {
+                    SetFailure("Area transition arrived without a pending route entry.");
+                    return;
+                }
+
+                var territory = scanner.ActiveTerritoryData;
+                var routeEntry = territory?.VisibleCofferFarmRoute.ElementAtOrDefault(pendingAreaTransitionRouteIndex);
+                if (routeEntry == null)
+                {
+                    SetFailure("Area transition arrived without a valid route entry.");
+                    return;
+                }
+
+                currentRouteIndex = pendingAreaTransitionRouteIndex - 1;
+                activeRouteEntry = routeEntry;
+                activeSpot = null;
+                pendingAreaTransitionRouteIndex = -1;
+                TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Arrived in {routeEntry.Area}; starting area route.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                SetFailure($"Failed to travel to the next area: {movementController.LastError}");
+                return;
         }
     }
 

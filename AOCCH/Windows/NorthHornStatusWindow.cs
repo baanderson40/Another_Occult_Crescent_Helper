@@ -7,7 +7,7 @@ namespace AOCCH.Windows;
 
 public sealed class NorthHornStatusWindow : Window, IDisposable
 {
-    public const int CurrentStatusRevision = 2;
+    public const int CurrentStatusRevision = 3;
 
     private const int PotRevealCofferProgress = 0;
     private const int PotRevealCofferTotal = 30;
@@ -55,7 +55,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             ImGui.Separator();
         }
 
-        ImGui.TextWrapped("North Horn contains new content. AOCCH support is being added in priority order.");
+        ImGui.TextWrapped("North Horn overworld coffer support is available. Pot and reveal coffer support is still unavailable.");
         ImGui.Spacing();
 
         if (ImGui.BeginTable("NorthHornStatusTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
@@ -69,7 +69,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             DrawStatusRow("FATE Farming", "Supported", "Available");
             DrawStatusRow("Shopping", "Supported", "Available");
             DrawStatusRow("Pot / Reveal Coffers", "Unsupported", $"{PotRevealCofferProgress}/{PotRevealCofferTotal}");
-            DrawStatusRow("Overworld Coffers", "In progress", $"{OverworldCofferProgress}/{OverworldCofferTotal}");
+            DrawStatusRow("Overworld Coffers", "Supported", $"{OverworldCofferProgress}/{OverworldCofferTotal}");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");
 

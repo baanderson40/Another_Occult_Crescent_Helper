@@ -65,6 +65,7 @@ public sealed class OccultCrescentTerritoryData
     public CurrencyShopData Shopping { get; init; } = new();
     public List<DropData> Drops { get; init; } = [];
     public VisibleCofferData VisibleCoffers { get; init; } = new();
+    public VisibleCofferRoutePolicyData VisibleCofferRoutePolicy { get; init; } = new();
     public PotTreasureBehaviorData PotTreasure { get; init; } = new();
     public BuffRotationData BuffRotation { get; init; } = new();
 
@@ -112,6 +113,12 @@ public sealed class VisibleCofferData
     public int? AshkinEndEorzeaMinute { get; init; }
     public uint CofferSurveyCountsLogMessageId { get; init; }
     public uint CofferSurveyEmptyLogMessageId { get; init; }
+}
+
+public sealed class VisibleCofferRoutePolicyData
+{
+    public bool ReturnToBaseBetweenAreas { get; init; }
+    public bool ForceAethernetForAreaTransitions { get; init; }
 }
 
 public sealed class VisibleCofferAreaAethernetData

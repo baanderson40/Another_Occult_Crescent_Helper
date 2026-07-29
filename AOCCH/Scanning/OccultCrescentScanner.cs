@@ -104,6 +104,48 @@ public sealed class OccultCrescentScanner : IDisposable
         }
     }
 
+    public bool TryGetNearestForayThreat(Vector3 origin, float scanRadius, out ForayThreatEntity threat)
+    {
+        threat = new ForayThreatEntity();
+        ForayThreatEntity? nearest = null;
+
+        foreach (var gameObject in objectTable)
+        {
+            if (gameObject is not IBattleNpc || gameObject is not ICharacter character
+                || !character.IsValid() || !character.IsTargetable || !IsHostile(character))
+            {
+                continue;
+            }
+
+            var distance = CalculateFlatDistance(origin, character.Position);
+            if (distance > scanRadius || TryGetForayLevel(character) is not { } knowledgeLevel || knowledgeLevel < 1)
+            {
+                continue;
+            }
+
+            if (nearest == null || distance < nearest.DistanceToPlayer)
+            {
+                nearest = new ForayThreatEntity
+                {
+                    ObjectId = character.GameObjectId,
+                    BaseId = character.BaseId,
+                    Name = character.Name.ToString(),
+                    Position = character.Position,
+                    KnowledgeLevel = knowledgeLevel,
+                    DistanceToPlayer = distance,
+                };
+            }
+        }
+
+        if (nearest == null)
+        {
+            return false;
+        }
+
+        threat = nearest;
+        return true;
+    }
+
     public OccultCrescentTerritoryData? ActiveTerritoryData
         => catalog.GetTerritoryOrNull(clientState.TerritoryType);
 

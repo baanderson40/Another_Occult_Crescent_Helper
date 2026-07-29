@@ -1381,9 +1381,13 @@
         "fates": true,
         "criticalEncounters": true,
         "shopping": true,
-        "visibleCoffers": false,
+        "visibleCoffers": true,
         "potTreasure": false,
         "buffRotation": true
+      },
+      "visibleCofferRoutePolicy": {
+        "returnToBaseBetweenAreas": true,
+        "forceAethernetForAreaTransitions": true
       },
       "buffRotation": {
         "buffZoneCenter": { "x": 885.009, "y": 258.500, "z": 874.735 },
@@ -1647,10 +1651,1076 @@
           "interactDistanceMax": 4.25
         }
       ],
+      "visibleCofferFarmSpots": [
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_1",
+          "position": {
+            "x": 676.997,
+            "y": 190.978,
+            "z": 957.447
+          },
+          "aggroLevel": 20,
+          "note": "LGB instance 12685250, layer 43366"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_2",
+          "position": {
+            "x": 812,
+            "y": 192,
+            "z": 669
+          },
+          "aggroLevel": 20,
+          "note": "LGB instance 12685381, layer 43366"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_3",
+          "position": {
+            "x": 673.74,
+            "y": 161.165,
+            "z": 729.666
+          },
+          "aggroLevel": 21,
+          "note": "LGB instance 12685449, layer 43366"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_4",
+          "position": {
+            "x": 758.147,
+            "y": 130,
+            "z": 506.813
+          },
+          "aggroLevel": 21,
+          "note": "LGB instance 12685504, layer 43366"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_5",
+          "position": {
+            "x": 719.348,
+            "y": 69.655,
+            "z": 268.304
+          },
+          "aggroLevel": 23,
+          "note": "LGB instance 12685673, layer 43366"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_6",
+          "position": {
+            "x": 449.408,
+            "y": 0.147,
+            "z": 105.235
+          },
+          "aggroLevel": 24,
+          "note": "LGB instance 12685783, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_1",
+          "position": {
+            "x": -22.669,
+            "y": 42.087,
+            "z": 628.995
+          },
+          "aggroLevel": 30,
+          "note": "LGB instance 12684950, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_2",
+          "position": {
+            "x": 246.227,
+            "y": 66.542,
+            "z": 676.666
+          },
+          "aggroLevel": 23,
+          "note": "LGB instance 12685564, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_3",
+          "position": {
+            "x": 77.07,
+            "y": 21.2,
+            "z": 536.27
+          },
+          "aggroLevel": 30,
+          "note": "LGB instance 12686296, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_4",
+          "position": {
+            "x": -12.099,
+            "y": 66.651,
+            "z": 773.863
+          },
+          "aggroLevel": 30,
+          "note": "LGB instance 12686297, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_5",
+          "position": {
+            "x": 447.886,
+            "y": 62.906,
+            "z": 463.345
+          },
+          "aggroLevel": 23,
+          "note": "LGB instance 12686373, layer 43366"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_6",
+          "position": {
+            "x": 222.912,
+            "y": 90.4,
+            "z": 913.629
+          },
+          "aggroLevel": 30,
+          "note": "LGB instance 12686430, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_1",
+          "position": {
+            "x": -612.214,
+            "y": 66.99,
+            "z": 578.548
+          },
+          "aggroLevel": 33,
+          "note": "LGB instance 12686310, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_2",
+          "position": {
+            "x": -278.056,
+            "y": 47.784,
+            "z": 567.973
+          },
+          "aggroLevel": 31,
+          "note": "LGB instance 12686302, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_3",
+          "position": {
+            "x": -256.947,
+            "y": 100.667,
+            "z": 812.197
+          },
+          "aggroLevel": 32,
+          "note": "LGB instance 12686304, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_4",
+          "position": {
+            "x": -504.091,
+            "y": 85.753,
+            "z": 758.321
+          },
+          "aggroLevel": 32,
+          "note": "LGB instance 12686307, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_WindCurrent",
+          "position": {
+            "x": -473.905,
+            "y": 96.862,
+            "z": 885.407
+          },
+          "aggroLevel": 41,
+          "routeOnly": true,
+          "note": "Wind current transition to floating island; move to position and do not jump"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_5",
+          "position": {
+            "x": -645.44,
+            "y": 160.099,
+            "z": 967.944
+          },
+          "aggroLevel": 41,
+          "note": "LGB instance 12685021, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_6",
+          "position": {
+            "x": -699.837,
+            "y": 160,
+            "z": 926.379
+          },
+          "aggroLevel": 41,
+          "note": "LGB instance 12686354, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_7",
+          "position": {
+            "x": -592,
+            "y": 160.101,
+            "z": 767.669
+          },
+          "aggroLevel": 41,
+          "note": "LGB instance 12686353, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_8",
+          "position": {
+            "x": -857.793,
+            "y": 159.85,
+            "z": 772.237
+          },
+          "aggroLevel": 42,
+          "note": "LGB instance 12686355, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9",
+          "position": {
+            "x": -800.397,
+            "y": 157.8,
+            "z": 633.387
+          },
+          "aggroLevel": 42,
+          "note": "LGB instance 12686356, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_10",
+          "position": {
+            "x": -775.894,
+            "y": 70.719,
+            "z": 377.153
+          },
+          "aggroLevel": 34,
+          "note": "LGB instance 12686312, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_11",
+          "position": {
+            "x": -923.142,
+            "y": 113.265,
+            "z": 197.948
+          },
+          "aggroLevel": 34,
+          "note": "LGB instance 12686326, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_12",
+          "position": {
+            "x": -631.779,
+            "y": 78.255,
+            "z": 240
+          },
+          "aggroLevel": 34,
+          "note": "LGB instance 12686317, layer 43366"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_13",
+          "position": {
+            "x": -436.442,
+            "y": 0.203,
+            "z": 166.219
+          },
+          "aggroLevel": 33,
+          "note": "LGB instance 12686303, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_1",
+          "position": {
+            "x": -265.761,
+            "y": 30.171,
+            "z": -439.519
+          },
+          "aggroLevel": 36,
+          "note": "LGB instance 12685986, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_2",
+          "position": {
+            "x": -254.141,
+            "y": 1.821,
+            "z": -266.312
+          },
+          "aggroLevel": 36,
+          "note": "LGB instance 12686338, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_3",
+          "position": {
+            "x": -26,
+            "y": 0.232,
+            "z": -437.688
+          },
+          "aggroLevel": 25,
+          "note": "LGB instance 12685970, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_4",
+          "position": {
+            "x": -232.419,
+            "y": 53.237,
+            "z": -719.972
+          },
+          "aggroLevel": 27,
+          "note": "LGB instance 12686008, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_5",
+          "position": {
+            "x": -439.551,
+            "y": 43.044,
+            "z": -558.449
+          },
+          "aggroLevel": 38,
+          "note": "LGB instance 12686343, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_6",
+          "position": {
+            "x": -525.781,
+            "y": 46.857,
+            "z": -783.468
+          },
+          "aggroLevel": 38,
+          "note": "LGB instance 12686344, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_7",
+          "position": {
+            "x": -416.774,
+            "y": 45.937,
+            "z": -945.431
+          },
+          "aggroLevel": 46,
+          "note": "LGB instance 12686360, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_8",
+          "position": {
+            "x": -736.024,
+            "y": 21.035,
+            "z": -881.486
+          },
+          "aggroLevel": 46,
+          "note": "LGB instance 12686359, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_9",
+          "position": {
+            "x": -815.808,
+            "y": -21.835,
+            "z": -699.37
+          },
+          "aggroLevel": 45,
+          "note": "LGB instance 12685062, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_10",
+          "position": {
+            "x": -928.626,
+            "y": -11.228,
+            "z": -744.956
+          },
+          "aggroLevel": 45,
+          "note": "LGB instance 12686358, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_11",
+          "position": {
+            "x": -857.599,
+            "y": -12.235,
+            "z": -609.817
+          },
+          "aggroLevel": 45,
+          "note": "LGB instance 12686357, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_12",
+          "position": {
+            "x": -697.271,
+            "y": 34.898,
+            "z": -565.022
+          },
+          "aggroLevel": 45,
+          "note": "LGB instance 12686340, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_13",
+          "position": {
+            "x": -878.967,
+            "y": 13.135,
+            "z": -314.202
+          },
+          "aggroLevel": 35,
+          "note": "LGB instance 12686336, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_14",
+          "position": {
+            "x": -707.376,
+            "y": 41.586,
+            "z": -396.989
+          },
+          "aggroLevel": 37,
+          "note": "LGB instance 12686339, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_15",
+          "position": {
+            "x": -581.489,
+            "y": 40.914,
+            "z": -257.411
+          },
+          "aggroLevel": 36,
+          "note": "LGB instance 12686337, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_16",
+          "position": {
+            "x": -633.696,
+            "y": 82.718,
+            "z": -146.005
+          },
+          "aggroLevel": 35,
+          "note": "LGB instance 12684954, layer 43366"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_17",
+          "position": {
+            "x": -590.208,
+            "y": 87.979,
+            "z": -7
+          },
+          "aggroLevel": 35,
+          "note": "LGB instance 12686335, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_1",
+          "position": {
+            "x": 389.536,
+            "y": 60.682,
+            "z": -733.018
+          },
+          "aggroLevel": 29,
+          "note": "LGB instance 12686295, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_2",
+          "position": {
+            "x": 147.869,
+            "y": 61,
+            "z": -868.752
+          },
+          "aggroLevel": 27,
+          "note": "LGB instance 12686027, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_3",
+          "position": {
+            "x": -2.306,
+            "y": 66.691,
+            "z": -814.905
+          },
+          "aggroLevel": 27,
+          "note": "LGB instance 12684947, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_4",
+          "position": {
+            "x": 254.744,
+            "y": 36.932,
+            "z": -605
+          },
+          "aggroLevel": 25,
+          "note": "LGB instance 12685955, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_5",
+          "position": {
+            "x": 279.093,
+            "y": 143,
+            "z": -356.148
+          },
+          "aggroLevel": 26,
+          "note": "LGB instance 12686410, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_6",
+          "position": {
+            "x": 478.451,
+            "y": 12.422,
+            "z": -202.971
+          },
+          "aggroLevel": 25,
+          "note": "LGB instance 12685926, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_7",
+          "position": {
+            "x": 649.544,
+            "y": 46.245,
+            "z": -157.774
+          },
+          "aggroLevel": 24,
+          "note": "LGB instance 12685867, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_8",
+          "position": {
+            "x": 383.314,
+            "y": 33,
+            "z": -175.648
+          },
+          "aggroLevel": 25,
+          "note": "LGB instance 12684944, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_9",
+          "position": {
+            "x": 658.809,
+            "y": 66.126,
+            "z": -364.676
+          },
+          "aggroLevel": 28,
+          "note": "LGB instance 12686029, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_10",
+          "position": {
+            "x": 658.723,
+            "y": 60.52,
+            "z": -552.306
+          },
+          "aggroLevel": 43,
+          "note": "LGB instance 12686242, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_11",
+          "position": {
+            "x": 639.049,
+            "y": 60.625,
+            "z": -698.726
+          },
+          "aggroLevel": 43,
+          "note": "LGB instance 12686350, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_12",
+          "position": {
+            "x": 634.792,
+            "y": 60.515,
+            "z": -831.787
+          },
+          "aggroLevel": 43,
+          "note": "LGB instance 12685003, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_13",
+          "position": {
+            "x": 633.132,
+            "y": 60.642,
+            "z": -910.227
+          },
+          "aggroLevel": 43,
+          "note": "LGB instance 12686349, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_14",
+          "position": {
+            "x": 865.457,
+            "y": 70.215,
+            "z": -874.087
+          },
+          "aggroLevel": 44,
+          "note": "LGB instance 12686352, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_15",
+          "position": {
+            "x": 815.444,
+            "y": 60.554,
+            "z": -657.314
+          },
+          "aggroLevel": 44,
+          "note": "LGB instance 12686351, layer 43366"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_16",
+          "position": {
+            "x": 950.201,
+            "y": 74,
+            "z": -358.976
+          },
+          "aggroLevel": 28,
+          "note": "LGB instance 12686166, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_1",
+          "position": {
+            "x": 43.782,
+            "y": 2.454,
+            "z": -108.192
+          },
+          "aggroLevel": 39,
+          "note": "LGB instance 12686346, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_2",
+          "position": {
+            "x": 85.598,
+            "y": 3.303,
+            "z": -281.14
+          },
+          "aggroLevel": 39,
+          "note": "LGB instance 12686345, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_3",
+          "position": {
+            "x": -168.204,
+            "y": 3.38,
+            "z": -153.458
+          },
+          "aggroLevel": 39,
+          "note": "LGB instance 12686347, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_4",
+          "position": {
+            "x": -162.042,
+            "y": 3.59,
+            "z": 98.45
+          },
+          "aggroLevel": 40,
+          "note": "LGB instance 12686348, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_5",
+          "position": {
+            "x": -287.741,
+            "y": -92,
+            "z": 125.666
+          },
+          "aggroLevel": 40,
+          "note": "LGB instance 12686420, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_6",
+          "position": {
+            "x": -144.726,
+            "y": -129.796,
+            "z": 304.938
+          },
+          "aggroLevel": 47,
+          "note": "LGB instance 12686361, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_7",
+          "position": {
+            "x": 41.233,
+            "y": -140.771,
+            "z": 168.502
+          },
+          "aggroLevel": 47,
+          "note": "LGB instance 12686362, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_8",
+          "position": {
+            "x": 161,
+            "y": -151.76,
+            "z": 16
+          },
+          "aggroLevel": 48,
+          "note": "LGB instance 12686363, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_9",
+          "position": {
+            "x": 223.653,
+            "y": -161.864,
+            "z": -30.644
+          },
+          "aggroLevel": 48,
+          "note": "LGB instance 12685147, layer 43366"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_10",
+          "position": {
+            "x": 313.919,
+            "y": -139.53,
+            "z": 180.071
+          },
+          "aggroLevel": 48,
+          "note": "LGB instance 12686364, layer 43366"
+        }
+      ],
+      "visibleCofferFarmRoute": [
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_1"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_2"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_3"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_4"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_5"
+        },
+        {
+          "area": "BaseCamp",
+          "label": "BaseCamp_6"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_1"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_2"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_3"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_4"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_5"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "label": "CrownOfKarnak_6"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_1"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_2"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_3"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_4"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_WindCurrent"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_5"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_6"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_7"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_8"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_9"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_10"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_11"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_12"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_13"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_1"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_2"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_3"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_4"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_5"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_6"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_7"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_8"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_9"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_10"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_11"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_12"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_13"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_14"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_15"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_16"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "label": "MolderingOutskirts_17"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_1"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_2"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_3"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_4"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_5"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_6"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_7"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_8"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_9"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_10"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_11"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_12"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_13"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_14"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_15"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "label": "SinkingSanctuary_16"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_1"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_2"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_3"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_4"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_5"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_6"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_7"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_8"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_9"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "label": "UnhallowedHamlet_10"
+        }
+      ],
       "visibleCoffers": {
         "baseIds": [2014741, 2014742, 2014743],
         "objectKinds": ["Treasure"],
         "localizedNames": ["Treasure Coffer"],
+      "areaAethernetMappings": [
+        {
+          "area": "BaseCamp",
+          "aethernet": "BaseCamp"
+        },
+        {
+          "area": "CrownOfKarnak",
+          "aethernet": "CrownOfKarnak"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "aethernet": "SuspendedMasonry"
+        },
+        {
+          "area": "MolderingOutskirts",
+          "aethernet": "MolderingOutskirts"
+        },
+        {
+          "area": "SinkingSanctuary",
+          "aethernet": "SinkingSanctuary"
+        },
+        {
+          "area": "UnhallowedHamlet",
+          "aethernet": "UnhallowedHamlet"
+        }
+      ],
         "cofferSurveyCountsLogMessageId": 10965,
         "cofferSurveyEmptyLogMessageId": 10966
       }

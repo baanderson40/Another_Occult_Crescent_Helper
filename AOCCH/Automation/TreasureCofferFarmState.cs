@@ -8,6 +8,8 @@ public enum TreasureCofferFarmState
     ClearingPreviousHideThreshold,
     TravelingToDangerousSpot,
     TravelingToThreatenedCoffer,
+    ReturningToBaseBetweenAreas,
+    TravelingToNextArea,
     WaitingForVisibleCoffer,
     WaitingForInteractionHandoff,
     InteractingWithCoffer,

@@ -412,13 +412,6 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawTreasureCoffersTab()
     {
-        if (string.Equals(plugin.Scanner.Snapshot.TerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase))
-        {
-            ImGui.TextUnformatted("North Horn Supported Features");
-            DrawOverworldTreasureGuideSetting();
-            return;
-        }
-
         if (!RequireFeature(plugin.Scanner.Snapshot.CanRunVisibleCofferRoute || plugin.Scanner.Snapshot.CanRunPotTreasure, "Treasure coffer data"))
         {
             return;
