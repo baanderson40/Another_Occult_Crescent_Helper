@@ -510,7 +510,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     ResetHiddenTravelReadiness();
                 }
 
-                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-visible-travel-disabled");
+                logger.Info($"{BuildLogTag()} op=spot-skip spot={spot.Area}:{spot.Label} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} knowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} hideThreshold={(spot.HideThresholdDistance?.ToString() ?? "none")} reason=dangerous-visible-travel-disabled");
                 continue;
             }
 
@@ -612,7 +612,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 : string.Join(",", skippedLabels);
             var decision = eligibleCoffers > 0 ? "visit" : "skip";
             logger.Info(
-                $"{BuildLogTag()} op=area-eligibility area={area} decision={decision} totalCoffers={totalCoffers} eligibleCoffers={eligibleCoffers} skippedCoffers={skippedLabels.Count} skipped={skippedSummary} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} useNinja={configuration.UseNinjaForDangerousVisibleCoffers}" +
+                $"{BuildLogTag()} op=area-eligibility area={area} decision={decision} totalCoffers={totalCoffers} eligibleCoffers={eligibleCoffers} skippedCoffers={skippedLabels.Count} skipped={skippedSummary} maxAggro={GetVisibleCofferAggroLimit()} knowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} aggroOffset={configuration.VisibleTreasureCofferAggroLevelOffset} useNinja={configuration.UseNinjaForDangerousVisibleCoffers}" +
                 (eligibleCoffers > 0 ? string.Empty : " reason=no-coffers-within-aggro-limit"));
 
             if (eligibleCoffers > 0)
@@ -760,17 +760,17 @@ public sealed class TreasureCofferFarmController : IDisposable
         var hiddenDecision = GetHiddenTravelDecision(spot);
         if (RequiresDangerousTravel(spot))
         {
-            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
         }
 
         if (previousThresholdActive)
         {
-            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginPreviousThresholdCarryoverTravel(spot, destination, arrivalDistance);
         }
 
-        logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={configuration.VisibleTreasureCofferMaximumAggroLevel} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+        logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
 
         return StartNormalTravelToActiveSpot(spot, destination, arrivalDistance, "initial route start");
     }
@@ -839,7 +839,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat && !RequiresHiddenTravel(spot)
             ? GetVisibleKnowledgeThreatPolicy()
             : null;
-        logger.Info($"{BuildLogTag()} op=dangerous-travel-start spot={spot.Area}:{spot.Label} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0} aggroLevel={spot.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} hideThreshold={dangerousOptions.HideThresholdDistance} gearset={dangerousOptions.GearsetNumber} knowledgeThreat={hasKnowledgeThreat} threatEntity='{threat?.Name ?? "none"}' threatLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} previousThresholdSpot={DescribeSpot(activePreviousThresholdSpot)} previousCandidatePassed=none");
+        logger.Info($"{BuildLogTag()} op=dangerous-travel-start spot={spot.Area}:{spot.Label} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0} aggroLevel={spot.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} hideThreshold={dangerousOptions.HideThresholdDistance} gearset={dangerousOptions.GearsetNumber} knowledgeThreat={hasKnowledgeThreat} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} threatEntity='{threat?.Name ?? "none"}' threatLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} previousThresholdSpot={DescribeSpot(activePreviousThresholdSpot)} previousCandidatePassed=none");
         if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, dangerousSpot, destination, arrivalDistance, dangerousOptions, knowledgeThreatPolicy))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
@@ -1566,7 +1566,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         => new(
             configuration.VisibleCofferNinjaGearsetNumber,
             configuration.VisibleCofferHideThresholdDistance,
-            configuration.VisibleTreasureCofferMaximumAggroLevel);
+            configuration.VisibleTreasureCofferFallbackMaximumAggroLevel);
 
     private bool TryGetVisibleKnowledgeThreat(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
         => KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, GetVisibleKnowledgeThreatPolicy(), radius, out threat, out hideAtOrAbove);
@@ -1583,7 +1583,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         movementController.Stop("Live knowledge threat entered the overworld coffer Hide range.");
-        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=overworld-coffer spot={DescribeActiveSpot()} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=overworld-coffer spot={DescribeActiveSpot()} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
         BeginDangerousTravelToActiveSpot(spot, ActiveResolvedPosition, GetArrivalDistance(spot));
         return true;
     }
@@ -1604,7 +1604,12 @@ public sealed class TreasureCofferFarmController : IDisposable
     }
 
     private bool IsDangerousByAggro(VisibleCofferFarmSpotData spot)
-        => spot.AggroLevel > configuration.VisibleTreasureCofferMaximumAggroLevel;
+        => spot.AggroLevel > GetVisibleCofferAggroLimit();
+
+    private int GetVisibleCofferAggroLimit()
+        => scanner.Snapshot.PlayerForayLevel is { } knowledgeLevel
+            ? Math.Clamp(knowledgeLevel + configuration.VisibleTreasureCofferAggroLevelOffset, 0, 40)
+            : configuration.VisibleTreasureCofferFallbackMaximumAggroLevel;
 
     private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
     {
@@ -1931,7 +1936,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             CandidateKey = BuildKey(spot.Area, spot.Label),
             Label = $"{spot.Area}:{spot.Label}",
             Position = spot.Position,
-            AggroLevel = Math.Max(spot.AggroLevel, configuration.VisibleTreasureCofferMaximumAggroLevel + 1),
+            AggroLevel = Math.Max(spot.AggroLevel, configuration.VisibleTreasureCofferFallbackMaximumAggroLevel + 1),
             HideThresholdDistance = hideThresholdDistance,
             Notes = spot.Note,
         };

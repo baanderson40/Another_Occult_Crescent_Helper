@@ -7,7 +7,6 @@ using AOCCH.Logging;
 using AOCCH.Shopping;
 using Dalamud.Interface;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 
 namespace AOCCH.Windows;
@@ -268,7 +267,7 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("Switches to Ninja and uses Hide to sneak through dangerous high-level areas on foot. (Experimental; recommended for max Knowledge level.)");
 
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousArea))
+        if (configuration.UseNinjaForDangerousArea)
         {
             DrawNarrowIntSetting(
                 "Ninja Gearset Number",
@@ -492,7 +491,7 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("Switches to Ninja and uses Hide to safely reach dangerous coffer spots on foot. (Experimental; recommended for max Knowledge level.)");
 
-        using (ImRaii.Disabled(!configuration.UseNinjaForDangerousVisibleCoffers))
+        if (configuration.UseNinjaForDangerousVisibleCoffers)
         {
             DrawNarrowIntSetting(
                 "Ninja Gearset Number",
@@ -549,12 +548,12 @@ public class ConfigWindow : Window, IDisposable
             {
                 DrawNarrowIntSetting(
                     "Fallback Maximum Aggro Level",
-                    configuration.VisibleTreasureCofferMaximumAggroLevel,
+                    configuration.VisibleTreasureCofferFallbackMaximumAggroLevel,
                     0,
-                    28,
-                    value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
-                    nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-                DrawSettingTooltip("Aggro level limit used as a safety fallback when live zone knowledge data isn't loaded.");
+                    40,
+                    value => configuration.VisibleTreasureCofferFallbackMaximumAggroLevel = value,
+                    nameof(configuration.VisibleTreasureCofferFallbackMaximumAggroLevel));
+                DrawSettingTooltip("Maximum aggro level used when your Knowledge Level is unavailable.");
 
                 DrawNarrowIntSetting(
                     "Fallback Hide Threshold Distance",
@@ -569,13 +568,27 @@ public class ConfigWindow : Window, IDisposable
         else
         {
             DrawNarrowIntSetting(
-                "Maximum Aggro Level",
-                configuration.VisibleTreasureCofferMaximumAggroLevel,
-                0,
-                28,
-                value => configuration.VisibleTreasureCofferMaximumAggroLevel = value,
-                nameof(configuration.VisibleTreasureCofferMaximumAggroLevel));
-            DrawSettingTooltip("Skips coffer spots if nearby mobs exceed this level (used when Ninja travel is turned off).");
+                "Aggro Level Offset",
+                configuration.VisibleTreasureCofferAggroLevelOffset,
+                -40,
+                40,
+                value => configuration.VisibleTreasureCofferAggroLevelOffset = value,
+                nameof(configuration.VisibleTreasureCofferAggroLevelOffset));
+            DrawSettingTooltip("Skips coffer spots when their aggro level exceeds your Knowledge Level by this offset. -1 allows spots one level below your Knowledge Level.");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"(Cutoff: {GetVisibleCofferAggroCutoffLabel()})");
+
+            if (ImGui.CollapsingHeader("Fallback"))
+            {
+                DrawNarrowIntSetting(
+                    "Fallback Maximum Aggro Level",
+                    configuration.VisibleTreasureCofferFallbackMaximumAggroLevel,
+                    0,
+                    40,
+                    value => configuration.VisibleTreasureCofferFallbackMaximumAggroLevel = value,
+                    nameof(configuration.VisibleTreasureCofferFallbackMaximumAggroLevel));
+                DrawSettingTooltip("Maximum aggro level used when your Knowledge Level is unavailable.");
+            }
         }
 
     }
@@ -1115,6 +1128,14 @@ public class ConfigWindow : Window, IDisposable
             ? Math.Clamp(playerKnowledgeLevel.Value + offset, 1, 28).ToString()
             : "?";
         return $"{label} ({hideLevel})";
+    }
+
+    private string GetVisibleCofferAggroCutoffLabel()
+    {
+        var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+        return playerKnowledgeLevel.HasValue
+            ? Math.Clamp(playerKnowledgeLevel.Value + configuration.VisibleTreasureCofferAggroLevelOffset, 0, 40).ToString()
+            : $"fallback {configuration.VisibleTreasureCofferFallbackMaximumAggroLevel}";
     }
 
     private void DrawSettingTooltip(string text)

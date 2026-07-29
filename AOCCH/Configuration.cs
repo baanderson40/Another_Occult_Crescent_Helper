@@ -77,7 +77,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 7;
+    public int Version { get; set; } = 8;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -104,7 +104,8 @@ public class Configuration : IPluginConfiguration
     public int InstanceExitBufferMinutes { get; set; } = 2;
     public int SpawnArrivalRadius { get; set; } = 18;
     public int MaximumAggroLevel { get; set; } = 20;
-    public int VisibleTreasureCofferMaximumAggroLevel { get; set; } = 20;
+    public int VisibleTreasureCofferAggroLevelOffset { get; set; } = -1;
+    public int VisibleTreasureCofferFallbackMaximumAggroLevel { get; set; } = 20;
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public bool EnableOverworldTreasureGuide { get; set; }
     public bool EnableCofferObservationSubmission { get; set; }
@@ -146,6 +147,10 @@ public class Configuration : IPluginConfiguration
     public List<CurrencyShopReserveSetting> CurrencyShopReserves { get; set; } = [];
     public List<CurrencyShopThresholdSetting> CurrencyShopThresholds { get; set; } = [];
     public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
+
+    [JsonPropertyName("VisibleTreasureCofferMaximumAggroLevel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LegacyVisibleTreasureCofferMaximumAggroLevel { get; set; }
 
     public bool IsCriticalEncounterEnabled(string territoryKey, uint id)
     {
@@ -254,6 +259,7 @@ public class Configuration : IPluginConfiguration
         NormalizeTerritorySettings();
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        ClampVisibleCofferAggroSettings();
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
         RangedTargetRange = ClampTargetRange(RangedTargetRange);
@@ -269,13 +275,14 @@ public class Configuration : IPluginConfiguration
         var southHorn = catalog.GetTerritoryOrNull("southHorn");
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        ClampVisibleCofferAggroSettings();
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
         RangedTargetRange = ClampTargetRange(RangedTargetRange);
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 7)
+        if (Version >= 8)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -320,8 +327,19 @@ public class Configuration : IPluginConfiguration
 
         if (Version < 1)
         {
-            VisibleTreasureCofferMaximumAggroLevel = MaximumAggroLevel;
-            logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=VisibleTreasureCofferMaximumAggroLevel");
+            LegacyVisibleTreasureCofferMaximumAggroLevel ??= MaximumAggroLevel;
+            logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=VisibleTreasureCofferFallbackMaximumAggroLevel");
+        }
+
+        if (Version < 8)
+        {
+            if (LegacyVisibleTreasureCofferMaximumAggroLevel.HasValue)
+            {
+                VisibleTreasureCofferFallbackMaximumAggroLevel = LegacyVisibleTreasureCofferMaximumAggroLevel.Value;
+            }
+
+            LegacyVisibleTreasureCofferMaximumAggroLevel = null;
+            logger?.Info($"[Configuration] op=migration-copy source=VisibleTreasureCofferMaximumAggroLevel value={VisibleTreasureCofferFallbackMaximumAggroLevel} target=VisibleTreasureCofferFallbackMaximumAggroLevel");
         }
 
         if (Version < 2)
@@ -385,8 +403,8 @@ public class Configuration : IPluginConfiguration
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 7;
-        logger?.Info("[Configuration] op=migration-complete version=7");
+        Version = 8;
+        logger?.Info("[Configuration] op=migration-complete version=8");
         return true;
     }
 
@@ -481,5 +499,11 @@ public class Configuration : IPluginConfiguration
         VisibleCofferKnowledgeHideOffset = Math.Clamp(VisibleCofferKnowledgeHideOffset, -27, 27);
         KnowledgeThreatEnterDistance = Math.Clamp(KnowledgeThreatEnterDistance, 1, 50);
         KnowledgeThreatExitDistance = Math.Clamp(KnowledgeThreatExitDistance, KnowledgeThreatEnterDistance, 100);
+    }
+
+    private void ClampVisibleCofferAggroSettings()
+    {
+        VisibleTreasureCofferAggroLevelOffset = Math.Clamp(VisibleTreasureCofferAggroLevelOffset, -40, 40);
+        VisibleTreasureCofferFallbackMaximumAggroLevel = Math.Clamp(VisibleTreasureCofferFallbackMaximumAggroLevel, 0, 40);
     }
 }
