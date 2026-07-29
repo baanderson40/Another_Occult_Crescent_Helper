@@ -146,7 +146,8 @@ public sealed class RoutePlanner
         float? finalArrivalToleranceOverride = null,
         float? earlyDismountDistance = null,
         Vector3? earlyDismountTarget = null,
-        bool shouldMountBeforeStep = true)
+        bool shouldMountBeforeStep = true,
+        bool forceAethernet = false)
     {
         route = new PlannedRoute();
         failureReason = string.Empty;
@@ -189,7 +190,9 @@ public sealed class RoutePlanner
             ? CalculateReturnTime(preferredAethernet, destination, travelSpeed)
             : float.MaxValue;
 
-        route = ChooseRoute(territory, targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget, shouldMountBeforeStep);
+        route = forceAethernet
+            ? CreateAethernetRoute(targetDescription, playerPosition, destination, sourceAethernet, preferredAethernet, directDistance, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget, shouldMountBeforeStep)
+            : ChooseRoute(territory, targetDescription, playerPosition, destination, directDistance, directTime, sourceAethernet, preferredAethernet, aethernetTime, returnTime, finalArrivalToleranceOverride, earlyDismountDistance, earlyDismountTarget, shouldMountBeforeStep);
 
         logger.Info($"[RoutePlanner] op=route-selected target=\"{targetDescription}\" routeType={route.RouteType} selectionReason={route.SelectionReason} direct={directTime:0.0}s aethernet={aethernetTime:0.0}s return={(float.IsFinite(returnTime) ? $"{returnTime:0.0}s" : "disabled")}");
         return true;

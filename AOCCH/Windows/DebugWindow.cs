@@ -56,6 +56,7 @@ public sealed class DebugWindow : Window, IDisposable
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
     private bool waitForMagicalElixirReady;
+    private string northHornLgbCaptureArea = "BaseCamp";
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -275,6 +276,14 @@ public sealed class DebugWindow : Window, IDisposable
         if (ImGui.Button("Probe Foray Target"))
         {
             plugin.RunProbeForay();
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText("LGB Capture Area", ref northHornLgbCaptureArea, 64);
+        ImGui.SameLine();
+        if (ImGui.Button("Capture Nearest North Horn LGB"))
+        {
+            plugin.CaptureNearestNorthHornLgbDebug(northHornLgbCaptureArea);
         }
 
         if (ImGui.Button("Dump Targeted Reveal Coffer"))

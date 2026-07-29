@@ -34,6 +34,9 @@ public sealed class Plugin : IDalamudPlugin
     private const float PotCofferDebugRadius = 60f;
     private const float ManualPotInteractFallbackRadius = 30f;
     private const int PotCofferDebugEntryLimit = 30;
+    private const uint NorthHornTerritoryId = 1346;
+    private const uint NorthHornLgbTreasureLayer = 43366;
+    private const float NorthHornLgbCaptureForayScanRadius = 120f;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
@@ -907,6 +910,92 @@ public sealed class Plugin : IDalamudPlugin
         Logger.Info($"[Plugin] op=debug-lgb-treasures-result available=true count={treasureCount}");
         ChatGui.Print($"Loaded LGB treasure scan complete: {treasureCount} entries logged.");
     }
+
+    internal unsafe void CaptureNearestNorthHornLgbDebug(string area)
+    {
+        if (ClientState.TerritoryType != NorthHornTerritoryId)
+        {
+            Logger.Warning($"[North Horn LGB Capture] capture-failed reason=wrong-territory territory={ClientState.TerritoryType} expected={NorthHornTerritoryId}");
+            return;
+        }
+
+        var player = ObjectTable.LocalPlayer;
+        if (player == null)
+        {
+            Logger.Warning("[North Horn LGB Capture] capture-failed reason=player-unavailable");
+            return;
+        }
+
+        var layoutWorld = LayoutWorld.Instance();
+        var activeLayout = layoutWorld == null ? null : layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[North Horn LGB Capture] capture-failed reason=active-layout-unavailable");
+            return;
+        }
+
+        var playerPosition = player.Position;
+        var nearestInstanceKey = string.Empty;
+        var nearestPosition = Vector3.Zero;
+        var nearestDistance = float.MaxValue;
+
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null
+                    || instance->Id.Type != InstanceType.Treasure
+                    || instance->Id.LayerKey != NorthHornLgbTreasureLayer)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                var distance = CalculateFlatDistance(playerPosition, position);
+                if (distance >= nearestDistance)
+                {
+                    continue;
+                }
+
+                nearestInstanceKey = pair.Item1.ToString();
+                nearestPosition = position;
+                nearestDistance = distance;
+            }
+        }
+
+        if (nearestDistance == float.MaxValue)
+        {
+            Logger.Warning($"[North Horn LGB Capture] capture-failed reason=no-treasure-layer layer={NorthHornLgbTreasureLayer}");
+            return;
+        }
+
+        var hasThreat = Scanner.TryGetNearestForayThreat(playerPosition, NorthHornLgbCaptureForayScanRadius, out var threat);
+        var escapedArea = (area ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"");
+        Logger.Info(
+            $"[North Horn LGB Capture] capture {{ area=\"{escapedArea}\", layer={NorthHornLgbTreasureLayer}, instance={nearestInstanceKey}, " +
+            $"cofferPosition={{x={playerPosition.X:0.000},y={playerPosition.Y:0.000},z={playerPosition.Z:0.000}}}, " +
+            $"lgbPosition={{x={nearestPosition.X:0.000},y={nearestPosition.Y:0.000},z={nearestPosition.Z:0.000}}}, " +
+            $"offset={CalculateDistance(playerPosition, nearestPosition):0.000}, aggroLevel={(hasThreat ? threat.KnowledgeLevel : 0)}, " +
+            $"nearestEntity=\"{(hasThreat ? EscapeLogValue(threat.Name) : string.Empty)}\", " +
+            $"nearestEntityDistance={(hasThreat ? threat.DistanceToPlayer : -1f):0.000}, " +
+            $"nearestEntityDataId={(hasThreat ? threat.BaseId : 0)}, " +
+            $"nearestEntityGameObjectId={(hasThreat ? threat.ObjectId : 0)} }},");
+    }
+
+    private static float CalculateDistance(Vector3 left, Vector3 right)
+    {
+        var delta = left - right;
+        return delta.Length();
+    }
+
+    private static string EscapeLogValue(string value)
+        => (value ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     internal unsafe void LogLoadedLgbRevealCoffersDebug()
     {

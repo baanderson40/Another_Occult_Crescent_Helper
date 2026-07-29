@@ -128,6 +128,7 @@ public static class OccultCrescentDataLoader
             Shopping = shopping,
             Drops = territory.Drops,
             VisibleCoffers = territory.VisibleCoffers,
+            VisibleCofferRoutePolicy = territory.VisibleCofferRoutePolicy,
             PotTreasure = territory.PotTreasure,
             BuffRotation = territory.BuffRotation,
         };
@@ -173,6 +174,7 @@ public static class OccultCrescentDataLoader
         ValidateTreasureGroups(territory, errors);
         ValidatePotTreasure(territory, errors);
         ValidateVisibleCofferSpots(territory, errors);
+        ValidateVisibleCofferRoutePolicy(territory, errors);
         ValidateVisibleCoffers(territory, errors);
         ValidateVisibleCofferSafety(territory, errors);
         ValidateAethernetReferences(territory, errors);
@@ -508,6 +510,38 @@ public static class OccultCrescentDataLoader
             {
                 errors.Add($"visible coffer route entry area='{routeEntry.Area}' label='{routeEntry.Label}' does not match a spot");
             }
+        }
+    }
+
+    private static void ValidateVisibleCofferRoutePolicy(OccultCrescentTerritoryData territory, List<string> errors)
+    {
+        var policy = territory.VisibleCofferRoutePolicy;
+        if (!policy.ReturnToBaseBetweenAreas && !policy.ForceAethernetForAreaTransitions)
+        {
+            return;
+        }
+
+        if (policy.ForceAethernetForAreaTransitions && !policy.ReturnToBaseBetweenAreas)
+        {
+            errors.Add("visible coffer route force-aethernet policy requires return-to-base-between-areas");
+        }
+
+        var seenAreas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var currentArea = string.Empty;
+        foreach (var routeEntry in territory.VisibleCofferFarmRoute)
+        {
+            if (string.IsNullOrWhiteSpace(routeEntry.Area))
+            {
+                continue;
+            }
+
+            if (!string.Equals(currentArea, routeEntry.Area, StringComparison.OrdinalIgnoreCase)
+                && !seenAreas.Add(routeEntry.Area))
+            {
+                errors.Add($"visible coffer route area '{routeEntry.Area}' is not contiguous");
+            }
+
+            currentArea = routeEntry.Area;
         }
     }
 
