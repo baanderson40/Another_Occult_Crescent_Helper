@@ -1392,7 +1392,7 @@
       },
       "fates": [
         { "id": 2074, "name": "Raging Thrall", "startPosition": { "x": 724.0, "y": 70.0, "z": 220.0 } },
-        { "id": 2075, "name": "Eye to Eye", "startPosition": { "x": 510.0, "y": 16.76658, "z": -30.0 } },
+        { "id": 2075, "name": "Eye to Eye", "aethernet": "SinkingSanctuary", "startPosition": { "x": 510.0, "y": 16.76658, "z": -30.0 } },
         { "id": 2076, "name": "Shoreline Showdown", "startPosition": { "x": 95.0, "y": 10.0, "z": 470.0 } },
         { "id": 2077, "name": "Waved Away", "startPosition": { "x": 330.0, "y": 0.0, "z": -250.0 } },
         { "id": 2078, "name": "Allure of the Occult", "startPosition": { "x": -402.0, "y": 29.76808, "z": -253.0 } },
