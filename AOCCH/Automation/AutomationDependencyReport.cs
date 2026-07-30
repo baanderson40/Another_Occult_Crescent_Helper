@@ -33,18 +33,15 @@ public sealed class AutomationDependencyReport
 public sealed class NormalAutomationDependencyChecker
 {
     private const string VNavmeshName = "vnavmesh";
-    private const string LifestreamName = "Lifestream";
     private const string BossModName = "BossMod";
     private const string BossModRebornName = "BossModReborn";
 
     private readonly VNavmeshIpc vnavmesh;
-    private readonly LifestreamIpc lifestream;
     private readonly BossModIpc bossMod;
 
-    public NormalAutomationDependencyChecker(VNavmeshIpc vnavmesh, LifestreamIpc lifestream, BossModIpc bossMod)
+    public NormalAutomationDependencyChecker(VNavmeshIpc vnavmesh, BossModIpc bossMod)
     {
         this.vnavmesh = vnavmesh;
-        this.lifestream = lifestream;
         this.bossMod = bossMod;
     }
 
@@ -52,7 +49,6 @@ public sealed class NormalAutomationDependencyChecker
     {
         var installedPlugins = Plugin.PluginInterface.InstalledPlugins;
         var vnavmeshInstalled = installedPlugins.Any(plugin => string.Equals(plugin.InternalName, VNavmeshName, StringComparison.OrdinalIgnoreCase));
-        var lifestreamInstalled = installedPlugins.Any(plugin => string.Equals(plugin.InternalName, LifestreamName, StringComparison.OrdinalIgnoreCase));
         var rotationProvider = installedPlugins.FirstOrDefault(plugin =>
             plugin.IsLoaded
             && (string.Equals(plugin.InternalName, BossModName, StringComparison.OrdinalIgnoreCase)
@@ -68,12 +64,6 @@ public sealed class NormalAutomationDependencyChecker
                 vnavmeshInstalled,
                 vnavmesh.IsReady(),
                 vnavmeshInstalled ? "vnavmesh is installed but unavailable." : "vnavmesh is not installed."),
-            new AutomationDependencyStatus(
-                "lifestream",
-                LifestreamName,
-                lifestreamInstalled,
-                lifestream.IsAvailable(),
-                lifestreamInstalled ? "Lifestream is installed but unavailable." : "Lifestream is not installed."),
             new AutomationDependencyStatus(
                 "rotation",
                 rotationProviderName ?? "BossMod / BossModReborn",

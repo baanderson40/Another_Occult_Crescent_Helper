@@ -26,7 +26,6 @@ The bundled data currently enables the listed automation features for **South Ho
 ## Requirements
 
 - [vnavmesh](https://github.com/awgil/ffxiv_navmesh)
-- [Lifestream](https://github.com/NightmareXIV/Lifestream)
 - [BossMod](https://github.com/nyaoouo/FFXIV_Bossmod)
 
 ## Installation
@@ -42,7 +41,7 @@ The project is not a standalone application and must run inside Dalamud alongsid
 ## Getting Started
 
 1. Enter a supported Occult Crescent territory.
-2. Install and enable vnavmesh, Lifestream, and BossMod.
+2. Install and enable vnavmesh and BossMod.
 3. Open AOCCH with `/aocch` if needed.
 4. Configure the desired CE, FATE, pot, treasure, coffer, combat, and shopping options in the config window.
 5. Start the unified farm session from the main window or with `/aocch start`.
@@ -88,7 +87,7 @@ The manual overworld coffer route cannot start while the unified farm session is
 - Automation is limited to territories and features with validated data profiles.
 - The plugin stops or blocks flows when the player changes territory, loses required data, or encounters an unrecoverable movement or interaction failure.
 - Combat automation requires the relevant BossMod integration and suitable combat configuration.
-- Pathing and teleport behavior depends on vnavmesh and Lifestream being installed, available, and usable.
+- Pathing depends on vnavmesh being installed, available, and usable. Aethernet travel uses the in-game shard UI through ECommons callbacks.
 - Dangerous travel, Hide usage, Ninja gearset swaps, weather handling, and high-level threat rules should be tested carefully before unattended use.
 - The plugin does not guarantee successful interaction with game UI, combat, movement, or third-party plugin APIs after game updates.
 
@@ -96,7 +95,7 @@ Use the panic stop control or `/aocch panic` whenever immediate cancellation is 
 
 ## Troubleshooting
 
-1. Open the **Dependencies** window and confirm vnavmesh, Lifestream, and BossMod are installed and available.
+1. Open the **Dependencies** window and confirm vnavmesh and BossMod are installed and available.
 2. Open the **Debug** window to inspect territory data, current targets, FATEs, Critical Engagements, pot state, coffer state, movement, autorotation, recovery, and shopping state.
 3. Open the **Log** window to review warnings, errors, state transitions, and interaction failures.
 4. Confirm that the active territory supports the feature being started and that the relevant configuration tab has the feature enabled.

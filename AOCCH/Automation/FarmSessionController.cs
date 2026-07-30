@@ -30,7 +30,6 @@ public sealed class FarmSessionController : IDisposable
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
     private readonly VNavmeshIpc vnavmesh;
-    private readonly LifestreamIpc lifestream;
     private readonly MovementController movementController;
     private readonly GameActionController gameActionController;
     private readonly AutorotationController autorotationController;
@@ -82,7 +81,6 @@ public sealed class FarmSessionController : IDisposable
         IFramework framework,
         OccultCrescentScanner scanner,
         VNavmeshIpc vnavmesh,
-        LifestreamIpc lifestream,
         MovementController movementController,
         GameActionController gameActionController,
         AutorotationController autorotationController,
@@ -103,7 +101,6 @@ public sealed class FarmSessionController : IDisposable
         this.framework = framework;
         this.scanner = scanner;
         this.vnavmesh = vnavmesh;
-        this.lifestream = lifestream;
         this.movementController = movementController;
         this.gameActionController = gameActionController;
         this.autorotationController = autorotationController;
@@ -534,12 +531,6 @@ public sealed class FarmSessionController : IDisposable
         if (!vnavmesh.IsReady())
         {
             SetFailure("vnavmesh IPC is unavailable.");
-            return;
-        }
-
-        if (!lifestream.IsAvailable())
-        {
-            SetFailure("Lifestream IPC is unavailable.");
             return;
         }
 

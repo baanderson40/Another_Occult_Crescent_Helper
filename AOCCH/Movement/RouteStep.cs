@@ -11,6 +11,7 @@ public sealed class RouteStep
     public uint GeneralActionId { get; init; }
     public string AethernetName { get; init; } = string.Empty;
     public uint AethernetPlaceNameId { get; init; }
+    public int AethernetCallbackValue { get; init; } = -1;
     public Vector3 InteractionCenter { get; init; }
     public float InteractDistanceMin { get; init; }
     public float InteractDistanceMax { get; init; }
