@@ -477,6 +477,7 @@ public sealed class MovementController : IDisposable
                         Destination = resolvedDestination.Value,
                         ArrivalTolerance = arrivalTolerance,
                         ShouldMountBeforeStep = shouldMountBeforeStep,
+                        DestinationAlreadyResolved = destinationAlreadyResolved,
                     },
                 ],
             };
@@ -818,7 +819,9 @@ public sealed class MovementController : IDisposable
             }
 
             var targetPoint = GetPathStepTarget(step, playerPosition);
-            var destination = ResolveNavigablePoint(targetPoint, halfExtentXZ: 5f, halfExtentY: 5f);
+            var destination = step.DestinationAlreadyResolved
+                ? targetPoint
+                : ResolveNavigablePoint(targetPoint, halfExtentXZ: 5f, halfExtentY: 5f);
             if (!destination.HasValue)
             {
                 SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for step: {step.Description}. target={FormatVector(targetPoint)}.", stopMovement: true);
