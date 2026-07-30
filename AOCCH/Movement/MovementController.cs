@@ -1104,7 +1104,7 @@ public sealed class MovementController : IDisposable
             {
                 var addon = (AtkUnitBase*)gameGui.GetAddonByName("TelepotTown", 1).Address;
                 var elapsed = DateTimeOffset.UtcNow - stepStartedAt;
-                logger.DebugThrottled(BuildStepLogKey("callback-addon"), TimeSpan.FromMilliseconds(250), $"Aethernet callback addon poll addon=TelepotTown ready={addon != null && addon->IsReady} address={(nint)addon:X} elapsedMs={elapsed.TotalMilliseconds:0} attempt={stepAttemptCount}/{MaxAethernetAttempts} callback={aethernetCallbackValue}.");
+                logger.VerboseThrottled(BuildStepLogKey("callback-addon"), TimeSpan.FromMilliseconds(250), $"Aethernet callback addon poll addon=TelepotTown ready={addon != null && addon->IsReady} address={(nint)addon:X} elapsedMs={elapsed.TotalMilliseconds:0} attempt={stepAttemptCount}/{MaxAethernetAttempts} callback={aethernetCallbackValue}.");
                 if (addon != null && addon->IsReady)
                 {
                     telepotTownAddonAddress = (nint)addon;
