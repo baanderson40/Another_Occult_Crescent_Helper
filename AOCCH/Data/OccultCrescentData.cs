@@ -95,6 +95,7 @@ public sealed class AethernetData
     public string Name { get; init; } = string.Empty;
     public uint PlaceNameId { get; init; }
     public uint BaseId { get; init; }
+    public int? CallbackValue { get; init; }
     public Vector3Data Position { get; init; } = new();
     public Vector3Data Destination { get; init; } = new();
     public float InteractDistanceMin { get; init; }

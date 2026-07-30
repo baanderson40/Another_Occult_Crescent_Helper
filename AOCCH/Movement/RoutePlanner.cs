@@ -380,6 +380,7 @@ public sealed class RoutePlanner
             ArrivalTolerance = TargetArrivalTolerance,
             AethernetName = destinationAethernet.Name,
             AethernetPlaceNameId = destinationAethernet.PlaceNameId,
+            AethernetCallbackValue = destinationAethernet.CallbackValue ?? -1,
         });
 
         steps.Add(new RouteStep
@@ -453,6 +454,7 @@ public sealed class RoutePlanner
                 ArrivalTolerance = TargetArrivalTolerance,
                 AethernetName = destinationAethernet.Name,
                 AethernetPlaceNameId = destinationAethernet.PlaceNameId,
+                AethernetCallbackValue = destinationAethernet.CallbackValue ?? -1,
             });
         }
 

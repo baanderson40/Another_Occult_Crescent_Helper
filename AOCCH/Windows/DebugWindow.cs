@@ -1247,7 +1247,6 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Movement");
         ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
-        ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
         ImGui.TextUnformatted($"State: {movementController.State}");
         ImGui.TextWrapped($"Route: {movementController.GetStatusSummary()}");
         ImGui.TextWrapped($"Step: {movementController.GetActiveStepSummary()}");
@@ -1337,7 +1336,6 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextWrapped("Scanner-only mode keeps scanning and target selection active while blocking movement, combat automation, and buff rotation starts.");
         ImGui.TextUnformatted($"Scanner-Only Mode: {(configuration.ScannerOnlyMode ? "Enabled" : "Disabled")}");
         ImGui.TextUnformatted($"vnavmesh: {movementController.VNavmeshStatusText}");
-        ImGui.TextUnformatted($"Lifestream: {movementController.LifestreamStatusText}");
         ImGui.TextUnformatted($"Return Action: {(movementController.CanUseReturnAction ? "Available" : "Unavailable")}");
         ImGui.TextUnformatted($"BossMod: {FormatBossModStatus(bossModRequired, bossModAvailable)}");
         ImGui.TextUnformatted($"Farm Running: {(farmSessionController.IsRunning ? "Yes" : "No")}");

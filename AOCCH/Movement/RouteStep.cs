@@ -11,6 +11,7 @@ public sealed class RouteStep
     public uint GeneralActionId { get; init; }
     public string AethernetName { get; init; } = string.Empty;
     public uint AethernetPlaceNameId { get; init; }
+    public int AethernetCallbackValue { get; init; } = -1;
     public Vector3 InteractionCenter { get; init; }
     public float InteractDistanceMin { get; init; }
     public float InteractDistanceMax { get; init; }
@@ -18,4 +19,5 @@ public sealed class RouteStep
     public bool ShouldDismountOnArrival { get; init; }
     public Vector3 EarlyDismountTarget { get; init; }
     public float EarlyDismountDistance { get; init; }
+    public bool DestinationAlreadyResolved { get; init; }
 }

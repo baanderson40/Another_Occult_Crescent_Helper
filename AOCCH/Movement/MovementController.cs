@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +10,9 @@ using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Scanning;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using ECommons.Automation;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace AOCCH.Movement;
@@ -51,7 +54,6 @@ public sealed class MovementController : IDisposable
     private readonly IGameGui gameGui;
     private readonly OccultCrescentScanner scanner;
     private readonly VNavmeshIpc vnavmesh;
-    private readonly LifestreamIpc lifestream;
     private readonly RoutePlanner routePlanner;
     private readonly GameActionController gameActionController;
     private readonly Configuration configuration;
@@ -71,7 +73,12 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset dismountAttemptedAt = DateTimeOffset.MinValue;
     private int stepAttemptCount;
     private int idlePathResetCount;
-    private bool lifestreamOwned;
+    private bool aethernetCallbackMode;
+    private bool aethernetCallbackFired;
+    private bool aethernetFirstCallbackFired;
+    private uint aethernetCallbackValue;
+    private nint telepotTownAddonAddress;
+    private DateTimeOffset aethernetSecondCallbackNotBeforeAt = DateTimeOffset.MinValue;
     private bool transitionObserved;
     private bool startedAwayFromTransitionDestination;
     private bool returnPromptHandled;
@@ -104,7 +111,6 @@ public sealed class MovementController : IDisposable
         IGameGui gameGui,
         OccultCrescentScanner scanner,
         VNavmeshIpc vnavmesh,
-        LifestreamIpc lifestream,
         RoutePlanner routePlanner,
         GameActionController gameActionController,
         Configuration configuration,
@@ -116,7 +122,6 @@ public sealed class MovementController : IDisposable
         this.gameGui = gameGui;
         this.scanner = scanner;
         this.vnavmesh = vnavmesh;
-        this.lifestream = lifestream;
         this.routePlanner = routePlanner;
         this.gameActionController = gameActionController;
         this.configuration = configuration;
@@ -183,14 +188,8 @@ public sealed class MovementController : IDisposable
     public string VNavmeshStatusText
         => vnavmesh.IsReady() ? $"Ready ({vnavmesh.GetBuildProgress():P0})" : "Unavailable";
 
-    public string LifestreamStatusText
-        => !lifestream.IsAvailable() ? "Unavailable" : (lifestream.IsBusy() ? "Busy" : "Available");
-
     public bool IsVNavmeshReady
         => vnavmesh.IsReady();
-
-    public bool IsLifestreamAvailable
-        => lifestream.IsAvailable();
 
     public bool IsPathBusy
         => vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
@@ -230,11 +229,6 @@ public sealed class MovementController : IDisposable
         vnavmesh.Stop();
         BeginStopVerification();
         ResetMeshPathTracking();
-        if (lifestreamOwned && lifestream.IsBusy())
-        {
-            lifestream.Abort();
-        }
-
         lock (gate)
         {
             plannedRoute = null;
@@ -250,7 +244,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -388,7 +381,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -442,7 +434,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -486,6 +477,7 @@ public sealed class MovementController : IDisposable
                         Destination = resolvedDestination.Value,
                         ArrivalTolerance = arrivalTolerance,
                         ShouldMountBeforeStep = shouldMountBeforeStep,
+                        DestinationAlreadyResolved = destinationAlreadyResolved,
                     },
                 ],
             };
@@ -502,7 +494,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -524,11 +515,6 @@ public sealed class MovementController : IDisposable
         vnavmesh.Stop();
         BeginStopVerification();
         ResetMeshPathTracking();
-        if (lifestreamOwned && lifestream.IsBusy())
-        {
-            lifestream.Abort();
-        }
-
         lock (gate)
         {
             state = MovementState.Stopped;
@@ -538,7 +524,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = reason;
@@ -834,7 +819,9 @@ public sealed class MovementController : IDisposable
             }
 
             var targetPoint = GetPathStepTarget(step, playerPosition);
-            var destination = ResolveNavigablePoint(targetPoint, halfExtentXZ: 5f, halfExtentY: 5f);
+            var destination = step.DestinationAlreadyResolved
+                ? targetPoint
+                : ResolveNavigablePoint(targetPoint, halfExtentXZ: 5f, halfExtentY: 5f);
             if (!destination.HasValue)
             {
                 SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for step: {step.Description}. target={FormatVector(targetPoint)}.", stopMovement: true);
@@ -974,46 +961,53 @@ public sealed class MovementController : IDisposable
             return;
         }
 
-        if (lifestream.IsBusy())
+        if (step.AethernetCallbackValue < 0)
         {
-            SetFailure(MovementState.Failed, "Lifestream is busy.");
+            SetFailure(MovementState.Failed, $"No callback value is configured for aethernet {step.AethernetName}.");
             return;
         }
 
-        var activeAetheryte = lifestream.GetActiveAetheryte();
-        var activeCustomAetheryte = lifestream.GetActiveCustomAetheryte();
-        if (activeAetheryte == 0 && activeCustomAetheryte == 0)
+        var source = GetClosestAethernet(playerPosition);
+        if (source == null)
         {
-            var source = GetClosestAethernet(playerPosition);
-            if (source == null)
-            {
-                SetFailure(MovementState.Failed, "No aethernet data is available for Lifestream teleport.");
-                return;
-            }
-
-            if (CalculateFlatDistance(playerPosition, source.Position.ToVector3()) > source.InteractDistanceMax)
-            {
-                SetFailure(MovementState.Failed, "Player is not near an aethernet shard for Lifestream teleport.");
-                return;
-            }
+            SetFailure(MovementState.Failed, "No aethernet data is available for callback teleport.");
+            return;
         }
+
+        if (CalculateFlatDistance(playerPosition, source.Position.ToVector3()) > source.InteractDistanceMax)
+        {
+            SetFailure(MovementState.Failed, "Player is not near an aethernet shard for callback teleport.");
+            return;
+        }
+
+        var sourceObject = FindAethernetObject(source, playerPosition);
+        if (sourceObject == null)
+        {
+            RetryOrFailAethernetStep(step, playerPosition, CalculateFlatDistance(playerPosition, step.Destination), false, $"callback source object not found baseId={source.BaseId}");
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=aethernet-source-resolve source=\"{source.Name}\" baseId={source.BaseId} object=\"{sourceObject.Name.TextValue}\" objectId={sourceObject.GameObjectId:X} objectPosition={FormatVector(sourceObject.Position)} playerPosition={FormatVector(playerPosition)} distance={CalculateFlatDistance(playerPosition, sourceObject.Position):0.0} callbackValue={step.AethernetCallbackValue}");
+        if (!gameActionController.TrySetTarget(sourceObject, step.Description))
+        {
+            RetryOrFailAethernetStep(step, playerPosition, CalculateFlatDistance(playerPosition, step.Destination), false, "callback source target failed");
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=aethernet-target result=success objectId={sourceObject.GameObjectId:X}");
+        if (!gameActionController.TryInteractWithObject(sourceObject, step.Description, checkLineOfSight: false))
+        {
+            RetryOrFailAethernetStep(step, playerPosition, CalculateFlatDistance(playerPosition, step.Destination), false, "callback source interaction failed");
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=aethernet-interact result=success objectId={sourceObject.GameObjectId:X} checkLineOfSight=false");
 
         int attemptCount;
         lock (gate)
         {
             stepAttemptCount++;
             attemptCount = stepAttemptCount;
-        }
-
-        if (!lifestream.TryAethernetTeleportByPlaceNameId(step.AethernetPlaceNameId))
-        {
-            RetryOrFailAethernetStep(
-                step,
-                playerPosition,
-                CalculateFlatDistance(playerPosition, step.Destination),
-                observedTransition: false,
-                "Lifestream could not start the teleport request.");
-            return;
         }
 
         var distance = CalculateFlatDistance(playerPosition, step.Destination);
@@ -1031,10 +1025,15 @@ public sealed class MovementController : IDisposable
             startedAwayFromTransitionDestination = distance > TransitionCompletionDistance;
             transitionObserved = false;
             stableSince = DateTimeOffset.MinValue;
-            lifestreamOwned = true;
+            aethernetCallbackMode = true;
+            aethernetCallbackFired = false;
+            aethernetFirstCallbackFired = false;
+            aethernetCallbackValue = (uint)step.AethernetCallbackValue;
+            telepotTownAddonAddress = nint.Zero;
+            aethernetSecondCallbackNotBeforeAt = DateTimeOffset.MinValue;
         }
 
-        logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind} attempt={attemptCount}/{MaxAethernetAttempts}");
+        logger.Info($"{BuildLogTag()} op=step-start step=\"{step.Description}\" kind={step.Kind} mode=callback attempt={attemptCount}/{MaxAethernetAttempts}");
     }
 
     private bool EnsureDismountedForAethernet(RouteStep step)
@@ -1094,14 +1093,46 @@ public sealed class MovementController : IDisposable
         return false;
     }
 
-    private void WaitForAethernetCompletion(RouteStep step, Vector3 playerPosition, float distance)
+    private unsafe void WaitForAethernetCompletion(RouteStep step, Vector3 playerPosition, float distance)
     {
         var casting = condition[ConditionFlag.Casting];
         var betweenAreas = condition[ConditionFlag.BetweenAreas];
         var occupied = condition[ConditionFlag.OccupiedInQuestEvent];
-        var busy = lifestream.IsBusy();
+        if (aethernetCallbackMode && !aethernetCallbackFired)
+        {
+            if (!aethernetFirstCallbackFired)
+            {
+                var addon = (AtkUnitBase*)gameGui.GetAddonByName("TelepotTown", 1).Address;
+                var elapsed = DateTimeOffset.UtcNow - stepStartedAt;
+                logger.VerboseThrottled(BuildStepLogKey("callback-addon"), TimeSpan.FromMilliseconds(250), $"Aethernet callback addon poll addon=TelepotTown ready={addon != null && addon->IsReady} address={(nint)addon:X} elapsedMs={elapsed.TotalMilliseconds:0} attempt={stepAttemptCount}/{MaxAethernetAttempts} callback={aethernetCallbackValue}.");
+                if (addon != null && addon->IsReady)
+                {
+                    telepotTownAddonAddress = (nint)addon;
+                    Callback.Fire(addon, true, 11, aethernetCallbackValue);
+                    aethernetFirstCallbackFired = true;
+                    aethernetSecondCallbackNotBeforeAt = DateTimeOffset.UtcNow.AddMilliseconds(200);
+                    logger.Info($"{BuildLogTag()} op=aethernet-callback addon=TelepotTown address={telepotTownAddonAddress:X} values=2 value0Type=Int value0=11 value1Type=UInt value1={aethernetCallbackValue} click=1");
+                }
+            }
+            else if (DateTimeOffset.UtcNow >= aethernetSecondCallbackNotBeforeAt)
+            {
+                var addon = (AtkUnitBase*)telepotTownAddonAddress;
+                Callback.Fire(addon, true, 11, aethernetCallbackValue);
+                aethernetCallbackFired = true;
+                stepStartedAt = DateTimeOffset.UtcNow;
+                lastProgressAt = DateTimeOffset.UtcNow;
+                logger.Info($"{BuildLogTag()} op=aethernet-callback addon=TelepotTown address={telepotTownAddonAddress:X} values=2 value0Type=Int value0=11 value1Type=UInt value1={aethernetCallbackValue} click=2 delayMs=200");
+            }
 
-        if (casting || betweenAreas || occupied || busy)
+            if (!aethernetCallbackFired && DateTimeOffset.UtcNow - stepStartedAt > AethernetAttemptTimeout)
+            {
+                RetryOrFailAethernetStep(step, playerPosition, distance, false, "TelepotTown addon did not become ready for callback.");
+            }
+
+            return;
+        }
+
+        if (casting || betweenAreas || occupied)
         {
             lock (gate)
             {
@@ -1171,11 +1202,6 @@ public sealed class MovementController : IDisposable
             attemptCount = stepAttemptCount;
         }
 
-        if (lifestreamOwned && lifestream.IsBusy())
-        {
-            lifestream.Abort();
-        }
-
         if (attemptCount < MaxAethernetAttempts)
         {
             lock (gate)
@@ -1186,7 +1212,12 @@ public sealed class MovementController : IDisposable
                 transitionObserved = false;
                 startedAwayFromTransitionDestination = false;
                 stableSince = DateTimeOffset.MinValue;
-                lifestreamOwned = false;
+                aethernetCallbackMode = false;
+                aethernetCallbackFired = false;
+                aethernetFirstCallbackFired = false;
+                aethernetCallbackValue = 0;
+                telepotTownAddonAddress = nint.Zero;
+                aethernetSecondCallbackNotBeforeAt = DateTimeOffset.MinValue;
             }
 
             logger.Warning(
@@ -1221,7 +1252,6 @@ public sealed class MovementController : IDisposable
             if (currentStepIndex >= (plannedRoute?.Steps.Count ?? 0))
             {
                 state = MovementState.Arrived;
-                lifestreamOwned = false;
                 logger.Info($"{BuildLogTag()} op=complete movementOperation={DescribeMovementOperation()} state={MovementState.Arrived} route={GetRouteSummary()} step={GetStepSummary()}");
                 return;
             }
@@ -1229,7 +1259,6 @@ public sealed class MovementController : IDisposable
             state = plannedRoute!.Steps[currentStepIndex].Kind == RouteStepKind.Return
                 ? MovementState.UsingReturn
                 : MovementState.Pathfinding;
-            lifestreamOwned = false;
         }
     }
 
@@ -1247,7 +1276,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -1263,10 +1291,6 @@ public sealed class MovementController : IDisposable
         {
             vnavmesh.Stop();
             BeginStopVerification();
-            if (lifestreamOwned && lifestream.IsBusy())
-            {
-                lifestream.Abort();
-            }
         }
 
         lock (gate)
@@ -1278,7 +1302,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = reason;
@@ -1313,7 +1336,6 @@ public sealed class MovementController : IDisposable
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
             idlePathResetCount = 0;
-            lifestreamOwned = false;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
@@ -1350,8 +1372,7 @@ public sealed class MovementController : IDisposable
         var now = DateTimeOffset.UtcNow;
         var transitionActive = condition[ConditionFlag.Casting]
             || condition[ConditionFlag.BetweenAreas]
-            || condition[ConditionFlag.OccupiedInQuestEvent]
-            || lifestream.IsBusy();
+            || condition[ConditionFlag.OccupiedInQuestEvent];
 
         if (transitionActive)
         {
@@ -1615,9 +1636,7 @@ public sealed class MovementController : IDisposable
         var casting = condition[ConditionFlag.Casting];
         var betweenAreas = condition[ConditionFlag.BetweenAreas];
         var occupied = includeOccupiedCondition && condition[ConditionFlag.OccupiedInQuestEvent];
-        var busy = lifestream.IsBusy();
-
-        if (casting || betweenAreas || occupied || busy)
+        if (casting || betweenAreas || occupied)
         {
             lock (gate)
             {
@@ -2093,6 +2112,12 @@ public sealed class MovementController : IDisposable
         return closest;
     }
 
+    private IGameObject? FindAethernetObject(AethernetData source, Vector3 playerPosition)
+        => objectTable
+            .Where(gameObject => gameObject.IsValid() && gameObject.BaseId == source.BaseId)
+            .OrderBy(gameObject => CalculateFlatDistance(playerPosition, gameObject.Position))
+            .FirstOrDefault();
+
     private static float CalculateFlatDistance(Vector3 left, Vector3 right)
     {
         var deltaX = left.X - right.X;
@@ -2103,7 +2128,7 @@ public sealed class MovementController : IDisposable
     private string DescribeTransitionConditions(bool includeOccupiedCondition)
     {
         var occupied = includeOccupiedCondition && condition[ConditionFlag.OccupiedInQuestEvent];
-        return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={occupied} lifestreamBusy={lifestream.IsBusy()}";
+        return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={occupied}";
     }
 
     private bool IsReadyForReturn()
@@ -2111,11 +2136,10 @@ public sealed class MovementController : IDisposable
             && !condition[ConditionFlag.InCombat]
             && !condition[ConditionFlag.Casting]
             && !condition[ConditionFlag.BetweenAreas]
-            && !condition[ConditionFlag.OccupiedInQuestEvent]
-            && !lifestream.IsBusy();
+            && !condition[ConditionFlag.OccupiedInQuestEvent];
 
     private string DescribeReturnConditions()
-        => $"available={objectTable.LocalPlayer?.CurrentHp > 0} dead={objectTable.LocalPlayer?.CurrentHp == 0} combat={condition[ConditionFlag.InCombat]} mounted={condition[ConditionFlag.Mounted]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} lifestreamBusy={lifestream.IsBusy()} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}";
+        => $"available={objectTable.LocalPlayer?.CurrentHp > 0} dead={objectTable.LocalPlayer?.CurrentHp == 0} combat={condition[ConditionFlag.InCombat]} mounted={condition[ConditionFlag.Mounted]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}";
 
     private void ResetTransitionTracking()
     {
