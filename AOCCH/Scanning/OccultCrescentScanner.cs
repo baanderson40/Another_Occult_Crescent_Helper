@@ -17,6 +17,7 @@ namespace AOCCH.Scanning;
 
 public sealed class OccultCrescentScanner : IDisposable
 {
+    private static readonly uint[] CriticalEncountersWithTreasureGuide = [48, 64, 65];
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMilliseconds(500);
     private const float ManualRevealAttributionRadius = 8f;
     private static readonly TimeSpan ManualRevealAttributionWindow = TimeSpan.FromSeconds(5);
@@ -268,7 +269,10 @@ public sealed class OccultCrescentScanner : IDisposable
                 }
 
                 if (configuration.EnableOverworldTreasureGuide)
-                    ScanDetectedTreasures(detectedTreasures, playerPosition);
+                    ScanDetectedTreasures(
+                        detectedTreasures,
+                        playerPosition,
+                        CriticalEncountersWithTreasureGuide.Contains(currentCriticalEncounterId));
 
                 var canSubmitCofferObservations = configuration.EnableCofferObservationSubmission
                     && (territory!.VisibleCoffers.ObjectKinds.Count > 0
@@ -544,14 +548,17 @@ public sealed class OccultCrescentScanner : IDisposable
         TrackTreasureBuffState(hasTreasureBuff);
     }
 
-    private void ScanDetectedTreasures(List<DetectedTreasure> detectedTreasures, Vector3? playerPosition)
+    private void ScanDetectedTreasures(
+        List<DetectedTreasure> detectedTreasures,
+        Vector3? playerPosition,
+        bool includeNonTargetableTreasures)
     {
         foreach (var gameObject in objectTable)
         {
             if (gameObject is not IGameObject objectEntry
+                || !objectEntry.IsValid()
                 || !objectEntry.ObjectKind.ToString().StartsWith("Treasure", StringComparison.OrdinalIgnoreCase)
-                || !objectEntry.IsTargetable
-                || !objectEntry.IsValid())
+                || (!objectEntry.IsTargetable && !includeNonTargetableTreasures))
             {
                 continue;
             }

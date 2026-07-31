@@ -13,6 +13,7 @@ namespace AOCCH.Rendering;
 
 public sealed class TreasureGuideRenderer : IDisposable
 {
+    private static readonly uint[] CriticalEncountersWithTreasureGuide = [48, 64, 65];
     private static readonly Vector4 NearLineColor = new(0.2f, 1f, 0.25f, 1f);
     private static readonly Vector4 FarLineColor = new(1f, 0.9f, 0.1f, 1f);
     private static readonly Vector4 MarkerColor = new(0.25f, 0.9f, 1f, 0.25f);
@@ -66,8 +67,9 @@ public sealed class TreasureGuideRenderer : IDisposable
         }
 
         var snapshot = scanner.Snapshot;
+        var allowGuideDuringCriticalEncounter = CriticalEncountersWithTreasureGuide.Contains(snapshot.CurrentCriticalEncounterId);
         if (!snapshot.IsInSupportedTerritory
-            || snapshot.IsInCriticalEncounter
+            || (snapshot.IsInCriticalEncounter && !allowGuideDuringCriticalEncounter)
             || snapshot.Fates.Any(fate => fate.IsInFate)
             || condition[ConditionFlag.BetweenAreas]
             || condition[ConditionFlag.OccupiedInQuestEvent]
