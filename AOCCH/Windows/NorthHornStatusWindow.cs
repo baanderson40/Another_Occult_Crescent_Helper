@@ -7,10 +7,8 @@ namespace AOCCH.Windows;
 
 public sealed class NorthHornStatusWindow : Window, IDisposable
 {
-    public const int CurrentStatusRevision = 3;
+    public const int CurrentStatusRevision = 4;
 
-    private const int PotRevealCofferProgress = 0;
-    private const int PotRevealCofferTotal = 30;
     private readonly Plugin plugin;
     private readonly Configuration configuration;
     private bool isDebugPreview;
@@ -52,7 +50,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             ImGui.Separator();
         }
 
-        ImGui.TextWrapped("North Horn overworld coffer support is available. Pot and reveal coffer support is still unavailable.");
+        ImGui.TextWrapped("North Horn overworld coffer support is available. Pot FATE cycle timing is now tracked, but reveal treasure search is not yet available.");
         ImGui.Spacing();
 
         if (ImGui.BeginTable("NorthHornStatusTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
@@ -65,7 +63,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             DrawStatusRow("Critical Engagements", "Supported", "Available");
             DrawStatusRow("FATE Farming", "Supported", "Available");
             DrawStatusRow("Shopping", "Supported", "Available");
-            DrawStatusRow("Pot / Reveal Coffers", "Unsupported", $"{PotRevealCofferProgress}/{PotRevealCofferTotal}");
+            DrawStatusRow("Pot / Reveal Coffers", "Partial", "Pot cycle timing");
             DrawStatusRow("Overworld Coffers", "Partial", "Ninja mode untested");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");

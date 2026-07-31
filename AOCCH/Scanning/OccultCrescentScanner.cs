@@ -232,6 +232,7 @@ public sealed class OccultCrescentScanner : IDisposable
             var canFarmCriticalEncounters = territory?.Features.CriticalEncounters == true;
             var canFarmFates = territory?.Features.Fates == true;
             var canRunPotTreasure = territory?.Features.PotTreasure == true;
+            var canTrackPotCycle = territory?.Features.PotCycleTracking == true || canRunPotTreasure;
             var canRunVisibleCofferRoute = territory?.Features.VisibleCoffers == true;
             var canUseShopping = territory?.Features.Shopping == true;
             var canRunBuffRotation = territory?.Features.BuffRotation == true;
@@ -245,7 +246,7 @@ public sealed class OccultCrescentScanner : IDisposable
                     ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
                 selectedCriticalEncounter = canFarmCriticalEncounters ? SelectCriticalEncounter(criticalEncounters) : null;
 
-                ScanFates(territory!, canFarmFates, canRunPotTreasure, fates, potFates, out activePotFate);
+                ScanFates(territory!, canFarmFates, canTrackPotCycle, fates, potFates, out activePotFate);
                 selectedFate = canFarmFates ? SelectFate(fates) : null;
 
                 effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
@@ -295,6 +296,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 CanFarmFates = canFarmFates,
                 CanFarmCriticalEncounters = canFarmCriticalEncounters,
                 CanRunVisibleCofferRoute = canRunVisibleCofferRoute,
+                CanTrackPotCycle = canTrackPotCycle,
                 CanRunPotTreasure = canRunPotTreasure,
                 CanUseShopping = canUseShopping,
                 CanRunBuffRotation = canRunBuffRotation,
@@ -391,7 +393,7 @@ public sealed class OccultCrescentScanner : IDisposable
     private void ScanFates(
         OccultCrescentTerritoryData territory,
         bool canFarmFates,
-        bool canRunPotTreasure,
+        bool canTrackPotCycle,
         List<ActiveFate> fates,
         List<ActivePotFate> potFates,
         out ActivePotFate? activePotFate)
@@ -447,7 +449,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 : float.MaxValue;
             var liveTarget = TrySelectLiveFateTarget(fate.FateId, fateLocation, playerPosition);
 
-            if (canRunPotTreasure && isPotFate)
+            if (canTrackPotCycle && isPotFate)
             {
                 potFatesById.TryGetValue(fate.FateId, out var potMetadata);
                 var activePot = new ActivePotFate

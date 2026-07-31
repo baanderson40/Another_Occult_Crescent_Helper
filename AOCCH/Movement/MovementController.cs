@@ -38,6 +38,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
     private const int MaxIdlePathResets = 5;
+    private const ConditionFlag WindCurrentJumpCondition = (ConditionFlag)61;
     private const float TransitionCompletionDistance = 25f;
     private const float AethernetInnerEdgeBias = 0.15f;
     private const float AethernetBandWidth = 0.25f;
@@ -97,6 +98,7 @@ public sealed class MovementController : IDisposable
     private string currentMovementOperationId = string.Empty;
     private MovementState state = MovementState.Idle;
     private bool stopVerificationPending;
+    private bool windCurrentJumpPending;
     private Task<List<Vector3>>? initialMeshPathTask;
     private Task<List<Vector3>>? stallMeshPathTask;
     private Vector3 meshPathOrigin;
@@ -239,6 +241,7 @@ public sealed class MovementController : IDisposable
             lastDistance = float.MaxValue;
             progressDistance = float.MaxValue;
             stepStarted = false;
+            windCurrentJumpPending = false;
             mountAttempted = false;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
@@ -376,6 +379,7 @@ public sealed class MovementController : IDisposable
             lastDistance = float.MaxValue;
             progressDistance = float.MaxValue;
             stepStarted = false;
+            windCurrentJumpPending = false;
             mountAttempted = false;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
@@ -446,7 +450,7 @@ public sealed class MovementController : IDisposable
         return true;
     }
 
-    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true, bool destinationAlreadyResolved = false)
+    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true, bool destinationAlreadyResolved = false, bool advanceOnJump = false)
     {
         var resolvedDestination = destinationAlreadyResolved
             ? new Vector3?(destination)
@@ -478,6 +482,7 @@ public sealed class MovementController : IDisposable
                         ArrivalTolerance = arrivalTolerance,
                         ShouldMountBeforeStep = shouldMountBeforeStep,
                         DestinationAlreadyResolved = destinationAlreadyResolved,
+                        AdvanceOnJump = advanceOnJump,
                     },
                 ],
             };
@@ -786,6 +791,27 @@ public sealed class MovementController : IDisposable
         lock (gate)
         {
             lastDistance = distance;
+        }
+
+        if (step.AdvanceOnJump && condition[WindCurrentJumpCondition])
+        {
+            if (!windCurrentJumpPending)
+            {
+                vnavmesh.Stop();
+                BeginStopVerification();
+                windCurrentJumpPending = true;
+                logger.Info($"{BuildLogTag()} op=windcurrent-jump-stop step=\"{step.Description}\" condition=61 distance={distance:0.0} tolerance={step.ArrivalTolerance:0.0} action=wait-for-landing");
+            }
+
+            return;
+        }
+
+        if (step.AdvanceOnJump && windCurrentJumpPending)
+        {
+            windCurrentJumpPending = false;
+            logger.Info($"{BuildLogTag()} op=windcurrent-jump-landed step=\"{step.Description}\" distance={distance:0.0} action=advance-route");
+            AdvanceStep();
+            return;
         }
 
         var isWithinEarlyDismountRange = IsWithinEarlyDismountRange(step, playerPosition, out _);
@@ -1097,7 +1123,7 @@ public sealed class MovementController : IDisposable
     {
         var casting = condition[ConditionFlag.Casting];
         var betweenAreas = condition[ConditionFlag.BetweenAreas];
-        var occupied = condition[ConditionFlag.OccupiedInQuestEvent];
+        var occupied = !aethernetCallbackMode && condition[ConditionFlag.OccupiedInQuestEvent];
         if (aethernetCallbackMode && !aethernetCallbackFired)
         {
             if (!aethernetFirstCallbackFired)
@@ -1202,6 +1228,11 @@ public sealed class MovementController : IDisposable
             attemptCount = stepAttemptCount;
         }
 
+        if (aethernetCallbackMode)
+        {
+            CloseTelepotTownForRetry();
+        }
+
         if (attemptCount < MaxAethernetAttempts)
         {
             lock (gate)
@@ -1231,6 +1262,22 @@ public sealed class MovementController : IDisposable
             stopMovement: true);
     }
 
+    private bool CloseTelepotTownForRetry()
+    {
+        unsafe
+        {
+            var addon = (AtkUnitBase*)gameGui.GetAddonByName("TelepotTown", 1).Address;
+            if (addon == null || !addon->IsReady)
+            {
+                return true;
+            }
+
+            var closed = addon->FireCallbackInt(-1);
+            logger.Info($"{BuildLogTag()} op=aethernet-addon-close addon=TelepotTown address={(nint)addon:X} result={closed} reason=retry");
+            return closed;
+        }
+    }
+
     private void AdvanceStep()
     {
         ResetMeshPathTracking();
@@ -1238,6 +1285,7 @@ public sealed class MovementController : IDisposable
         {
             currentStepIndex++;
             stepStarted = false;
+            windCurrentJumpPending = false;
             stepStartedAt = DateTimeOffset.MinValue;
             lastProgressAt = DateTimeOffset.UtcNow;
             lastDistance = float.MaxValue;

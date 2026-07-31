@@ -79,6 +79,7 @@ public sealed class TerritoryFeatureAvailability
     public bool CriticalEncounters { get; init; }
     public bool Shopping { get; init; }
     public bool VisibleCoffers { get; init; }
+    public bool PotCycleTracking { get; init; }
     public bool PotTreasure { get; init; }
     public bool BuffRotation { get; init; }
 }
@@ -205,6 +206,7 @@ public sealed class VisibleCofferFarmSpotData
     public int? HideThresholdDistance { get; init; }
     public float? ArrivalDistance { get; init; }
     public bool RouteOnly { get; init; }
+    public bool AdvanceOnJump { get; init; }
     public bool SkipDuringAshkin { get; init; }
     public bool SkipDuringUnsafeWeather { get; init; }
     public bool RainSensitive { get; init; }

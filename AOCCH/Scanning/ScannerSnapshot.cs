@@ -14,6 +14,7 @@ public sealed class ScannerSnapshot
     public bool CanFarmFates { get; init; }
     public bool CanFarmCriticalEncounters { get; init; }
     public bool CanRunVisibleCofferRoute { get; init; }
+    public bool CanTrackPotCycle { get; init; }
     public bool CanRunPotTreasure { get; init; }
     public bool CanUseShopping { get; init; }
     public bool CanRunBuffRotation { get; init; }

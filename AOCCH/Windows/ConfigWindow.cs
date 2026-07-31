@@ -550,7 +550,7 @@ public class ConfigWindow : Window, IDisposable
                     "Fallback Maximum Aggro Level",
                     configuration.VisibleTreasureCofferFallbackMaximumAggroLevel,
                     0,
-                    40,
+                    50,
                     value => configuration.VisibleTreasureCofferFallbackMaximumAggroLevel = value,
                     nameof(configuration.VisibleTreasureCofferFallbackMaximumAggroLevel));
                 DrawSettingTooltip("Maximum aggro level used when your Knowledge Level is unavailable.");
@@ -567,11 +567,14 @@ public class ConfigWindow : Window, IDisposable
         }
         else
         {
+            var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+            var aggroOffsetMinimum = playerKnowledgeLevel.HasValue ? 1 - playerKnowledgeLevel.Value : -40;
+            var aggroOffsetMaximum = playerKnowledgeLevel.HasValue ? 50 - playerKnowledgeLevel.Value : 50;
             DrawNarrowIntSetting(
                 "Aggro Level Offset",
                 configuration.VisibleTreasureCofferAggroLevelOffset,
-                -40,
-                40,
+                aggroOffsetMinimum,
+                aggroOffsetMaximum,
                 value => configuration.VisibleTreasureCofferAggroLevelOffset = value,
                 nameof(configuration.VisibleTreasureCofferAggroLevelOffset));
             DrawSettingTooltip("Skips coffer spots when their aggro level exceeds your Knowledge Level by this offset. -1 allows spots one level below your Knowledge Level.");
@@ -584,7 +587,7 @@ public class ConfigWindow : Window, IDisposable
                     "Fallback Maximum Aggro Level",
                     configuration.VisibleTreasureCofferFallbackMaximumAggroLevel,
                     0,
-                    40,
+                    50,
                     value => configuration.VisibleTreasureCofferFallbackMaximumAggroLevel = value,
                     nameof(configuration.VisibleTreasureCofferFallbackMaximumAggroLevel));
                 DrawSettingTooltip("Maximum aggro level used when your Knowledge Level is unavailable.");
@@ -1134,7 +1137,7 @@ public class ConfigWindow : Window, IDisposable
     {
         var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
         return playerKnowledgeLevel.HasValue
-            ? Math.Clamp(playerKnowledgeLevel.Value + configuration.VisibleTreasureCofferAggroLevelOffset, 0, 40).ToString()
+            ? Math.Clamp(playerKnowledgeLevel.Value + configuration.VisibleTreasureCofferAggroLevelOffset, 1, 50).ToString()
             : $"fallback {configuration.VisibleTreasureCofferFallbackMaximumAggroLevel}";
     }
 

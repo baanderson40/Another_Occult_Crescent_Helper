@@ -15,25 +15,27 @@ public sealed class PotFallbackWindowEvaluator
         this.logger = logger;
     }
 
-    public PotFallbackStartDecision EvaluateCeStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+    public PotFallbackStartDecision EvaluateCeStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure)
     {
         var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.CeFallbackCutoffMinutes)),
-            "CE");
+            "CE",
+            canRunPotTreasure);
 
         logger.DebugThrottled("pot-fallback-ce", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for CE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
         return decision;
     }
 
-    public PotFallbackStartDecision EvaluateFateStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+    public PotFallbackStartDecision EvaluateFateStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure)
     {
         var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.FateFallbackCutoffMinutes)),
-            "FATE");
+            "FATE",
+            canRunPotTreasure);
 
         logger.DebugThrottled("pot-fallback-fate", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for FATE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
         return decision;
@@ -43,8 +45,14 @@ public sealed class PotFallbackWindowEvaluator
         PotCycleSnapshot potCycleSnapshot,
         DateTimeOffset now,
         TimeSpan cutoffWindow,
-        string activityName)
+        string activityName,
+        bool canRunPotTreasure)
     {
+        if (!canRunPotTreasure)
+        {
+            return Allow($"{activityName} fallback start allowed because pot treasure is unavailable in this territory.");
+        }
+
         if (!configuration.EnablePotFarming)
         {
             return Allow($"{activityName} fallback start allowed because pot farming is disabled.");
