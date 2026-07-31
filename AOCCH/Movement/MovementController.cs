@@ -1097,7 +1097,7 @@ public sealed class MovementController : IDisposable
     {
         var casting = condition[ConditionFlag.Casting];
         var betweenAreas = condition[ConditionFlag.BetweenAreas];
-        var occupied = condition[ConditionFlag.OccupiedInQuestEvent];
+        var occupied = !aethernetCallbackMode && condition[ConditionFlag.OccupiedInQuestEvent];
         if (aethernetCallbackMode && !aethernetCallbackFired)
         {
             if (!aethernetFirstCallbackFired)
@@ -1202,6 +1202,11 @@ public sealed class MovementController : IDisposable
             attemptCount = stepAttemptCount;
         }
 
+        if (aethernetCallbackMode)
+        {
+            CloseTelepotTownForRetry();
+        }
+
         if (attemptCount < MaxAethernetAttempts)
         {
             lock (gate)
@@ -1229,6 +1234,22 @@ public sealed class MovementController : IDisposable
             MovementState.TimedOut,
             $"aethernet {step.AethernetName} timed out after {attemptCount}/{MaxAethernetAttempts} attempt(s) during step: {step.Description}. expected={FormatVector(step.Destination)} actual={FormatVector(playerPosition)} distance={distance:0.0} observedTransition={observedTransition} {detail}",
             stopMovement: true);
+    }
+
+    private bool CloseTelepotTownForRetry()
+    {
+        unsafe
+        {
+            var addon = (AtkUnitBase*)gameGui.GetAddonByName("TelepotTown", 1).Address;
+            if (addon == null || !addon->IsReady)
+            {
+                return true;
+            }
+
+            var closed = addon->FireCallbackInt(-1);
+            logger.Info($"{BuildLogTag()} op=aethernet-addon-close addon=TelepotTown address={(nint)addon:X} result={closed} reason=retry");
+            return closed;
+        }
     }
 
     private void AdvanceStep()
