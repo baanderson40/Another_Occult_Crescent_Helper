@@ -503,7 +503,7 @@ public class Configuration : IPluginConfiguration
 
     private void ClampVisibleCofferAggroSettings()
     {
-        VisibleTreasureCofferAggroLevelOffset = Math.Clamp(VisibleTreasureCofferAggroLevelOffset, -40, 40);
-        VisibleTreasureCofferFallbackMaximumAggroLevel = Math.Clamp(VisibleTreasureCofferFallbackMaximumAggroLevel, 0, 40);
+        VisibleTreasureCofferAggroLevelOffset = Math.Clamp(VisibleTreasureCofferAggroLevelOffset, -40, 50);
+        VisibleTreasureCofferFallbackMaximumAggroLevel = Math.Clamp(VisibleTreasureCofferFallbackMaximumAggroLevel, 0, 50);
     }
 }

@@ -1608,7 +1608,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private int GetVisibleCofferAggroLimit()
         => scanner.Snapshot.PlayerForayLevel is { } knowledgeLevel
-            ? Math.Clamp(knowledgeLevel + configuration.VisibleTreasureCofferAggroLevelOffset, 0, 40)
+            ? Math.Clamp(knowledgeLevel + configuration.VisibleTreasureCofferAggroLevelOffset, 1, 50)
             : configuration.VisibleTreasureCofferFallbackMaximumAggroLevel;
 
     private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
