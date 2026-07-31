@@ -20,4 +20,5 @@ public sealed class RouteStep
     public Vector3 EarlyDismountTarget { get; init; }
     public float EarlyDismountDistance { get; init; }
     public bool DestinationAlreadyResolved { get; init; }
+    public bool AdvanceOnJump { get; init; }
 }

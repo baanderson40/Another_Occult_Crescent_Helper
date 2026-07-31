@@ -206,6 +206,7 @@ public sealed class VisibleCofferFarmSpotData
     public int? HideThresholdDistance { get; init; }
     public float? ArrivalDistance { get; init; }
     public bool RouteOnly { get; init; }
+    public bool AdvanceOnJump { get; init; }
     public bool SkipDuringAshkin { get; init; }
     public bool SkipDuringUnsafeWeather { get; init; }
     public bool RainSensitive { get; init; }

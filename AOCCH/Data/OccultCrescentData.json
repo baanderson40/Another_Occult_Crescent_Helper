@@ -1850,7 +1850,9 @@
             "z": 885.407
           },
           "aggroLevel": 41,
+          "arrivalDistance": 2.0,
           "routeOnly": true,
+          "advanceOnJump": true,
           "note": "Wind current transition to floating island; move to position and do not jump"
         },
         {
@@ -1905,7 +1907,7 @@
             "y": 157.8,
             "z": 643.081
           },
-          "aggroLevel": 43,
+          "aggroLevel": 42,
           "arrivalDistance": 3.0,
           "routeOnly": true
         },
@@ -1924,12 +1926,14 @@
           "area": "SuspendedMasonry",
           "label": "SuspendedMasonry_9_WindCurrent",
           "position": {
-            "x": -899.5,
+            "x": -901.234,
             "y": 157.8,
-            "z": 628.992
+            "z": 629.73
           },
-          "aggroLevel": 43,
+          "aggroLevel": 41,
+          "arrivalDistance": 1.25,
           "routeOnly": true,
+          "advanceOnJump": true,
           "note": "Wind current transition to floating island; move to position and do not jump"
         },
         {

@@ -29,6 +29,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferApproachScanTriggerDistance = 40f;
     private const int RequiredInventoryFreeSlots = 3;
+    private const ConditionFlag WindCurrentJumpCondition = (ConditionFlag)61;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ArrivalMountTimeout = TimeSpan.FromSeconds(5);
@@ -39,6 +40,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private static readonly TimeSpan HideReadyTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan HideDispatchRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HideVerifyTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan WindCurrentJumpWaitTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
     private readonly ICondition condition;
@@ -71,6 +73,8 @@ public sealed class TreasureCofferFarmController : IDisposable
     private VisibleCofferFarmSpotData? activePreviousThresholdSpot;
     private bool activeSpotRequiresHiddenTravel;
     private bool activeSpotWeatherForcedHidden;
+    private bool windCurrentJumpObserved;
+    private DateTimeOffset windCurrentJumpWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenHideReadyDeadlineAt = DateTimeOffset.MinValue;
@@ -537,6 +541,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                 activeSpotWeatherForcedHidden = weatherForcedHidden;
                 activeSpotRequiresHiddenTravel = RequiresHiddenTravel(spot);
                 ResetHiddenTravelReadiness();
+                windCurrentJumpObserved = false;
+                windCurrentJumpWaitStartedAt = DateTimeOffset.MinValue;
             }
 
             logger.Info($"{BuildLogTag()} op=route-entry-selected index={nextIndex} spot={spot.Area}:{spot.Label} canonicalPosition={FormatVector(spot.Position.ToVector3())} resolvedPosition={FormatVector(resolvedPosition)} usesOverride={usesOverride} aggroLevel={spot.AggroLevel} requiresHidden={activeSpotRequiresHiddenTravel} hiddenDecision={GetHiddenTravelDecision(spot)} weatherForcedHidden={weatherForcedHidden} weatherId={FormatWeatherId(GetWeatherCondition().Id)} routeOnly={spot.RouteOnly} previousThreshold={DescribeSpot(activePreviousThresholdSpot)}");
@@ -778,7 +784,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool StartNormalTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance, string context)
     {
         movementController.SetLogOwner(currentRunId);
-        if (movementController.StartDirectMove($"Move directly to overworld coffer route {spot.Label}", destination, arrivalDistance))
+        if (movementController.StartDirectMove($"Move directly to overworld coffer route {spot.Label}", destination, arrivalDistance, advanceOnJump: spot.AdvanceOnJump))
         {
             TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling directly to overworld coffer route spot {spot.Area}:{spot.Label}. context={context}");
             return true;
@@ -861,6 +867,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void TickTravelingToSpot()
     {
+        if (WaitForWindCurrentJumpToFinish())
+        {
+            return;
+        }
+
         if (TryStartKnowledgeThreatTravel())
         {
             return;
@@ -1000,6 +1011,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void OnArrivedAtSpot()
     {
+        if (ActiveSpot?.AdvanceOnJump == true)
+        {
+            return;
+        }
+
         if (ActiveSpot?.RouteOnly == true)
         {
             TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Reached helper route spot {DescribeActiveSpot()}; continuing to the next route entry.");
@@ -1014,6 +1030,60 @@ public sealed class TreasureCofferFarmController : IDisposable
         var acquisitionDistance = GetVisibleCofferAcquisitionDistance(ActiveSpot);
         logger.Info($"{BuildLogTag()} op=final-scan-miss spot={DescribeActiveSpot()} arrivalDistance={GetArrivalDistance(ActiveSpot):0.0} acquisitionDistance={acquisitionDistance:0.0}y {DescribeVisibleCofferScanSummary(ActiveSpot, ActiveResolvedPosition)}");
         TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"No overworld coffer matched {DescribeActiveSpot()} on final arrival scan; continuing to the next route entry.");
+    }
+
+    private bool WaitForWindCurrentJumpToFinish()
+    {
+        if (ActiveSpot?.AdvanceOnJump != true
+            || (windCurrentJumpWaitStartedAt == DateTimeOffset.MinValue
+                && movementController.State is not MovementState.Arrived))
+        {
+            if (ActiveSpot?.AdvanceOnJump == true
+                && condition[WindCurrentJumpCondition]
+                && !windCurrentJumpObserved)
+            {
+                windCurrentJumpObserved = true;
+                logger.Info($"{BuildLogTag()} op=windcurrent-jump-observed spot={DescribeActiveSpot()} condition=61 action=wait-for-landing");
+            }
+
+            return ActiveSpot?.AdvanceOnJump == true && windCurrentJumpObserved;
+        }
+
+        if (windCurrentJumpWaitStartedAt == DateTimeOffset.MinValue)
+        {
+            windCurrentJumpWaitStartedAt = DateTimeOffset.UtcNow;
+        }
+
+        if (!windCurrentJumpObserved)
+        {
+            if (condition[WindCurrentJumpCondition])
+            {
+                windCurrentJumpObserved = true;
+                logger.Info($"{BuildLogTag()} op=windcurrent-jump-observed spot={DescribeActiveSpot()} condition=61 action=wait-for-landing");
+                return true;
+            }
+
+            if (DateTimeOffset.UtcNow - windCurrentJumpWaitStartedAt <= WindCurrentJumpWaitTimeout)
+            {
+                return true;
+            }
+
+            logger.Warning($"{BuildLogTag()} op=windcurrent-jump-timeout spot={DescribeActiveSpot()} timeout={WindCurrentJumpWaitTimeout.TotalSeconds:0} action=advance-route");
+            windCurrentJumpWaitStartedAt = DateTimeOffset.MinValue;
+            TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Windcurrent jump did not activate for {DescribeActiveSpot()} before the wait timeout; continuing the route.");
+            return true;
+        }
+
+        if (condition[WindCurrentJumpCondition])
+        {
+            return true;
+        }
+
+        logger.Info($"{BuildLogTag()} op=windcurrent-jump-landed spot={DescribeActiveSpot()} action=advance-route");
+        windCurrentJumpObserved = false;
+        windCurrentJumpWaitStartedAt = DateTimeOffset.MinValue;
+        TransitionTo(TreasureCofferFarmState.AdvancingRoute, $"Windcurrent jump finished for {DescribeActiveSpot()}; continuing to the next route entry.");
+        return true;
     }
 
     private void TickInteractingWithCoffer()
@@ -1422,7 +1492,8 @@ public sealed class TreasureCofferFarmController : IDisposable
     private float GetArrivalDistance(VisibleCofferFarmSpotData? spot)
     {
         var configured = spot?.ArrivalDistance ?? configuration.ArrivalDistance;
-        return Math.Clamp(configured, 5f, 50f);
+        var minimum = spot?.RouteOnly == true ? 1f : 5f;
+        return Math.Clamp(configured, minimum, 50f);
     }
 
     private float GetVisibleCofferAcquisitionDistance(VisibleCofferFarmSpotData? spot)
