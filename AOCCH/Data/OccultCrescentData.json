@@ -9,6 +9,7 @@
         "criticalEncounters": true,
         "shopping": true,
         "visibleCoffers": true,
+        "potCycleTracking": true,
         "potTreasure": true,
         "buffRotation": true
       },
@@ -1387,6 +1388,7 @@
         "criticalEncounters": true,
         "shopping": true,
         "visibleCoffers": true,
+        "potCycleTracking": true,
         "potTreasure": false,
         "buffRotation": true
       },

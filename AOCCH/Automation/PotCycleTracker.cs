@@ -94,7 +94,7 @@ public sealed class PotCycleTracker : IDisposable
 
     private PotCycleSnapshot BuildSnapshot(ScannerSnapshot scannerSnapshot, DateTimeOffset now, PotCycleSnapshot previous)
     {
-        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanTrackPotCycle)
         {
             return ClearCurrentActivePot(previous, now, scannerSnapshot);
         }

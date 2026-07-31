@@ -225,6 +225,7 @@ public sealed class DebugWindow : Window, IDisposable
         ImGui.TextUnformatted($"CE Data: {FormatFeatureAvailability(snapshot.CanFarmCriticalEncounters)}");
         ImGui.TextUnformatted($"Shopping Data: {FormatFeatureAvailability(snapshot.CanUseShopping)}");
         ImGui.TextUnformatted($"Visible Coffer Data: {FormatFeatureAvailability(snapshot.CanRunVisibleCofferRoute)}");
+        ImGui.TextUnformatted($"Pot Cycle Tracking: {FormatFeatureAvailability(snapshot.CanTrackPotCycle)}");
         ImGui.TextUnformatted($"Pot Treasure Data: {FormatFeatureAvailability(snapshot.CanRunPotTreasure)}");
         ImGui.TextUnformatted($"Buff Rotation Data: {FormatFeatureAvailability(snapshot.CanRunBuffRotation)}");
         ImGui.TextUnformatted($"Last Scan: {FormatTimestamp(snapshot.LastUpdated)}");
@@ -1035,8 +1036,8 @@ public sealed class DebugWindow : Window, IDisposable
     {
         var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
         var now = DateTimeOffset.UtcNow;
-        var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now);
-        var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now);
+        var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
+        var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
         var departureAt = GetDepartureAt(potCycleSnapshot);
         var timeUntilDeparture = departureAt == DateTimeOffset.MinValue ? (TimeSpan?)null : departureAt - now;
 

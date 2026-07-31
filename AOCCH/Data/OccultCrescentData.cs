@@ -79,6 +79,7 @@ public sealed class TerritoryFeatureAvailability
     public bool CriticalEncounters { get; init; }
     public bool Shopping { get; init; }
     public bool VisibleCoffers { get; init; }
+    public bool PotCycleTracking { get; init; }
     public bool PotTreasure { get; init; }
     public bool BuffRotation { get; init; }
 }
