@@ -52,6 +52,10 @@ public sealed class DebugWindow : Window, IDisposable
     private DebugSection selectedSection = DebugSection.Overview;
     private int shopAtkValueStartIndex;
     private int shopAtkValueCount = 160;
+    private string addonAtkValueName = "SelectYesno";
+    private int addonAtkValueIndex = 1;
+    private int addonAtkValueStartIndex;
+    private int addonAtkValueCount;
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
@@ -247,6 +251,22 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Debug Actions");
         ImGui.TextWrapped("These diagnostic operations are intentionally available only from the debug window.");
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Generic Addon AtkValues");
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText("Addon Name", ref addonAtkValueName, 128);
+        ImGui.SetNextItemWidth(90f);
+        ImGui.InputInt("Addon Index", ref addonAtkValueIndex);
+        ImGui.SetNextItemWidth(90f);
+        ImGui.InputInt("Start Index", ref addonAtkValueStartIndex);
+        ImGui.SetNextItemWidth(90f);
+        ImGui.InputInt("Count (0 = all)", ref addonAtkValueCount);
+        if (ImGui.Button("Dump Addon AtkValues"))
+        {
+            plugin.Logger.Info($"[DebugWindow] op=ui-action action=dump-addon-atkvalues addon={addonAtkValueName} addonIndex={addonAtkValueIndex} startIndex={addonAtkValueStartIndex} count={addonAtkValueCount}");
+            plugin.ShopInspectorController.DumpAddonAtkValues(addonAtkValueName, addonAtkValueIndex, addonAtkValueStartIndex, addonAtkValueCount);
+        }
 
         if (ImGui.Button("Open North Horn Status Preview"))
         {

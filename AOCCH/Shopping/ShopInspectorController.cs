@@ -244,6 +244,44 @@ public sealed class ShopInspectorController : IDisposable
         }
     }
 
+    public unsafe bool DumpAddonAtkValues(string addonName, int addonIndex, int startIndex, int count)
+    {
+        addonName = addonName.Trim();
+        if (string.IsNullOrEmpty(addonName))
+        {
+            logger.Warning("[ShopInspector] op=addon-atkvalue-dump-failed reason=empty-addon-name");
+            return false;
+        }
+
+        var addon = (AtkUnitBase*)gameGui.GetAddonByName(addonName, addonIndex).Address;
+        if (addon == null || !addon->IsReady)
+        {
+            logger.Warning($"[ShopInspector] op=addon-atkvalue-dump-failed addon={FormatValue(addonName)} addonIndex={addonIndex} reason=addon-not-open");
+            return false;
+        }
+
+        if (addon->AtkValues == null || addon->AtkValuesCount == 0)
+        {
+            logger.Warning($"[ShopInspector] op=addon-atkvalue-dump-failed addon={FormatValue(addonName)} addonIndex={addonIndex} reason=no-atkvalues");
+            return false;
+        }
+
+        var atkValuesCount = addon->AtkValuesCount;
+        var clampedStartIndex = Math.Clamp(startIndex, 0, atkValuesCount - 1);
+        var maxCount = atkValuesCount - clampedStartIndex;
+        var clampedCount = count <= 0 ? maxCount : Math.Clamp(count, 1, maxCount);
+        var endIndex = clampedStartIndex + clampedCount - 1;
+
+        logger.Info($"[ShopInspector] op=addon-atkvalue-dump addon={FormatValue(addonName)} addonIndex={addonIndex} address={(nint)addon:X} startIndex={clampedStartIndex} endIndex={endIndex} capturedCount={clampedCount} atkValuesCount={atkValuesCount}");
+        for (var index = clampedStartIndex; index <= endIndex; index++)
+        {
+            var value = addon->AtkValues[index];
+            logger.Info($"[ShopInspector] op=addon-atkvalue addon={FormatValue(addonName)} addonIndex={addonIndex} index={index} type={value.Type} int={value.Int} uint={value.UInt} float={value.Float} byte={value.Byte} value={FormatValue(value.GetValueAsString())}");
+        }
+
+        return true;
+    }
+
     public bool CaptureShopExchangeCurrencyAtkValues(int startIndex, int count)
     {
         if (!TryReadShopExchangeCurrencyAtkValues(startIndex, count, out var capturedSnapshot, out var reason))

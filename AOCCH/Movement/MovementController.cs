@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using AOCCH.Data;
 using AOCCH.IPC;
 using AOCCH.Logging;
@@ -14,11 +15,19 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using ECommons.Automation;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Lumina.Excel.Sheets;
 
 namespace AOCCH.Movement;
 
 public sealed class MovementController : IDisposable
 {
+    private enum SelectYesnoHandlingResult
+    {
+        NoAction,
+        PartyInviteDismissed,
+        ReturnConfirmed,
+    }
+
     private static int nextMovementOperationSequence;
     private static readonly TimeSpan RouteTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(15);
@@ -48,11 +57,15 @@ public sealed class MovementController : IDisposable
     private const float ProgressThreshold = 2f;
     private const int MaxAethernetAttempts = 3;
     private const int MaxReturnAttempts = 3;
+    private const uint PartyInviteAddonTextRow = 120;
+    private const uint ReturnAddonTextRow = 197;
 
     private readonly IFramework framework;
     private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly IGameGui gameGui;
+    private readonly string partyInvitePromptTemplate;
+    private readonly string returnPromptTemplate;
     private readonly OccultCrescentScanner scanner;
     private readonly VNavmeshIpc vnavmesh;
     private readonly RoutePlanner routePlanner;
@@ -83,6 +96,7 @@ public sealed class MovementController : IDisposable
     private bool transitionObserved;
     private bool startedAwayFromTransitionDestination;
     private bool returnPromptHandled;
+    private bool partyInviteDismissalPending;
     private int returnAttemptCount;
     private DateTimeOffset returnReadyWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset lastReturnReadyPollAt = DateTimeOffset.MinValue;
@@ -114,6 +128,7 @@ public sealed class MovementController : IDisposable
         ICondition condition,
         IObjectTable objectTable,
         IGameGui gameGui,
+        IDataManager dataManager,
         OccultCrescentScanner scanner,
         VNavmeshIpc vnavmesh,
         RoutePlanner routePlanner,
@@ -125,12 +140,16 @@ public sealed class MovementController : IDisposable
         this.condition = condition;
         this.objectTable = objectTable;
         this.gameGui = gameGui;
+        partyInvitePromptTemplate = ResolveAddonText(dataManager, PartyInviteAddonTextRow);
+        returnPromptTemplate = ResolveAddonText(dataManager, ReturnAddonTextRow);
         this.scanner = scanner;
         this.vnavmesh = vnavmesh;
         this.routePlanner = routePlanner;
         this.gameActionController = gameActionController;
         this.configuration = configuration;
         this.logger = logger;
+
+        logger.Info($"[Movement] op=selectyesno-localization partyInviteRow={PartyInviteAddonTextRow} partyInviteTemplate=\"{partyInvitePromptTemplate}\" returnRow={ReturnAddonTextRow} returnTemplate=\"{returnPromptTemplate}\"");
 
         framework.Update += OnFrameworkUpdate;
     }
@@ -780,7 +799,7 @@ public sealed class MovementController : IDisposable
 
         if (!returnPromptHandled && IsSelectYesnoReady())
         {
-            if (TryConfirmSelectYesno())
+            if (TryHandleSelectYesno() == SelectYesnoHandlingResult.ReturnConfirmed)
             {
                 lock (gate)
                 {
@@ -2273,16 +2292,124 @@ public sealed class MovementController : IDisposable
         return addon != null && addon->IsReady;
     }
 
-    private unsafe bool TryConfirmSelectYesno()
+    private unsafe SelectYesnoHandlingResult TryHandleSelectYesno()
     {
         var addon = (AtkUnitBase*)gameGui.GetAddonByName("SelectYesno", 1).Address;
-        if (addon == null || !addon->IsReady)
+        if (addon == null || !addon->IsReady || addon->AtkValues == null || addon->AtkValuesCount == 0)
+        {
+            partyInviteDismissalPending = false;
+            return SelectYesnoHandlingResult.NoAction;
+        }
+
+        var prompt = addon->AtkValues[0].GetValueAsString();
+        var isPartyInvite = MatchesLocalizedPrompt(prompt, partyInvitePromptTemplate);
+        if (partyInviteDismissalPending)
+        {
+            if (isPartyInvite)
+            {
+                return SelectYesnoHandlingResult.NoAction;
+            }
+
+            partyInviteDismissalPending = false;
+        }
+
+        if (MatchesLocalizedPrompt(prompt, returnPromptTemplate))
+        {
+            var confirmed = addon->FireCallbackInt(0);
+            logger.Info($"{BuildLogTag()} op=return-confirm prompt=SelectYesno callback=0 result={confirmed}");
+            return confirmed
+                ? SelectYesnoHandlingResult.ReturnConfirmed
+                : SelectYesnoHandlingResult.NoAction;
+        }
+
+        if (isPartyInvite)
+        {
+            var closed = addon->FireCallbackInt(-1);
+            logger.Info($"{BuildLogTag()} op=party-invite-dismiss prompt=SelectYesno callback=-1 result={closed}");
+            partyInviteDismissalPending = closed;
+            return closed
+                ? SelectYesnoHandlingResult.PartyInviteDismissed
+                : SelectYesnoHandlingResult.NoAction;
+        }
+
+        {
+            logger.DebugThrottled(
+                "return-selectyesno-rejected",
+                TimeSpan.FromSeconds(2),
+                $"{BuildLogTag()} op=return-confirm action=ignored prompt=SelectYesno reason=unknown-prompt text=\"{prompt.Replace("\n", " ").Replace("\r", " ")}\"");
+            return SelectYesnoHandlingResult.NoAction;
+        }
+    }
+
+    private static string ResolveAddonText(IDataManager dataManager, uint rowId)
+    {
+        var sheet = dataManager.GetExcelSheet<Addon>();
+        var row = sheet?.GetRowOrDefault(rowId);
+        return row.HasValue
+            ? ExcelTextResolver.ResolvePropertyTemplate(row.Value, "Text")
+            : string.Empty;
+    }
+
+    private static bool MatchesLocalizedPrompt(string prompt, string template)
+    {
+        var normalizedPrompt = NormalizePrompt(prompt);
+        var normalizedTemplate = NormalizePrompt(template);
+        if (normalizedPrompt.Length == 0 || normalizedTemplate.Length == 0)
         {
             return false;
         }
 
-        addon->FireCallbackInt(0);
-        return true;
+        var templateParts = Regex.Split(normalizedTemplate, @"<string\([^>]+\)>", RegexOptions.IgnoreCase);
+        if (templateParts.Length == 1)
+        {
+            if (string.Equals(normalizedPrompt, normalizedTemplate, StringComparison.CurrentCultureIgnoreCase))
+            {
+                return true;
+            }
+
+            return MatchesPromptWithInsertedText(normalizedPrompt, normalizedTemplate);
+        }
+
+        var pattern = "^" + string.Join(".+?", templateParts.Select(Regex.Escape)) + "$";
+        return Regex.IsMatch(normalizedPrompt, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            || MatchesPromptWithInsertedText(normalizedPrompt, normalizedTemplate);
+    }
+
+    private static bool MatchesPromptWithInsertedText(string prompt, string template)
+    {
+        if (prompt.Length <= template.Length)
+        {
+            return false;
+        }
+
+        var prefixLength = 0;
+        while (prefixLength < template.Length
+            && prefixLength < prompt.Length
+            && CharEqualsIgnoreCase(prompt[prefixLength], template[prefixLength]))
+        {
+            prefixLength++;
+        }
+
+        var suffixLength = 0;
+        while (suffixLength < template.Length - prefixLength
+            && suffixLength < prompt.Length - prefixLength
+            && CharEqualsIgnoreCase(
+                prompt[prompt.Length - suffixLength - 1],
+                template[template.Length - suffixLength - 1]))
+        {
+            suffixLength++;
+        }
+
+        return prefixLength + suffixLength == template.Length;
+    }
+
+    private static bool CharEqualsIgnoreCase(char left, char right)
+        => char.ToUpperInvariant(left) == char.ToUpperInvariant(right);
+
+    private static string NormalizePrompt(string value)
+    {
+        var withoutLineBreakTags = Regex.Replace(value, @"<br\s*/?>", " ", RegexOptions.IgnoreCase);
+        return string.Join(" ", withoutLineBreakTags.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private AethernetData? GetClosestAethernet(Vector3 playerPosition)
