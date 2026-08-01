@@ -355,7 +355,7 @@
       "label": "Southdown Heath_1",
       "position": {
         "x": 617.09,
-        "y": 66.3,
+        "y": 66.309,
         "z": -703.883
       },
       "aggroLevel": 1
@@ -365,7 +365,7 @@
       "label": "Southdown Heath_2",
       "position": {
         "x": 490.41,
-        "y": 62.455,
+        "y": 62.479,
         "z": -590.57
       },
       "aggroLevel": 1
@@ -374,9 +374,9 @@
       "area": "Southdown Heath",
       "label": "Southdown Heath_3",
       "position": {
-        "x": 386.923,
-        "y": 96.788,
-        "z": -451.377
+        "x": 386.953,
+        "y": 96.817,
+        "z": -451.347
       },
       "aggroLevel": 1
     },
@@ -384,9 +384,9 @@
       "area": "Southdown Heath",
       "label": "Southdown Heath_4",
       "position": {
-        "x": 666.529,
-        "y": 79.118,
-        "z": -480.369
+        "x": 666.545,
+        "y": 79.133,
+        "z": -480.36
       },
       "aggroLevel": 2
     },
@@ -394,9 +394,9 @@
       "area": "Southdown Heath",
       "label": "Southdown Heath_5",
       "position": {
-        "x": 343.672,
-        "y": 95.536,
-        "z": -284.062
+        "x": 354.116,
+        "y": 95.663,
+        "z": -288.899
       },
       "aggroLevel": 3
     },
@@ -404,8 +404,8 @@
       "area": "Vanishing Slope",
       "label": "Vanishing Slope_1",
       "position": {
-        "x": 381.735,
-        "y": 22.171,
+        "x": 381.765,
+        "y": 22.178,
         "z": -743.648
       },
       "aggroLevel": 3
@@ -415,7 +415,7 @@
       "label": "Vanishing Slope_2",
       "position": {
         "x": 142.107,
-        "y": 16.403,
+        "y": 16.413,
         "z": -574.06
       },
       "aggroLevel": 6
@@ -425,7 +425,7 @@
       "label": "Vanishing Slope_3",
       "position": {
         "x": -140.459,
-        "y": 22.354,
+        "y": 22.38,
         "z": -414.267
       },
       "aggroLevel": 6
@@ -435,7 +435,7 @@
       "label": "Vanishing Slope_4",
       "position": {
         "x": -343.16,
-        "y": 52.323,
+        "y": 52.353,
         "z": -382.132
       },
       "aggroLevel": 11
@@ -444,8 +444,8 @@
       "area": "Vanishing Slope",
       "label": "Vanishing Slope_5",
       "position": {
-        "x": -491.02,
-        "y": 2.975,
+        "x": -490.99,
+        "y": 3,
         "z": -529.595
       },
       "aggroLevel": 8
@@ -455,8 +455,8 @@
       "label": "Vanishing Slope_6",
       "position": {
         "x": -118.975,
-        "y": 4.99,
-        "z": -708.461
+        "y": 5,
+        "z": -708.431
       },
       "aggroLevel": 7
     },
@@ -465,7 +465,7 @@
       "label": "The Wanderer's Haven_1",
       "position": {
         "x": -451.682,
-        "y": 2.975,
+        "y": 3,
         "z": -775.57
       },
       "aggroLevel": 8
@@ -474,8 +474,8 @@
       "area": "The Wanderer's Haven",
       "label": "The Wanderer's Haven_2",
       "position": {
-        "x": -585.29,
-        "y": 4.99,
+        "x": -585.26,
+        "y": 5,
         "z": -864.836
       },
       "aggroLevel": 22
@@ -485,8 +485,8 @@
       "label": "The Wanderer's Haven_3",
       "position": {
         "x": -729.427,
-        "y": 4.99,
-        "z": -724.819
+        "y": 5,
+        "z": -724.788
       },
       "aggroLevel": 22
     },
@@ -494,8 +494,8 @@
       "area": "The Wanderer's Haven",
       "label": "The Wanderer's Haven_4",
       "position": {
-        "x": -661.708,
-        "y": 2.975,
+        "x": -661.677,
+        "y": 3,
         "z": -579.492
       },
       "aggroLevel": 22
@@ -505,8 +505,8 @@
       "label": "The Wanderer's Haven_5",
       "position": {
         "x": -884.123,
-        "y": 3.799,
-        "z": -682.032
+        "y": 3.8,
+        "z": -682.002
       },
       "aggroLevel": 23,
       "note": "requires_jump"
@@ -515,9 +515,9 @@
       "area": "The Wanderer's Haven",
       "label": "The Wanderer's Haven_6",
       "position": {
-        "x": -825.162,
-        "y": 2.975,
-        "z": -832.273
+        "x": -825.143,
+        "y": 3,
+        "z": -832.252
       },
       "aggroLevel": 23,
       "note": "silver_variant"
@@ -538,9 +538,9 @@
       "area": "Lost Citadel",
       "label": "Lost Citadel_1",
       "position": {
-        "x": 870.664,
-        "y": 95.689,
-        "z": -388.357
+        "x": 870.695,
+        "y": 95.703,
+        "z": -388.327
       },
       "aggroLevel": 4
     },
@@ -549,8 +549,8 @@
       "label": "Lost Citadel_2",
       "position": {
         "x": 779.019,
-        "y": 96.086,
-        "z": -256.245
+        "y": 96.1,
+        "z": -256.243
       },
       "aggroLevel": 4
     },
@@ -558,8 +558,8 @@
       "area": "Lost Citadel",
       "label": "Lost Citadel_3",
       "position": {
-        "x": 475.73,
-        "y": 95.994,
+        "x": 475.731,
+        "y": 96,
         "z": -87.083
       },
       "aggroLevel": 4
@@ -568,9 +568,9 @@
       "area": "Lost Citadel",
       "label": "Lost Citadel_4",
       "position": {
-        "x": 609.613,
-        "y": 107.988,
-        "z": 117.266
+        "x": 609.624,
+        "y": 108,
+        "z": 117.292
       },
       "aggroLevel": 5
     },
@@ -579,8 +579,8 @@
       "label": "Lost Citadel_5",
       "position": {
         "x": 726.284,
-        "y": 108.141,
-        "z": -67.918
+        "y": 108.15,
+        "z": -67.898
       },
       "aggroLevel": 5
     },
@@ -589,8 +589,8 @@
       "label": "Lost Citadel_6",
       "position": {
         "x": 770.748,
-        "y": 107.988,
-        "z": -143.572
+        "y": 108,
+        "z": -143.542
       },
       "aggroLevel": 5
     },
@@ -599,7 +599,7 @@
       "label": "Lost Citadel_7",
       "position": {
         "x": 788.876,
-        "y": 120.378,
+        "y": 120.4,
         "z": 109.392
       },
       "aggroLevel": 20
@@ -609,7 +609,7 @@
       "label": "Lost Citadel_8",
       "position": {
         "x": 517.754,
-        "y": 67.887,
+        "y": 67.897,
         "z": 236.133
       },
       "aggroLevel": 21
@@ -618,9 +618,9 @@
       "area": "Heathcliff",
       "label": "Heathcliff_1",
       "position": {
-        "x": 277.79,
-        "y": 103.776,
-        "z": 241.901
+        "x": 277.809,
+        "y": 103.799,
+        "z": 241.907
       },
       "aggroLevel": 10
     },
@@ -629,8 +629,8 @@
       "label": "Heathcliff_2",
       "position": {
         "x": 8.987,
-        "y": 103.197,
-        "z": 426.963
+        "y": 103.224,
+        "z": 426.993
       },
       "aggroLevel": 10
     },
@@ -638,8 +638,8 @@
       "area": "Heathcliff",
       "label": "Heathcliff_3",
       "position": {
-        "x": -283.986,
-        "y": 115.984,
+        "x": -283.955,
+        "y": 116,
         "z": 377.035
       },
       "aggroLevel": 11
@@ -648,8 +648,8 @@
       "area": "Heathcliff",
       "label": "Heathcliff_4",
       "position": {
-        "x": -256.886,
-        "y": 120.989,
+        "x": -256.855,
+        "y": 121,
         "z": 125.078
       },
       "aggroLevel": 11
@@ -659,8 +659,8 @@
       "label": "Heathcliff_5",
       "position": {
         "x": -25.681,
-        "y": 102.22,
-        "z": 150.164
+        "y": 102.23,
+        "z": 150.195
       },
       "aggroLevel": 10
     },
@@ -668,8 +668,8 @@
       "area": "Heathcliff",
       "label": "Heathcliff_6",
       "position": {
-        "x": 245.594,
-        "y": 109.117,
+        "x": 245.624,
+        "y": 109.137,
         "z": -18.174
       },
       "aggroLevel": 9
@@ -678,8 +678,8 @@
       "area": "Heathcliff",
       "label": "Heathcliff_7",
       "position": {
-        "x": 55.283,
-        "y": 111.314,
+        "x": 55.314,
+        "y": 111.315,
         "z": -289.082
       },
       "aggroLevel": 9
@@ -689,7 +689,7 @@
       "label": "Heathcliff_8",
       "position": {
         "x": -158.648,
-        "y": 98.619,
+        "y": 98.649,
         "z": -132.738
       },
       "aggroLevel": 11
@@ -699,7 +699,7 @@
       "label": "Heathcliff_9",
       "position": {
         "x": -487.114,
-        "y": 98.527,
+        "y": 98.531,
         "z": -205.463
       },
       "aggroLevel": 11
@@ -708,8 +708,8 @@
       "area": "Heathcliff",
       "label": "Heathcliff_10",
       "position": {
-        "x": -682.795,
-        "y": 135.607,
+        "x": -682.765,
+        "y": 135.619,
         "z": -195.27
       },
       "aggroLevel": 13,
@@ -720,7 +720,7 @@
       "label": "Crystallized Caverns_1",
       "position": {
         "x": -444.114,
-        "y": 90.684,
+        "y": 90.691,
         "z": 26.23
       },
       "aggroLevel": 12
@@ -730,8 +730,8 @@
       "label": "Crystallized Caverns_2",
       "position": {
         "x": -394.888,
-        "y": 106.737,
-        "z": 175.433
+        "y": 106.744,
+        "z": 175.463
       },
       "aggroLevel": 12
     },
@@ -739,9 +739,9 @@
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_3",
       "position": {
-        "x": -713.802,
-        "y": 62.058,
-        "z": 192.615
+        "x": -713.798,
+        "y": 62.066,
+        "z": 192.638
       },
       "aggroLevel": 13
     },
@@ -749,8 +749,8 @@
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_4",
       "position": {
-        "x": -756.832,
-        "y": 76.554,
+        "x": -756.802,
+        "y": 76.573,
         "z": 97.368
       },
       "aggroLevel": 13
@@ -759,8 +759,8 @@
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_5",
       "position": {
-        "x": -767.453,
-        "y": 115.618,
+        "x": -767.446,
+        "y": 115.623,
         "z": -235.004
       },
       "aggroLevel": 24,
@@ -772,7 +772,7 @@
       "label": "Crystallized Caverns_6",
       "position": {
         "x": -680.537,
-        "y": 104.845,
+        "y": 104.861,
         "z": -354.788
       },
       "aggroLevel": 25,
@@ -783,9 +783,9 @@
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_7",
       "position": {
-        "x": -798.245,
-        "y": 105.577,
-        "z": -310.567
+        "x": -798.215,
+        "y": 105.607,
+        "z": -310.536
       },
       "aggroLevel": 25,
       "hideThresholdDistance": 400,
@@ -795,9 +795,9 @@
       "area": "Crystallized Caverns",
       "label": "Crystallized Caverns_8",
       "position": {
-        "x": -856.962,
-        "y": 68.833,
-        "z": -93.156
+        "x": -856.935,
+        "y": 68.847,
+        "z": -93.144
       },
       "aggroLevel": 24,
       "hideThresholdDistance": 400,
@@ -808,7 +808,7 @@
       "label": "Crystallized Caverns_9",
       "position": {
         "x": -729.915,
-        "y": 116.533,
+        "y": 116.541,
         "z": -79.057
       },
       "aggroLevel": 24,
@@ -831,8 +831,8 @@
       "area": "Shadowed City",
       "label": "Shadowed City_1",
       "position": {
-        "x": 642.969,
-        "y": 69.993,
+        "x": 643,
+        "y": 70,
         "z": 407.797
       },
       "aggroLevel": 16
@@ -842,7 +842,7 @@
       "label": "Shadowed City_2",
       "position": {
         "x": 697.322,
-        "y": 69.993,
+        "y": 70,
         "z": 597.925
       },
       "aggroLevel": 17
@@ -851,8 +851,8 @@
       "area": "Shadowed City",
       "label": "Shadowed City_3",
       "position": {
-        "x": 596.46,
-        "y": 70.298,
+        "x": 596.49,
+        "y": 70.3,
         "z": 622.766
       },
       "aggroLevel": 17
@@ -861,8 +861,8 @@
       "area": "Shadowed City",
       "label": "Shadowed City_4",
       "position": {
-        "x": 471.183,
-        "y": 70.298,
+        "x": 471.214,
+        "y": 70.3,
         "z": 530.022
       },
       "aggroLevel": 16
@@ -871,9 +871,9 @@
       "area": "Shadowed City",
       "label": "Shadowed City_5",
       "position": {
-        "x": 835.08,
-        "y": 69.993,
-        "z": 699.092
+        "x": 835.111,
+        "y": 70,
+        "z": 699.122
       },
       "aggroLevel": 17
     },
@@ -882,7 +882,7 @@
       "label": "Shadowed City_6",
       "position": {
         "x": 433.707,
-        "y": 70.298,
+        "y": 70.3,
         "z": 683.528
       },
       "aggroLevel": 17
@@ -891,8 +891,8 @@
       "area": "Shadowed City",
       "label": "Shadowed City_7",
       "position": {
-        "x": 294.88,
-        "y": 56.077,
+        "x": 294.911,
+        "y": 56.1,
         "z": 640.223
       },
       "aggroLevel": 15
@@ -902,7 +902,7 @@
       "label": "Shadowed City_8",
       "position": {
         "x": 140.978,
-        "y": 55.985,
+        "y": 56,
         "z": 770.992
       },
       "aggroLevel": 15
@@ -911,9 +911,9 @@
       "area": "Shadowed City",
       "label": "Shadowed City_9",
       "position": {
-        "x": 826.688,
-        "y": 121.996,
-        "z": 434.989
+        "x": 826.718,
+        "y": 122,
+        "z": 435.019
       },
       "aggroLevel": 21
     },
@@ -922,8 +922,8 @@
       "label": "Shadowed City_10",
       "position": {
         "x": 869.291,
-        "y": 109.972,
-        "z": 581.201
+        "y": 110,
+        "z": 581.231
       },
       "aggroLevel": 21
     },
@@ -932,7 +932,7 @@
       "label": "Eldergrowth_1",
       "position": {
         "x": 256.153,
-        "y": 73.167,
+        "y": 73.187,
         "z": 492.363
       },
       "aggroLevel": 14
@@ -943,7 +943,7 @@
       "position": {
         "x": 35.721,
         "y": 65.11,
-        "z": 648.951
+        "z": 648.981
       },
       "aggroLevel": 14
     },
@@ -952,7 +952,7 @@
       "label": "Stonemarsh_1",
       "position": {
         "x": -225.025,
-        "y": 74.998,
+        "y": 75,
         "z": 804.99
       },
       "aggroLevel": 20
@@ -962,7 +962,7 @@
       "label": "Stonemarsh_2",
       "position": {
         "x": -197.192,
-        "y": 74.906,
+        "y": 74.926,
         "z": 618.341
       },
       "aggroLevel": 18
@@ -972,7 +972,7 @@
       "label": "Stonemarsh_3",
       "position": {
         "x": -372.671,
-        "y": 74.998,
+        "y": 75,
         "z": 527.428
       },
       "aggroLevel": 19
@@ -981,8 +981,8 @@
       "area": "Stonemarsh",
       "label": "Stonemarsh_4",
       "position": {
-        "x": -401.663,
-        "y": 85.038,
+        "x": -401.633,
+        "y": 85.065,
         "z": 332.54
       },
       "aggroLevel": 19
@@ -992,8 +992,8 @@
       "label": "Stonemarsh_5",
       "position": {
         "x": -648.005,
-        "y": 74.998,
-        "z": 403.952
+        "y": 75,
+        "z": 403.982
       },
       "aggroLevel": 19
     },
@@ -1001,9 +1001,9 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_1",
       "position": {
-        "x": -729.549,
-        "y": 106.981,
-        "z": 561.15
+        "x": -729.519,
+        "y": 107,
+        "z": 561.181
       },
       "aggroLevel": 26,
       "hideThresholdDistance": 400
@@ -1012,9 +1012,9 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_2",
       "position": {
-        "x": -550.134,
-        "y": 106.981,
-        "z": 627.741
+        "x": -550.117,
+        "y": 107,
+        "z": 627.767
       },
       "aggroLevel": 26,
       "hideThresholdDistance": 400
@@ -1023,9 +1023,9 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_3",
       "position": {
-        "x": -600.275,
-        "y": 138.994,
-        "z": 802.64
+        "x": -600.272,
+        "y": 139,
+        "z": 802.641
       },
       "aggroLevel": 27
     },
@@ -1033,9 +1033,9 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_4",
       "position": {
-        "x": -784.756,
-        "y": 138.994,
-        "z": 699.763
+        "x": -784.748,
+        "y": 139,
+        "z": 699.784
       },
       "aggroLevel": 27
     },
@@ -1043,9 +1043,9 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_5",
       "position": {
-        "x": -676.417,
-        "y": 170.977,
-        "z": 640.375
+        "x": -676.387,
+        "y": 171,
+        "z": 640.406
       },
       "aggroLevel": 28
     },
@@ -1053,8 +1053,8 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_6",
       "position": {
-        "x": -716.152,
-        "y": 170.977,
+        "x": -716.121,
+        "y": 171,
         "z": 794.43
       },
       "aggroLevel": 28
@@ -1063,8 +1063,8 @@
       "area": "Abandoned Ascent",
       "label": "Abandoned Ascent_7",
       "position": {
-        "x": -645.686,
-        "y": 202.991,
+        "x": -645.655,
+        "y": 203,
         "z": 710.17
       },
       "aggroLevel": 28,
