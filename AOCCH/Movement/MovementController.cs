@@ -91,6 +91,7 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset returnPathStopStableSince = DateTimeOffset.MinValue;
     private DateTimeOffset returnRetryNotBeforeAt = DateTimeOffset.MinValue;
+    private DateTimeOffset combatDiversionPathAttemptedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stopVerificationStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stableSince = DateTimeOffset.MinValue;
     private string lastError = string.Empty;
@@ -98,6 +99,8 @@ public sealed class MovementController : IDisposable
     private string currentMovementOperationId = string.Empty;
     private MovementState state = MovementState.Idle;
     private bool stopVerificationPending;
+    private bool combatDiversionActive;
+    private bool combatDiversionStopPending;
     private bool windCurrentJumpPending;
     private Task<List<Vector3>>? initialMeshPathTask;
     private Task<List<Vector3>>? stallMeshPathTask;
@@ -618,6 +621,12 @@ public sealed class MovementController : IDisposable
             lastDistance = distance;
         }
 
+        if (combatDiversionActive || (condition[ConditionFlag.InCombat] && (!stepStarted || !IsReturnTransitionActive())))
+        {
+            ProcessReturnCombatDiversion(step, playerPosition);
+            return;
+        }
+
         if (!stepStarted)
         {
             if (objectTable.LocalPlayer?.CurrentHp == 0)
@@ -784,6 +793,142 @@ public sealed class MovementController : IDisposable
 
         WaitForReturnCompletion(step, playerPosition, distance);
     }
+
+    private void ProcessReturnCombatDiversion(RouteStep returnStep, Vector3 playerPosition)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (!combatDiversionActive)
+        {
+            lock (gate)
+            {
+                combatDiversionActive = true;
+                combatDiversionStopPending = true;
+                combatDiversionPathAttemptedAt = DateTimeOffset.MinValue;
+                stepStarted = false;
+                stepStartedAt = DateTimeOffset.MinValue;
+                returnAttemptStartedAt = DateTimeOffset.MinValue;
+                returnTransitionStartedAt = DateTimeOffset.MinValue;
+                returnReadyWaitStartedAt = DateTimeOffset.MinValue;
+                lastReturnReadyPollAt = DateTimeOffset.MinValue;
+                returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
+                returnPathStopStableSince = DateTimeOffset.MinValue;
+                returnPromptHandled = false;
+                transitionObserved = false;
+                startedAwayFromTransitionDestination = false;
+                stableSince = DateTimeOffset.MinValue;
+            }
+
+            vnavmesh.Stop();
+            BeginStopVerification();
+            logger.Warning($"{BuildLogTag()} op=return-combat-diversion step=\"{returnStep.Description}\" action=path-to-base-camp conditions={DescribeReturnConditions()}");
+        }
+
+        if (!condition[ConditionFlag.InCombat])
+        {
+            if (combatDiversionStopPending)
+            {
+                if (!WaitForStopVerification(returnStep))
+                {
+                    return;
+                }
+
+                lock (gate)
+                {
+                    combatDiversionStopPending = false;
+                }
+            }
+            else
+            {
+                vnavmesh.Stop();
+                BeginStopVerification();
+                lock (gate)
+                {
+                    combatDiversionStopPending = true;
+                }
+                return;
+            }
+
+            lock (gate)
+            {
+                combatDiversionActive = false;
+                combatDiversionPathAttemptedAt = DateTimeOffset.MinValue;
+                returnRetryNotBeforeAt = DateTimeOffset.MinValue;
+            }
+
+            logger.Info($"{BuildLogTag()} op=return-combat-cleared step=\"{returnStep.Description}\" action=retry-return conditions={DescribeReturnConditions()}");
+            return;
+        }
+
+        if (combatDiversionStopPending)
+        {
+            if (!WaitForStopVerification(returnStep))
+            {
+                return;
+            }
+
+            lock (gate)
+            {
+                combatDiversionStopPending = false;
+            }
+        }
+
+        if (vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress())
+        {
+            logger.DebugThrottled(
+                BuildStepLogKey("return-combat-diversion"),
+                WaitLogInterval,
+                $"Movement is pathing toward Base Camp while Return is blocked by combat. step=\"{returnStep.Description}\" distance={CalculateFlatDistance(playerPosition, GetCombatDiversionDestination()):0.0} conditions={DescribeReturnConditions()}.");
+            return;
+        }
+
+        if (combatDiversionPathAttemptedAt != DateTimeOffset.MinValue
+            && now - combatDiversionPathAttemptedAt <= PathStartGrace)
+        {
+            return;
+        }
+
+        var target = GetCombatDiversionDestination();
+        var destination = ResolveNavigablePoint(target, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            SetFailure(MovementState.Failed, $"No reliable vnavmesh point is available for combat recovery toward Base Camp. target={FormatVector(target)}.", stopMovement: true);
+            return;
+        }
+
+        var started = vnavmesh.PathfindAndMoveCloseTo(destination.Value, fly: false, 5f);
+        lock (gate)
+        {
+            combatDiversionPathAttemptedAt = now;
+            state = MovementState.Pathfinding;
+        }
+
+        if (!started)
+        {
+            logger.Warning($"{BuildLogTag()} op=return-combat-path-start-failed step=\"{returnStep.Description}\" target={FormatVector(target)} conditions={DescribeReturnConditions()}");
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=return-combat-path-start step=\"{returnStep.Description}\" target={FormatVector(target)} conditions={DescribeReturnConditions()}");
+    }
+
+    private Vector3 GetCombatDiversionDestination()
+    {
+        lock (gate)
+        {
+            if (plannedRoute != null && currentStepIndex + 1 < plannedRoute.Steps.Count)
+            {
+                return plannedRoute.Steps[currentStepIndex + 1].Destination;
+            }
+
+            return plannedRoute?.FinalDestination ?? Vector3.Zero;
+        }
+    }
+
+    private bool IsReturnTransitionActive()
+        => condition[ConditionFlag.Casting]
+            || condition[ConditionFlag.BetweenAreas]
+            || condition[ConditionFlag.OccupiedInQuestEvent];
 
     private void ProcessPathStep(RouteStep step, Vector3 playerPosition)
     {
@@ -2206,6 +2351,9 @@ public sealed class MovementController : IDisposable
         returnPathStopWaitStartedAt = DateTimeOffset.MinValue;
         returnPathStopStableSince = DateTimeOffset.MinValue;
         returnRetryNotBeforeAt = DateTimeOffset.MinValue;
+        combatDiversionActive = false;
+        combatDiversionStopPending = false;
+        combatDiversionPathAttemptedAt = DateTimeOffset.MinValue;
         if (clearAttemptCount)
         {
             returnAttemptCount = 0;
