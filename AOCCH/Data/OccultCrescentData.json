@@ -178,7 +178,7 @@
       "displayName": "Northeast",
       "candidates": [
         { "fateId": 1976, "groupKey": "northeast", "candidateKey": "NE1", "label": "NE1", "position": { "x": 587.704, "y": 78.896, "z": -545.817 }, "aggroLevel": 2 },
-        { "fateId": 1976, "groupKey": "northeast", "candidateKey": "NE2", "label": "NE2", "position": { "x": 571.584, "y": 51.451, "z": -813.164 }, "aggroLevel": 1 }
+        { "fateId": 1976, "groupKey": "northeast", "candidateKey": "NE2", "label": "NE2", "position": { "x": 571.5841, "y": 51.451305, "z": -813.1642 }, "aggroLevel": 1 }
       ]
     },
     {
@@ -187,7 +187,7 @@
       "displayName": "East",
       "candidates": [
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E1", "label": "E1", "position": { "x": 803.661, "y": 96.0, "z": -354.181 }, "aggroLevel": 4 },
-        { "fateId": 1976, "groupKey": "east", "candidateKey": "E2", "label": "E2", "position": { "x": 684.422, "y": 96.101, "z": -165.481 }, "aggroLevel": 4 },
+        { "fateId": 1976, "groupKey": "east", "candidateKey": "E2", "label": "E2", "position": { "x": 684.4223, "y": 96.10129, "z": -165.4811 }, "aggroLevel": 4 },
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E3", "label": "E3", "position": { "x": 878.113, "y": 108.29, "z": -91.106 }, "aggroLevel": 5 },
         { "fateId": 1976, "groupKey": "east", "candidateKey": "E4", "label": "E4", "position": { "x": 885.93, "y": 120.0, "z": -23.25 }, "aggroLevel": 5 }
       ]
@@ -197,10 +197,10 @@
       "groupKey": "southeast",
       "displayName": "Southeast",
       "candidates": [
-        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE1", "label": "SE1", "position": { "x": 606.464, "y": 108.074, "z": 184.852 }, "aggroLevel": 4 },
+        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE1", "label": "SE1", "position": { "x": 606.4641, "y": 108.07402, "z": 184.8517 }, "aggroLevel": 4 },
         { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE2", "label": "SE2", "position": { "x": 662.439, "y": 120.0, "z": 161.134 }, "aggroLevel": 21, "notes": "Tracker-corrected plateau location confirmed by Capture 33 after the old SE1/SE2 reversal was repaired." },
-        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE3", "label": "SE3", "position": { "x": 570.242, "y": 64.662, "z": 272.173 }, "aggroLevel": 14 },
-        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE4", "label": "SE4", "position": { "x": 705.272, "y": 68.144, "z": 358.671 }, "aggroLevel": 14 }
+        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE3", "label": "SE3", "position": { "x": 570.2421, "y": 64.66202, "z": 272.1734 }, "aggroLevel": 14 },
+        { "fateId": 1976, "groupKey": "southeast", "candidateKey": "SE4", "label": "SE4", "position": { "x": 705.2716, "y": 68.143616, "z": 358.6714 }, "aggroLevel": 14 }
       ]
     },
     {
@@ -208,7 +208,7 @@
       "groupKey": "south",
       "displayName": "South",
       "candidates": [
-        { "fateId": 1976, "groupKey": "south", "candidateKey": "S1", "label": "S1", "position": { "x": 341.441, "y": 96.0, "z": 194.751 }, "aggroLevel": 4 },
+        { "fateId": 1976, "groupKey": "south", "candidateKey": "S1", "label": "S1", "position": { "x": 341.4413, "y": 95.99999, "z": 194.7507 }, "aggroLevel": 4 },
         { "fateId": 1976, "groupKey": "south", "candidateKey": "S2", "label": "S2", "position": { "x": 263.256, "y": 100.385, "z": 326.683 }, "aggroLevel": 10 },
         { "fateId": 1976, "groupKey": "south", "candidateKey": "S3", "label": "S3", "position": { "x": 46.03, "y": 102.4, "z": 373.0 }, "aggroLevel": 10 },
         { "fateId": 1976, "groupKey": "south", "candidateKey": "S4", "label": "S4", "position": { "x": 242.52, "y": 58.84, "z": 535.85 }, "aggroLevel": 15 }
@@ -219,10 +219,10 @@
       "groupKey": "southwest",
       "displayName": "Southwest",
       "candidates": [
-        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW1", "label": "SW1", "position": { "x": -54.695, "y": 99.406, "z": 405.026 }, "aggroLevel": 10 },
-        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW2", "label": "SW2", "position": { "x": -165.237, "y": 95.338, "z": 437.451 }, "aggroLevel": 10 },
-        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW3", "label": "SW3", "position": { "x": -324.274, "y": 121.0, "z": 203.202 }, "aggroLevel": 11 },
-        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW4", "label": "SW4", "position": { "x": -313.291, "y": 108.11, "z": 70.762 }, "aggroLevel": 12 }
+        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW1", "label": "SW1", "position": { "x": -54.69518, "y": 99.40573, "z": 405.0261 }, "aggroLevel": 10 },
+        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW2", "label": "SW2", "position": { "x": -165.2374, "y": 95.33837, "z": 437.4505 }, "aggroLevel": 10 },
+        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW3", "label": "SW3", "position": { "x": -324.2736, "y": 121, "z": 203.2017 }, "aggroLevel": 11 },
+        { "fateId": 1976, "groupKey": "southwest", "candidateKey": "SW4", "label": "SW4", "position": { "x": -313.2906, "y": 108.10962, "z": 70.76207 }, "aggroLevel": 12 }
       ]
     },
     {
@@ -230,10 +230,10 @@
       "groupKey": "west",
       "displayName": "West",
       "candidates": [
-        { "fateId": 1976, "groupKey": "west", "candidateKey": "W1", "label": "W1", "position": { "x": -459.173, "y": 93.574, "z": 5.054 }, "aggroLevel": 12 },
-        { "fateId": 1976, "groupKey": "west", "candidateKey": "W2", "label": "W2", "position": { "x": -312.278, "y": 103.199, "z": -35.253 }, "aggroLevel": 11 },
-        { "fateId": 1976, "groupKey": "west", "candidateKey": "W3", "label": "W3", "position": { "x": -476.301, "y": 101.442, "z": -86.699 }, "aggroLevel": 11 },
-        { "fateId": 1976, "groupKey": "west", "candidateKey": "W4", "label": "W4", "position": { "x": -660.534, "y": 98.0, "z": -216.767 }, "aggroLevel": 11 },
+        { "fateId": 1976, "groupKey": "west", "candidateKey": "W1", "label": "W1", "position": { "x": -459.1735, "y": 93.57443, "z": 5.054043 }, "aggroLevel": 12 },
+        { "fateId": 1976, "groupKey": "west", "candidateKey": "W2", "label": "W2", "position": { "x": -312.2778, "y": 103.19944, "z": -35.25348 }, "aggroLevel": 11 },
+        { "fateId": 1976, "groupKey": "west", "candidateKey": "W3", "label": "W3", "position": { "x": -476.3011, "y": 101.44228, "z": -86.69939 }, "aggroLevel": 11 },
+        { "fateId": 1976, "groupKey": "west", "candidateKey": "W4", "label": "W4", "position": { "x": -660.5336, "y": 98, "z": -216.7666 }, "aggroLevel": 11 },
         { "fateId": 1976, "groupKey": "west", "candidateKey": "W5", "label": "W5", "position": { "x": -382.44, "y": 109.302, "z": -378.348 }, "aggroLevel": 11 }
       ]
     },
@@ -243,11 +243,11 @@
       "displayName": "Northwest",
       "candidates": [
         { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW1", "label": "NW1", "position": { "x": 19.74, "y": 26.046, "z": -420.977 }, "aggroLevel": 6 },
-        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW2", "label": "NW2", "position": { "x": -216.372, "y": 5.447, "z": -510.136 }, "aggroLevel": 6 },
+        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW2", "label": "NW2", "position": { "x": -216.372, "y": 5.4469404, "z": -510.1361 }, "aggroLevel": 6 },
         { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW3", "label": "NW3", "position": { "x": -386.5904, "y": -0.13994062, "z": -461.0976 }, "aggroLevel": 6 },
         { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW4", "label": "NW4", "position": { "x": -534.6993, "y": 2.999998, "z": -651.6244 }, "aggroLevel": 8 },
-        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW5", "label": "NW5", "position": { "x": -333.344, "y": 3.0, "z": -861.172 }, "aggroLevel": 8 },
-        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW6", "label": "NW6", "position": { "x": -188.174, "y": 3.0, "z": -717.201 }, "aggroLevel": 7 }
+        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW5", "label": "NW5", "position": { "x": -333.3444, "y": 2.9999998, "z": -861.1722 }, "aggroLevel": 8 },
+        { "fateId": 1976, "groupKey": "northwest", "candidateKey": "NW6", "label": "NW6", "position": { "x": -188.1745, "y": 2.999999, "z": -717.2005 }, "aggroLevel": 7 }
       ]
     },
     {
@@ -256,11 +256,11 @@
       "displayName": "North",
       "candidates": [
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N1", "label": "N1", "position": { "x": -195.442, "y": 110.153, "z": -287.891 }, "aggroLevel": 11 },
-        { "fateId": 1977, "groupKey": "north", "candidateKey": "N2", "label": "N2", "position": { "x": -386.437, "y": 98.607, "z": -221.785 }, "aggroLevel": 11 },
+        { "fateId": 1977, "groupKey": "north", "candidateKey": "N2", "label": "N2", "position": { "x": -386.437, "y": 98.60658, "z": -221.7847 }, "aggroLevel": 11 },
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N3", "label": "N3", "position": { "x": -554.615, "y": 99.018, "z": -309.123 }, "aggroLevel": 11 },
         { "fateId": 1977, "groupKey": "north", "candidateKey": "N4", "label": "N4", "position": { "x": -676.62, "y": 128.574, "z": 1.532 }, "aggroLevel": 13 },
-        { "fateId": 1977, "groupKey": "north", "candidateKey": "N5", "label": "N5", "position": { "x": -645.303, "y": 135.692, "z": -73.548 }, "aggroLevel": 13, "notes": "Capture 32 attribution was corrected after review; this exact coffer belongs to N5, not the earlier traversal candidate N4." },
-        { "fateId": 1977, "groupKey": "north", "candidateKey": "N6", "label": "N6", "position": { "x": -730.544, "y": 107.694, "z": -371.478 }, "aggroLevel": 25, "hideThresholdDistance": 450, "notes": "hostile mob aggro" }
+        { "fateId": 1977, "groupKey": "north", "candidateKey": "N5", "label": "N5", "position": { "x": -645.3027, "y": 135.69208, "z": -73.54771 }, "aggroLevel": 13, "notes": "Capture 32 attribution was corrected after review; this exact coffer belongs to N5, not the earlier traversal candidate N4." },
+        { "fateId": 1977, "groupKey": "north", "candidateKey": "N6", "label": "N6", "position": { "x": -730.5441, "y": 107.694275, "z": -371.4776 }, "aggroLevel": 25, "hideThresholdDistance": 450, "notes": "hostile mob aggro" }
       ]
     },
     {
@@ -268,12 +268,12 @@
       "groupKey": "northeast",
       "displayName": "Northeast",
       "candidates": [
-        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE1", "label": "NE1", "position": { "x": 74.734, "y": 110.494, "z": -394.129 }, "aggroLevel": 9 },
-        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE2", "label": "NE2", "position": { "x": 113.73, "y": 111.53, "z": -219.07 }, "aggroLevel": 9 },
-        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE3", "label": "NE3", "position": { "x": -55.11, "y": 101.03, "z": -192.67 }, "aggroLevel": 9 },
+        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE1", "label": "NE1", "position": { "x": 74.73397, "y": 110.494316, "z": -394.1289 }, "aggroLevel": 9 },
+        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE2", "label": "NE2", "position": { "x": 69.70596, "y": 111.56108, "z": -239.064 }, "aggroLevel": 9 },
+        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE3", "label": "NE3", "position": { "x": -38.97946, "y": 102.073296, "z": -175.4589 }, "aggroLevel": 9 },
         { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE4", "label": "NE4", "position": { "x": 393.019, "y": 104.0, "z": -124.165 }, "aggroLevel": 9 },
-        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE5", "label": "NE5", "position": { "x": 301.874, "y": 103.784, "z": 70.599 }, "aggroLevel": 9 },
-        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE6", "label": "NE6", "position": { "x": 107.061, "y": 105.7, "z": 146.706 }, "aggroLevel": 10 }
+        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE5", "label": "NE5", "position": { "x": 301.8741, "y": 103.784424, "z": 70.59854 }, "aggroLevel": 9 },
+        { "fateId": 1977, "groupKey": "northeast", "candidateKey": "NE6", "label": "NE6", "position": { "x": 107.0611, "y": 105.699875, "z": 146.7059 }, "aggroLevel": 10 }
       ]
     },
     {
@@ -282,13 +282,13 @@
       "displayName": "East",
       "candidates": [
         { "fateId": 1977, "groupKey": "east", "candidateKey": "E1", "label": "E1", "position": { "x": 8.9, "y": 65.44, "z": 664.74 }, "aggroLevel": 15 },
-        { "fateId": 1977, "groupKey": "east", "candidateKey": "E2", "label": "E2", "position": { "x": 67.453, "y": 69.478, "z": 745.866 }, "aggroLevel": 15 },
-        { "fateId": 1977, "groupKey": "east", "candidateKey": "E3", "label": "E3", "position": { "x": 200.124, "y": 56.0, "z": 624.229 }, "aggroLevel": 15 },
-        { "fateId": 1977, "groupKey": "east", "candidateKey": "E4", "label": "E4", "position": { "x": 393.268, "y": 57.546, "z": 844.692 }, "aggroLevel": 17 },
+        { "fateId": 1977, "groupKey": "east", "candidateKey": "E2", "label": "E2", "position": { "x": 67.45271, "y": 69.477974, "z": 745.8658 }, "aggroLevel": 15 },
+        { "fateId": 1977, "groupKey": "east", "candidateKey": "E3", "label": "E3", "position": { "x": 200.1241, "y": 56, "z": 624.2285 }, "aggroLevel": 15 },
+        { "fateId": 1977, "groupKey": "east", "candidateKey": "E4", "label": "E4", "position": { "x": 393.2685, "y": 57.545956, "z": 844.6924 }, "aggroLevel": 17 },
         { "fateId": 1977, "groupKey": "east", "candidateKey": "E5", "label": "E5", "position": { "x": 440.836, "y": 70.3, "z": 876.41 }, "aggroLevel": 17 },
-        { "fateId": 1977, "groupKey": "east", "candidateKey": "E6", "label": "E6", "position": { "x": 825.9521, "y": 70.0, "z": 772.4054 }, "aggroLevel": 17 },
+        { "fateId": 1977, "groupKey": "east", "candidateKey": "E6", "label": "E6", "position": { "x": 825.9521, "y": 70, "z": 772.4054 }, "aggroLevel": 17 },
         { "fateId": 1977, "groupKey": "east", "candidateKey": "E7", "label": "E7", "position": { "x": 781.251, "y": 70.0, "z": 560.07 }, "aggroLevel": 17 },
-        { "fateId": 1977, "groupKey": "east", "candidateKey": "E8", "label": "E8", "position": { "x": 423.35, "y": 70.3, "z": 578.901 }, "aggroLevel": 17 }
+        { "fateId": 1977, "groupKey": "east", "candidateKey": "E8", "label": "E8", "position": { "x": 423.3505, "y": 70.3, "z": 578.9013 }, "aggroLevel": 17 }
       ]
     },
     {
@@ -296,7 +296,7 @@
       "groupKey": "southeast",
       "displayName": "Southeast",
       "candidates": [
-        { "fateId": 1977, "groupKey": "southeast", "candidateKey": "SE1", "label": "SE1", "position": { "x": -57.69, "y": 69.79, "z": 823.02 }, "aggroLevel": 14 }
+        { "fateId": 1977, "groupKey": "southeast", "candidateKey": "SE1", "label": "SE1", "position": { "x": -60.72729, "y": 69.687035, "z": 828.4997 }, "aggroLevel": 14 }
       ]
     },
     {
@@ -304,7 +304,7 @@
       "groupKey": "south",
       "displayName": "South",
       "candidates": [
-        { "fateId": 1977, "groupKey": "south", "candidateKey": "S1", "label": "S1", "position": { "x": -603.346, "y": 139.0, "z": 858.677 }, "aggroLevel": 27, "hideThresholdDistance": 350, "notes": "aggro" }
+        { "fateId": 1977, "groupKey": "south", "candidateKey": "S1", "label": "S1", "position": { "x": -603.3457, "y": 139, "z": 858.6771 }, "aggroLevel": 27, "hideThresholdDistance": 350, "notes": "aggro" }
       ]
     },
     {
@@ -313,7 +313,7 @@
       "displayName": "Southwest",
       "candidates": [
         { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW1", "label": "SW1", "position": { "x": -746.132, "y": 172.0, "z": 828.881 }, "aggroLevel": 27, "hideThresholdDistance": 400, "notes": "aggro" },
-        { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW2", "label": "SW2", "position": { "x": -741.5, "y": 171.5, "z": 689.72 }, "aggroLevel": 28, "hideThresholdDistance": 310, "notes": "aggro" },
+        { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW2", "label": "SW2", "position": { "x": -734.1434, "y": 170.99998, "z": 683.7238 }, "aggroLevel": 28, "hideThresholdDistance": 310, "notes": "aggro" },
         { "fateId": 1977, "groupKey": "southwest", "candidateKey": "SW3", "label": "SW3", "position": { "x": -707.7, "y": 203.0, "z": 702.15 }, "aggroLevel": 28, "hideThresholdDistance": 290, "notes": "aggro" },
         {
           "fateId": 1977,
@@ -344,8 +344,8 @@
       "displayName": "Northwest",
       "candidates": [
         { "fateId": 1977, "groupKey": "northwest", "candidateKey": "NW1", "label": "NW1", "position": { "x": -811.84, "y": 114.07, "z": -225.39 }, "aggroLevel": 25, "hideThresholdDistance": 300, "notes": "aggro" },
-        { "fateId": 1977, "groupKey": "northwest", "candidateKey": "NW2", "label": "NW2", "position": { "x": -803.6, "y": 84.13, "z": 4.45 }, "aggroLevel": 24, "hideThresholdDistance": 75, "notes": "aggro" },
-        { "fateId": 1977, "groupKey": "northwest", "candidateKey": "NW3", "label": "NW3", "position": { "x": -829.598, "y": 62.668, "z": 66.829 }, "aggroLevel": 13 }
+        { "fateId": 1977, "groupKey": "northwest", "candidateKey": "NW2", "label": "NW2", "position": { "x": -798.7886, "y": 84.22545, "z": -4.822005 }, "aggroLevel": 24, "hideThresholdDistance": 75, "notes": "aggro" },
+        { "fateId": 1977, "groupKey": "northwest", "candidateKey": "NW3", "label": "NW3", "position": { "x": -829.598, "y": 62.66814, "z": 66.82948 }, "aggroLevel": 13 }
       ]
     }
   ],
