@@ -1901,6 +1901,19 @@
         },
         {
           "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_8_Post",
+          "position": {
+            "x": -819.283,
+            "y": 160.000,
+            "z": 764.578
+          },
+          "aggroLevel": 42,
+          "arrivalDistance": 3.0,
+          "routeOnly": true,
+          "note": "Center return after SuspendedMasonry_8 before 9_PreRoute"
+        },
+        {
+          "area": "SuspendedMasonry",
           "label": "SuspendedMasonry_9_PreRoute",
           "position": {
             "x": -901.035,
@@ -2538,6 +2551,10 @@
         {
           "area": "SuspendedMasonry",
           "label": "SuspendedMasonry_8"
+        },
+        {
+          "area": "SuspendedMasonry",
+          "label": "SuspendedMasonry_8_Post"
         },
         {
           "area": "SuspendedMasonry",
