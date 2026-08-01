@@ -126,7 +126,7 @@ public sealed class Plugin : IDalamudPlugin
         DependencyChecker = new NormalAutomationDependencyChecker(VNavmesh, BossMod);
         RoutePlanner = new RoutePlanner(Configuration, Logger);
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
-        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, Scanner, VNavmesh, RoutePlanner, GameActionController, Configuration, Logger);
+        MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, DataManager, Scanner, VNavmesh, RoutePlanner, GameActionController, Configuration, Logger);
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);

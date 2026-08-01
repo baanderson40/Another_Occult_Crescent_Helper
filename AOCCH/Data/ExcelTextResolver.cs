@@ -35,6 +35,34 @@ internal static class ExcelTextResolver
         return string.Empty;
     }
 
+    public static string ResolvePropertyTemplate<T>(T row, params string[] propertyNames)
+        where T : struct
+    {
+        object boxedRow = row;
+        foreach (var propertyName in propertyNames)
+        {
+            var property = boxedRow.GetType().GetProperty(propertyName, PropertyFlags);
+            if (property == null)
+            {
+                continue;
+            }
+
+            var value = property.GetValue(boxedRow);
+            if (value is ReadOnlySeString seString)
+            {
+                return seString.ToString().Trim();
+            }
+
+            var text = CoerceText(value);
+            if (text.Length > 0)
+            {
+                return text;
+            }
+        }
+
+        return string.Empty;
+    }
+
     public static string CoerceText(object? value)
     {
         if (value == null)
