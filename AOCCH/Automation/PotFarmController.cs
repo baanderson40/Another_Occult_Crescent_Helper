@@ -1106,6 +1106,16 @@ public sealed class PotFarmController : IDisposable
                     resumeBootstrapAfterRecovery: false,
                     completionResult: PotFarmRunResult.Completed);
                 return;
+            case TreasureSearchRunResult.Failed:
+                treasureHintTracker.CompleteCurrentTreasureSession(
+                    $"Treasure traversal failed: {(treasureSearchController.LastError.Length == 0 ? treasureSearchController.LastTransition : treasureSearchController.LastError)}",
+                    TreasureSessionState.Abandoned);
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Treasure traversal failed ({(treasureSearchController.LastError.Length == 0 ? treasureSearchController.LastTransition : treasureSearchController.LastError)}); returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.TreasurePending);
+                return;
             case TreasureSearchRunResult.Stopped when pendingStop:
                 TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
                 return;
