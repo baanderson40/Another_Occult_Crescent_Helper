@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using ECommons.Automation;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects;
@@ -406,13 +407,8 @@ public sealed class GameActionController
     public bool TrySetLockOn(bool enabled, string description)
     {
         var command = enabled ? "/lockon on" : "/lockon off";
-        if (!commandManager.ProcessCommand(command))
-        {
-            logger.Warning($"[GameAction] op=lockon-command-failed enabled={enabled} description=\"{description}\" command=\"{command}\" reason=dispatch-failed");
-            return false;
-        }
-
-        logger.Info($"[GameAction] op=lockon-command enabled={enabled} description=\"{description}\" command=\"{command}\"");
+        Chat.ExecuteCommand(command);
+        logger.Info($"[GameAction] op=lockon-command enabled={enabled} description=\"{description}\" command=\"{command}\" method=chat-execute result=requested");
         return true;
     }
 

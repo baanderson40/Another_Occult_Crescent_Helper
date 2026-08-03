@@ -623,6 +623,19 @@ public sealed class Plugin : IDalamudPlugin
         RunMagicalElixirDebugAttempt();
     }
 
+    internal void RunDebugLockOnTest()
+    {
+        var target = TargetManager.Target;
+        var targetSummary = target == null
+            ? "none"
+            : $"name=\"{target.Name.TextValue}\" objectId={target.GameObjectId:X} baseId={target.BaseId} valid={target.IsValid()} targetable={target.IsTargetable} position=<{target.Position.X:0.0}, {target.Position.Y:0.0}, {target.Position.Z:0.0}>";
+
+        Logger.Info($"[Plugin] op=debug-window-action action=test-lockon-on target={targetSummary}");
+        GameActionController.TrySetLockOn(enabled: true, "debug lock-on test");
+        Logger.Info($"[Plugin] op=debug-lockon-on result=requested target={targetSummary} leavesLockOnEnabled=true");
+        ChatGui.Print("Lock-on command requested. Lock-on was left enabled.");
+    }
+
     private void RunMagicalElixirDebugAttempt()
     {
         const string description = "manual test inventory attempt";

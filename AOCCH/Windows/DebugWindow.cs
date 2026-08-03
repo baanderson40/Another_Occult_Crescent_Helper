@@ -281,6 +281,11 @@ public sealed class DebugWindow : Window, IDisposable
             plugin.RunMagicalElixirDebugTest(waitForMagicalElixirReady);
         }
 
+        if (ImGui.Button("Test Lock-On On"))
+        {
+            plugin.RunDebugLockOnTest();
+        }
+
         if (ImGui.Button("Log Pot Coffer Snapshot"))
         {
             plugin.LogPotCofferDebugSnapshot();
