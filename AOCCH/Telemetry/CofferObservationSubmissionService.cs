@@ -40,6 +40,7 @@ public sealed class CofferObservationSubmissionService : IDisposable
         TimeSpan.FromMinutes(15),
         TimeSpan.FromMinutes(60),
     ];
+    private static readonly HashSet<uint> RevealCofferDataIds = [2014741, 2014742, 2014743];
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -305,10 +306,23 @@ public sealed class CofferObservationSubmissionService : IDisposable
             }
 
             var loaded = JsonSerializer.Deserialize<List<PendingObservation>>(File.ReadAllText(queuePath), SerializerOptions) ?? [];
+            var revealObservations = loaded
+                .Where(item => item.Observation.DataId is { } dataId && RevealCofferDataIds.Contains(dataId))
+                .TakeLast(MaximumPendingObservations)
+                .ToList();
             lock (gate)
             {
-                pending.AddRange(loaded.TakeLast(MaximumPendingObservations));
+                pending.AddRange(revealObservations);
                 RemoveExpiredLocked(DateTimeOffset.UtcNow);
+            }
+
+            if (revealObservations.Count != loaded.Count)
+            {
+                logger.Info($"[CofferObservation] op=queue-filtered removed={loaded.Count - revealObservations.Count} reason=reporting-reveal-coffers-only");
+                lock (gate)
+                {
+                    PersistLocked();
+                }
             }
         }
         catch (Exception ex)

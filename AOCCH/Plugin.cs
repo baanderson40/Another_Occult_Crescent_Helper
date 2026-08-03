@@ -309,10 +309,13 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        var source = match.Flow == CofferInteractionFlow.PotReveal
-            ? "pot-reveal"
-            : "interaction-overworld";
-        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, match.Coffer, source);
+        if (match.Flow != CofferInteractionFlow.PotReveal || !IsRevealCofferDataId(match.Coffer.DataId))
+        {
+            Logger.Debug($"[Plugin] op=coffer-observation-skipped source=interaction dataId={match.Coffer.DataId} flow={match.Flow} reason=reporting-reveal-coffers-only");
+            return;
+        }
+
+        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, match.Coffer, "pot-reveal");
     }
 
     private void OnScannerCofferOpened(VisibleCoffer coffer)
@@ -322,8 +325,17 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, coffer, "scanner-overworld");
+        if (!IsRevealCofferDataId(coffer.DataId))
+        {
+            Logger.Debug($"[Plugin] op=coffer-observation-skipped source=scanner-overworld dataId={coffer.DataId} reason=reporting-reveal-coffers-only");
+            return;
+        }
+
+        CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, coffer, "scanner-pot-reveal");
     }
+
+    private bool IsRevealCofferDataId(uint dataId)
+        => Scanner.ActiveTerritoryData?.VisibleCoffers.BaseIds.Contains(dataId) == true;
 
     private bool TryBlockNormalStart(string entryPoint)
     {
