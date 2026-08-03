@@ -207,25 +207,33 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
-        var enablePotFarming = configuration.EnablePotFarming;
-        if (ImGui.Checkbox("Enable Pot Farming", ref enablePotFarming))
+        var territory = plugin.Scanner.ActiveTerritoryData;
+        if (territory == null)
         {
-            logger.Info($"[Config] op=setting-change key=EnablePotFarming old={configuration.EnablePotFarming} new={enablePotFarming}");
-            configuration.EnablePotFarming = enablePotFarming;
-            configuration.Save();
+            return;
+        }
+
+        var enablePotFarming = configuration.IsPotFarmingEnabled(territory.Key);
+        if (ImGui.Checkbox($"Enable Pot Farming in {territory.DisplayName}", ref enablePotFarming))
+        {
+            var oldValue = configuration.IsPotFarmingEnabled(territory.Key);
+            logger.Info($"[Config] op=setting-change key=EnablePotFarming territoryKey={territory.Key} old={oldValue} new={enablePotFarming}");
+            if (configuration.SetPotFarmingEnabled(territory.Key, enablePotFarming))
+            {
+                configuration.Save();
+            }
         }
         DrawSettingTooltip("Enables automated pot FATE cycling and treasure hunting.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Route Setup");
 
-        var territory = plugin.Scanner.ActiveTerritoryData;
-        var potFates = territory?.PotFates.OrderBy(pot => pot.Name, StringComparer.Ordinal).ToArray() ?? [];
-        var startingPotFateId = territory == null ? 0 : configuration.GetStartingPotFateId(territory.Key);
+        var potFates = territory.PotFates.OrderBy(pot => pot.Name, StringComparer.Ordinal).ToArray();
+        var startingPotFateId = configuration.GetStartingPotFateId(territory.Key);
         var startingPotFate = Array.FindIndex(potFates, pot => pot.FateId == startingPotFateId) + 1;
         var startingPotFateLabels = new[] { "Auto" }.Concat(potFates.Select(pot => $"{pot.Name} ({pot.FateId})")).ToArray();
         ImGui.SetNextItemWidth(220);
-        if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, startingPotFateLabels, startingPotFateLabels.Length) && territory != null)
+        if (ImGui.Combo("Starting Pot FATE", ref startingPotFate, startingPotFateLabels, startingPotFateLabels.Length))
         {
             var nextFateId = startingPotFate == 0 ? 0 : potFates[startingPotFate - 1].FateId;
             logger.Info($"[Config] op=setting-change key=StartingPotFate territoryKey={territory.Key} old={startingPotFateId} new={nextFateId}");
@@ -297,8 +305,8 @@ public class ConfigWindow : Window, IDisposable
             DrawNarrowIntSetting(
                 liveHideLevelLabel,
                 configuration.PotKnowledgeHideOffset,
-                -27,
-                27,
+                1 - territory.MaximumKnowledgeLevel,
+                territory.MaximumKnowledgeLevel - 1,
                 value => configuration.PotKnowledgeHideOffset = value,
                 nameof(configuration.PotKnowledgeHideOffset));
             DrawSettingTooltip("Adjusts the mob level threshold for using Hide relative to your Knowledge level. Set to 0 to hide from mobs at your level or higher.");
@@ -324,11 +332,11 @@ public class ConfigWindow : Window, IDisposable
             {
                 DrawNarrowIntSetting(
                     "Fallback Maximum Aggro Level",
-                    configuration.MaximumAggroLevel,
+                    configuration.PotTreasureFallbackMaximumAggroLevel,
                     0,
-                    20,
-                    value => configuration.MaximumAggroLevel = value,
-                    nameof(configuration.MaximumAggroLevel));
+                    50,
+                    value => configuration.PotTreasureFallbackMaximumAggroLevel = value,
+                    nameof(configuration.PotTreasureFallbackMaximumAggroLevel));
                 DrawSettingTooltip("Mob aggro level limit used as a safety fallback when live zone knowledge data isn't loaded.");
 
                 DrawNarrowIntSetting(
@@ -343,14 +351,35 @@ public class ConfigWindow : Window, IDisposable
         }
         else
         {
+            var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+            var aggroOffsetMinimum = playerKnowledgeLevel.HasValue
+                ? 1 - playerKnowledgeLevel.Value
+                : 1 - territory.MaximumKnowledgeLevel;
+            var aggroOffsetMaximum = playerKnowledgeLevel.HasValue
+                ? territory.MaximumKnowledgeLevel - playerKnowledgeLevel.Value
+                : territory.MaximumKnowledgeLevel - 1;
             DrawNarrowIntSetting(
-                "Maximum Aggro Level",
-                configuration.MaximumAggroLevel,
-                0,
-                20,
-                value => configuration.MaximumAggroLevel = value,
-                nameof(configuration.MaximumAggroLevel));
-            DrawSettingTooltip("Skips pot locations if nearby mobs exceed this level (used when Ninja travel is turned off).");
+                "Aggro Level Offset",
+                configuration.PotTreasureAggroLevelOffset,
+                aggroOffsetMinimum,
+                aggroOffsetMaximum,
+                value => configuration.PotTreasureAggroLevelOffset = value,
+                nameof(configuration.PotTreasureAggroLevelOffset));
+            DrawSettingTooltip("Skips pot locations when their aggro level exceeds your Knowledge Level by this offset. -1 allows locations one level below your Knowledge Level.");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"(Cutoff: {GetPotTreasureAggroCutoffLabel()})");
+
+            if (ImGui.CollapsingHeader("Fallback"))
+            {
+                DrawNarrowIntSetting(
+                    "Fallback Maximum Aggro Level",
+                    configuration.PotTreasureFallbackMaximumAggroLevel,
+                    0,
+                    50,
+                    value => configuration.PotTreasureFallbackMaximumAggroLevel = value,
+                    nameof(configuration.PotTreasureFallbackMaximumAggroLevel));
+                DrawSettingTooltip("Maximum aggro level used when your Knowledge Level is unavailable.");
+            }
         }
 
         ImGui.Separator();
@@ -521,8 +550,8 @@ public class ConfigWindow : Window, IDisposable
             DrawNarrowIntSetting(
                 liveHideLevelLabel,
                 configuration.VisibleCofferKnowledgeHideOffset,
-                -27,
-                27,
+                1 - (plugin.Scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28),
+                (plugin.Scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28) - 1,
                 value => configuration.VisibleCofferKnowledgeHideOffset = value,
                 nameof(configuration.VisibleCofferKnowledgeHideOffset));
             DrawSettingTooltip("Adjusts the mob level threshold for using Hide relative to your Knowledge level. Set to 0 to hide from mobs at your level or higher.");
@@ -1127,8 +1156,9 @@ public class ConfigWindow : Window, IDisposable
     private string GetLiveKnowledgeHideLevelLabel(string label, int offset)
     {
         var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+        var maximumKnowledgeLevel = plugin.Scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28;
         var hideLevel = playerKnowledgeLevel.HasValue
-            ? Math.Clamp(playerKnowledgeLevel.Value + offset, 1, 28).ToString()
+            ? Math.Clamp(playerKnowledgeLevel.Value + offset, 1, maximumKnowledgeLevel).ToString()
             : "?";
         return $"{label} ({hideLevel})";
     }
@@ -1139,6 +1169,15 @@ public class ConfigWindow : Window, IDisposable
         return playerKnowledgeLevel.HasValue
             ? Math.Clamp(playerKnowledgeLevel.Value + configuration.VisibleTreasureCofferAggroLevelOffset, 1, 50).ToString()
             : $"fallback {configuration.VisibleTreasureCofferFallbackMaximumAggroLevel}";
+    }
+
+    private string GetPotTreasureAggroCutoffLabel()
+    {
+        var playerKnowledgeLevel = plugin.Scanner.Snapshot.PlayerForayLevel;
+        var maximumKnowledgeLevel = plugin.Scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28;
+        return playerKnowledgeLevel.HasValue
+            ? Math.Clamp(playerKnowledgeLevel.Value + configuration.PotTreasureAggroLevelOffset, 1, maximumKnowledgeLevel).ToString()
+            : $"fallback {configuration.PotTreasureFallbackMaximumAggroLevel}";
     }
 
     private void DrawSettingTooltip(string text)

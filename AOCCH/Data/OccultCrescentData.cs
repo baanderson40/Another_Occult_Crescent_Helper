@@ -54,6 +54,7 @@ public sealed class OccultCrescentTerritoryData
     public float AethernetInteractDistanceMin { get; init; }
     public float AethernetInteractDistanceMax { get; init; }
     public float MountedTravelSpeed { get; init; }
+    public int MaximumKnowledgeLevel { get; init; } = 28;
     public List<AethernetData> Aethernets { get; init; } = [];
     public List<CriticalEncounterData> CriticalEncounters { get; init; } = [];
     public List<FateData> Fates { get; init; } = [];
@@ -108,6 +109,7 @@ public sealed class VisibleCofferData
 {
     public List<uint> BaseIds { get; init; } = [];
     public List<string> ObjectKinds { get; init; } = [];
+    public List<string> PotRevealObjectKinds { get; init; } = [];
     public List<string> LocalizedNames { get; init; } = [];
     public List<VisibleCofferAreaAethernetData> AreaAethernetMappings { get; init; } = [];
     public List<byte> UnsafeWeatherIds { get; init; } = [];
@@ -160,6 +162,8 @@ public sealed class PotFateData
 
 public sealed class PotTreasureBehaviorData
 {
+    public TreasureSearchStrategy SearchStrategy { get; init; } = TreasureSearchStrategy.DirectionGroups;
+    public float GeometricMaximumHintAngleDegrees { get; init; } = 95f;
     public uint TreasureBuffStatusId { get; init; }
     public uint CofferRevealLogMessageId { get; init; }
     public uint HintImmediateLogMessageId { get; init; }
@@ -168,6 +172,12 @@ public sealed class PotTreasureBehaviorData
     public uint HintBeyondFarLogMessageId { get; init; }
     public uint ElixirPromptLogMessageId { get; init; }
     public uint BonusOfferLogMessageId { get; init; }
+}
+
+public enum TreasureSearchStrategy
+{
+    DirectionGroups,
+    GeometricCandidates,
 }
 
 public sealed class TreasureCofferGroupData
@@ -185,6 +195,9 @@ public sealed class TreasureCofferCandidateData
     public string CandidateKey { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
     public Vector3Data Position { get; init; } = new();
+    public Vector3Data? ConfirmedCofferPosition { get; init; }
+    public List<string> CloseAlternateCandidateKeys { get; init; } = [];
+    public List<string> ImmediateAlternateCandidateKeys { get; init; } = [];
     public int AggroLevel { get; init; }
     public int? HideThresholdDistance { get; init; }
     public string? Notes { get; init; }

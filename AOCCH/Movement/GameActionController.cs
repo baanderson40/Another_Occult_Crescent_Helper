@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using ECommons.Automation;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects;
@@ -89,6 +90,11 @@ public sealed class GameActionController
         logger.Info($"[GameAction] op=set-target target=\"{gameObject.Name.TextValue}\" ({gameObject.GameObjectId:X}) description=\"{description}\"");
         return true;
     }
+
+    public bool IsCurrentTarget(IGameObject gameObject)
+        => gameObject != null
+            && gameObject.IsValid()
+            && targetManager.Target?.GameObjectId == gameObject.GameObjectId;
 
     public unsafe bool TryInteractWithObject(IGameObject gameObject, string description, bool checkLineOfSight = true)
     {
@@ -395,6 +401,14 @@ public sealed class GameActionController
         }
 
         logger.Info($"[GameAction] op=keyitem-command description=\"{description}\" command=\"{command}\"");
+        return true;
+    }
+
+    public bool TrySetLockOn(bool enabled, string description)
+    {
+        var command = enabled ? "/lockon on" : "/lockon off";
+        Chat.ExecuteCommand(command);
+        logger.Info($"[GameAction] op=lockon-command enabled={enabled} description=\"{description}\" command=\"{command}\" method=chat-execute result=requested");
         return true;
     }
 

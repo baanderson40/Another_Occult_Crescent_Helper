@@ -34,7 +34,10 @@ public sealed class CofferInteractionController : IDisposable
     private const float PotRevealConfirmationFallbackRadius = 8f;
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
+    private const int MaxLockOnReleaseAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan PotRevealLockOnSettleDuration = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan LockOnReleaseRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HiddenDismountTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HiddenDismountRequestInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan HideStateSettleDelay = TimeSpan.FromMilliseconds(250);
@@ -70,6 +73,10 @@ public sealed class CofferInteractionController : IDisposable
     private InventorySnapshot? preInteractionInventorySnapshot;
     private bool preInteractionInventorySnapshotValid;
     private bool inventoryFallbackLoggedThisAttempt;
+    private bool potRevealLockOnOwned;
+    private DateTimeOffset potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+    private DateTimeOffset potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+    private int potRevealLockOnReleaseAttemptCount;
     private readonly HashSet<string> treasureFlagReadFailureLoggedPhases = new(StringComparer.Ordinal);
     private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
@@ -193,6 +200,16 @@ public sealed class CofferInteractionController : IDisposable
             return true;
         }
 
+        if (potRevealLockOnOwned)
+        {
+            ReleasePotRevealLockOn("before starting a new coffer interaction");
+            if (potRevealLockOnOwned)
+            {
+                logger.Warning("[Coffer] op=start-blocked reason=stale-pot-reveal-lockon");
+                return false;
+            }
+        }
+
         logger.Info($"[Coffer] op=start-request flow={match.Flow} candidate={match.CandidateKey.Label} coffer=\"{match.Coffer.Name}\" ({match.Coffer.GameObjectId:X}) trustworthy={match.IsTrustworthy} attribution=\"{match.AttributionReason}\"");
 
         var liveObject = ResolveObject(match.Coffer.GameObjectId);
@@ -214,6 +231,9 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseAttemptCount = 0;
             treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
             lastError = string.Empty;
@@ -250,6 +270,7 @@ public sealed class CofferInteractionController : IDisposable
 
     public void ResetInstanceState(string reason)
     {
+        ReleasePotRevealLockOn($"reset: {reason}");
         lock (gate)
         {
             state = CofferInteractionState.Idle;
@@ -266,6 +287,14 @@ public sealed class CofferInteractionController : IDisposable
             preInteractionInventorySnapshot = null;
             preInteractionInventorySnapshotValid = false;
             inventoryFallbackLoggedThisAttempt = false;
+            potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseRetryAt = potRevealLockOnOwned
+                ? DateTimeOffset.UtcNow + LockOnReleaseRetryDelay
+                : DateTimeOffset.MinValue;
+            if (!potRevealLockOnOwned)
+            {
+                potRevealLockOnReleaseAttemptCount = 0;
+            }
             treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
         }
@@ -275,15 +304,28 @@ public sealed class CofferInteractionController : IDisposable
 
     public void Dispose()
     {
-        framework.Update -= OnFrameworkUpdate;
         if (IsRunning)
         {
             Stop("Coffer interaction disposal");
         }
+
+        while (potRevealLockOnOwned && potRevealLockOnReleaseAttemptCount < MaxLockOnReleaseAttempts)
+        {
+            ReleasePotRevealLockOn("disposal retry");
+        }
+
+        framework.Update -= OnFrameworkUpdate;
     }
 
     private void OnFrameworkUpdate(IFramework _)
     {
+        if (potRevealLockOnOwned
+            && potRevealLockOnReleaseRetryAt != DateTimeOffset.MinValue
+            && DateTimeOffset.UtcNow >= potRevealLockOnReleaseRetryAt)
+        {
+            ReleasePotRevealLockOn("scheduled release retry");
+        }
+
         if (!IsRunning)
         {
             return;
@@ -468,6 +510,12 @@ public sealed class CofferInteractionController : IDisposable
         var distance = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
         if (distance > MaxInteractRange)
         {
+            if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal
+                && !TryReleasePotRevealLockOn("player drifted outside targeting range"))
+            {
+                return;
+            }
+
             BeginApproachOrTarget(liveObject, $"Player drifted outside the coffer interaction range ({distance:0.0}y > {MaxInteractRange:0.0}y).");
             return;
         }
@@ -484,7 +532,29 @@ public sealed class CofferInteractionController : IDisposable
             return;
         }
 
-        TransitionTo(CofferInteractionState.InteractingWithCoffer, $"Targeted coffer {liveObject.Name.TextValue} at {distance:0.0}y; attempting interaction.");
+        if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal)
+        {
+            if (!gameActionController.TrySetLockOn(enabled: true, "pot-reveal coffer interaction"))
+            {
+                SetFailure("Failed to lock the camera onto the targeted pot-reveal coffer.");
+                return;
+            }
+
+            var interactionPosition = GetInteractionPosition(liveObject);
+            lock (gate)
+            {
+                potRevealLockOnOwned = true;
+                potRevealInteractionAvailableAt = DateTimeOffset.UtcNow + PotRevealLockOnSettleDuration;
+                potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+                potRevealLockOnReleaseAttemptCount = 0;
+            }
+
+            logger.Info($"{BuildLogTag()} op=pot-reveal-lockon-request candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} attempt={interactionAttemptCount + 1} livePosition=<{liveObject.Position.X:0.0}, {liveObject.Position.Y:0.0}, {liveObject.Position.Z:0.0}> interactionPosition=<{interactionPosition.X:0.0}, {interactionPosition.Y:0.0}, {interactionPosition.Z:0.0}> sentinelY={MathF.Abs(liveObject.Position.Y + 500f) < 0.5f} settleMs={PotRevealLockOnSettleDuration.TotalMilliseconds:0} readyAt={potRevealInteractionAvailableAt:O}");
+        }
+
+        TransitionTo(CofferInteractionState.InteractingWithCoffer, ActiveMatch?.Flow == CofferInteractionFlow.PotReveal
+            ? $"Targeted and locked onto coffer {liveObject.Name.TextValue} at {distance:0.0}y; settling the camera before interaction."
+            : $"Targeted coffer {liveObject.Name.TextValue} at {distance:0.0}y; attempting interaction.");
     }
 
     private void TickInteraction()
@@ -506,6 +576,11 @@ public sealed class CofferInteractionController : IDisposable
         var distance = CalculateFlatDistance(playerPosition.Value, GetInteractionPosition(liveObject));
         if (distance > MaxInteractRange)
         {
+            if (!TryReleasePotRevealLockOn("player drifted outside interaction range"))
+            {
+                return;
+            }
+
             BeginApproachOrTarget(liveObject, $"Interaction was deferred because the player is {distance:0.0}y from the matched coffer.");
             return;
         }
@@ -513,6 +588,37 @@ public sealed class CofferInteractionController : IDisposable
         if (ActiveMatch?.MustStayHidden == true && EnsureHiddenApproachReady(liveObject, "Hidden coffer interaction") != HiddenApproachReadiness.Ready)
         {
             return;
+        }
+
+        if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (potRevealInteractionAvailableAt != DateTimeOffset.MinValue && now < potRevealInteractionAvailableAt)
+            {
+                logger.DebugThrottled(
+                    "coffer-pot-reveal-lockon-settle",
+                    TimeSpan.FromMilliseconds(200),
+                    $"{BuildLogTag()} op=pot-reveal-lockon-settle candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} attempt={interactionAttemptCount + 1} remainingMs={(potRevealInteractionAvailableAt - now).TotalMilliseconds:0}");
+                return;
+            }
+
+            if (!gameActionController.IsCurrentTarget(liveObject))
+            {
+                if (!TryReleasePotRevealLockOn("target changed during camera settle"))
+                {
+                    return;
+                }
+
+                TransitionTo(CofferInteractionState.TargetingCoffer, $"Pot-reveal coffer target changed during lock-on settle; retargeting before interaction attempt {interactionAttemptCount + 1}.");
+                return;
+            }
+
+            lock (gate)
+            {
+                potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+            }
+
+            logger.Info($"{BuildLogTag()} op=pot-reveal-lockon-settled candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} attempt={interactionAttemptCount + 1} currentTarget=True");
         }
 
         if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal)
@@ -541,7 +647,8 @@ public sealed class CofferInteractionController : IDisposable
             }
         }
 
-        if (!gameActionController.TryInteractWithObject(liveObject, "coffer interaction"))
+        var interactionDispatched = gameActionController.TryInteractWithObject(liveObject, "coffer interaction");
+        if (!interactionDispatched)
         {
             logger.Warning($"{BuildLogTag()} op=interaction-action-failed candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} baseId={liveObject.BaseId} distance={distance:0.0}y attempt={interactionAttemptCount + 1} maxAttempts={MaxInteractionAttempts}");
             if (interactionAttemptCount + 1 >= MaxInteractionAttempts)
@@ -751,6 +858,12 @@ public sealed class CofferInteractionController : IDisposable
         logger.ResetThrottle("coffer-confirmation");
         logger.Info($"{BuildLogTag()} op=pot-reveal-inventory-confirm attempt={interactionAttemptCount} deltas={string.Join(", ", deltas)}");
         logger.Info($"{BuildLogTag()} op=open-confirmed method=inventory-delta flow={match.Flow} attempts={interactionAttemptCount} missingConfirmations={missingConfirmationCount} objectId={match.Coffer.GameObjectId:X}");
+        ReleasePotRevealLockOn("inventory delta confirmed coffer open");
+        if (potRevealLockOnOwned)
+        {
+            ForgetPotRevealLockOn("unlock command failed after inventory confirmation; coffer despawn will auto-unlock");
+        }
+
         TransitionTo(CofferInteractionState.Opened, $"Confirmed coffer open via inventory delta after {interactionAttemptCount} interaction attempt(s).", result: CofferInteractionResult.Opened);
         return true;
     }
@@ -1076,6 +1189,82 @@ public sealed class CofferInteractionController : IDisposable
         logger.ResetThrottle("coffer-hidden-hide-verify");
     }
 
+    private void ReleasePotRevealLockOn(string reason)
+    {
+        if (!potRevealLockOnOwned)
+        {
+            return;
+        }
+
+        if (!gameActionController.TrySetLockOn(enabled: false, $"pot-reveal coffer interaction: {reason}"))
+        {
+            lock (gate)
+            {
+                potRevealLockOnReleaseAttemptCount++;
+                if (potRevealLockOnReleaseAttemptCount >= MaxLockOnReleaseAttempts)
+                {
+                    potRevealLockOnOwned = false;
+                    potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+                    potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+                }
+                else
+                {
+                    potRevealLockOnReleaseRetryAt = DateTimeOffset.UtcNow + LockOnReleaseRetryDelay;
+                }
+            }
+
+            logger.Warning($"{BuildLogTag()} op=pot-reveal-lockon-release-failed candidate={DescribeActiveCandidate()} attempt={potRevealLockOnReleaseAttemptCount}/{MaxLockOnReleaseAttempts} retryAt={potRevealLockOnReleaseRetryAt:O} reason={reason}");
+            return;
+        }
+
+        lock (gate)
+        {
+            potRevealLockOnOwned = false;
+            potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseAttemptCount = 0;
+        }
+
+        logger.Info($"{BuildLogTag()} op=pot-reveal-lockon-release candidate={DescribeActiveCandidate()} reason={reason}");
+        logger.ResetThrottle("coffer-pot-reveal-lockon-settle");
+    }
+
+    private bool TryReleasePotRevealLockOn(string reason)
+    {
+        if (!potRevealLockOnOwned)
+        {
+            return true;
+        }
+
+        if (potRevealLockOnReleaseRetryAt != DateTimeOffset.MinValue
+            && DateTimeOffset.UtcNow < potRevealLockOnReleaseRetryAt)
+        {
+            return false;
+        }
+
+        ReleasePotRevealLockOn(reason);
+        return !potRevealLockOnOwned;
+    }
+
+    private void ForgetPotRevealLockOn(string reason)
+    {
+        if (!potRevealLockOnOwned)
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            potRevealLockOnOwned = false;
+            potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
+            potRevealLockOnReleaseAttemptCount = 0;
+        }
+
+        logger.Info($"{BuildLogTag()} op=pot-reveal-lockon-auto-release candidate={DescribeActiveCandidate()} reason={reason}");
+        logger.ResetThrottle("coffer-pot-reveal-lockon-settle");
+    }
+
     private string FormatHiddenContextReason()
         => ActiveMatch?.HiddenContextReason is { Length: > 0 } reason ? $"reason={reason}" : "reason=hidden-context";
 
@@ -1100,6 +1289,17 @@ public sealed class CofferInteractionController : IDisposable
             {
                 lastResult = result.Value;
             }
+        }
+
+        if (nextState is CofferInteractionState.Opened or CofferInteractionState.LostCoffer)
+        {
+            ForgetPotRevealLockOn($"coffer auto-unlocked in terminal state {nextState}");
+        }
+        else if (nextState is CofferInteractionState.TimedOut
+            or CofferInteractionState.Stopped
+            or CofferInteractionState.Failed)
+        {
+            ReleasePotRevealLockOn($"terminal state {nextState}");
         }
 
         logger.Info($"{BuildLogTag()} op=transition from={previousState} to={nextState} flow={ActiveMatch?.Flow.ToString() ?? "none"} candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} attempts={interactionAttemptCount} trustworthy={ActiveMatch?.IsTrustworthy ?? false} reason={reason}");

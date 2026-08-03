@@ -231,7 +231,8 @@ public sealed class PotFarmController : IDisposable
 
     public bool NeedsControlNow(DateTimeOffset now, out PotControlReason controlReason, out string reason)
     {
-        if (!configuration.EnablePotFarming)
+        var scannerSnapshot = scanner.Snapshot;
+        if (!configuration.IsPotFarmingEnabled(scannerSnapshot.TerritoryKey))
         {
             controlReason = PotControlReason.None;
             reason = "Pot farming is disabled.";
@@ -245,7 +246,6 @@ public sealed class PotFarmController : IDisposable
             return true;
         }
 
-        var scannerSnapshot = scanner.Snapshot;
         if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
             controlReason = PotControlReason.None;
@@ -332,7 +332,8 @@ public sealed class PotFarmController : IDisposable
 
     public bool Start()
     {
-        if (!configuration.EnablePotFarming)
+        var scannerSnapshot = scanner.Snapshot;
+        if (!configuration.IsPotFarmingEnabled(scannerSnapshot.TerritoryKey))
         {
             SetFailure("Pot farming start blocked because pot farming is disabled.");
             return false;
@@ -343,10 +344,10 @@ public sealed class PotFarmController : IDisposable
             return true;
         }
 
-        if (!scanner.Snapshot.IsInSupportedTerritory || !scanner.Snapshot.CanRunPotTreasure)
+        if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
         {
-            SetFailure(scanner.Snapshot.IsInSupportedTerritory
-                ? $"Pot farming is unavailable in {scanner.Snapshot.TerritoryDisplayName}."
+            SetFailure(scannerSnapshot.IsInSupportedTerritory
+                ? $"Pot farming is unavailable in {scannerSnapshot.TerritoryDisplayName}."
                 : "Pot farming requires a supported Occult Crescent territory.");
             return false;
         }
@@ -1105,6 +1106,16 @@ public sealed class PotFarmController : IDisposable
                     resumeBootstrapAfterRecovery: false,
                     completionResult: PotFarmRunResult.Completed);
                 return;
+            case TreasureSearchRunResult.Failed:
+                treasureHintTracker.CompleteCurrentTreasureSession(
+                    $"Treasure traversal failed: {(treasureSearchController.LastError.Length == 0 ? treasureSearchController.LastTransition : treasureSearchController.LastError)}",
+                    TreasureSessionState.Abandoned);
+                ClearTreasurePotContext();
+                BeginRecoveryToBase(
+                    $"Treasure traversal failed ({(treasureSearchController.LastError.Length == 0 ? treasureSearchController.LastTransition : treasureSearchController.LastError)}); returning to Base Camp.",
+                    resumeBootstrapAfterRecovery: false,
+                    completionResult: PotFarmRunResult.TreasurePending);
+                return;
             case TreasureSearchRunResult.Stopped when pendingStop:
                 TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);
                 return;
@@ -1140,7 +1151,6 @@ public sealed class PotFarmController : IDisposable
                     completionResult: PotFarmRunResult.Completed);
                 return;
             case CofferInteractionResult.LostCoffer:
-            case CofferInteractionResult.TimedOut:
                 if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
                 {
                     if (treasureSearchController.LastResult != TreasureSearchRunResult.CandidatesExhausted)
@@ -1160,6 +1170,9 @@ public sealed class PotFarmController : IDisposable
                 }
 
                 TransitionTo(PotFarmState.RunningTreasureSearch, treasureSearchController.LastTransition);
+                return;
+            case CofferInteractionResult.TimedOut:
+                SetFailure($"The revealed treasure coffer remained visible after all interaction attempts; stopping instead of searching unrelated candidates. {cofferInteractionController.LastError}".Trim());
                 return;
             case CofferInteractionResult.Stopped when pendingStop:
                 TransitionTo(PotFarmState.Stopped, "Pot farm stop completed.", error: LastError, result: PotFarmRunResult.Stopped);

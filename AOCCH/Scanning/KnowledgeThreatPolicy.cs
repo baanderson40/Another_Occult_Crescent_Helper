@@ -3,10 +3,10 @@ using System.Linq;
 
 namespace AOCCH.Scanning;
 
-public readonly record struct KnowledgeThreatPolicy(int HideOffset, float EnterDistance, float ExitDistance)
+public readonly record struct KnowledgeThreatPolicy(int HideOffset, float EnterDistance, float ExitDistance, int MaximumKnowledgeLevel = 28)
 {
     public int GetHideAtOrAbove(int playerKnowledgeLevel)
-        => Math.Clamp(playerKnowledgeLevel + HideOffset, 1, 28);
+        => Math.Clamp(playerKnowledgeLevel + HideOffset, 1, MaximumKnowledgeLevel);
 }
 
 public static class KnowledgeThreatEvaluator

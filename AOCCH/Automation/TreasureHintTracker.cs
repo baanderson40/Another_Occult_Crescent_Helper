@@ -15,6 +15,7 @@ public sealed class TreasureHintTracker : IDisposable
 
     private readonly IFramework framework;
     private readonly IChatGui chatGui;
+    private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -29,6 +30,7 @@ public sealed class TreasureHintTracker : IDisposable
     private DateTimeOffset lastProcessedScannerUpdate = DateTimeOffset.MinValue;
     private DateTimeOffset debugLogCaptureDeadlineAt = DateTimeOffset.MinValue;
     private string debugLogCaptureReason = string.Empty;
+    private bool debugLogCaptureAllMessageIds;
     private int debugLogCaptureAttemptId;
     private readonly List<string> debugLogCaptureEntries = [];
     private string latestDebugLogMessageSummary = string.Empty;
@@ -36,11 +38,13 @@ public sealed class TreasureHintTracker : IDisposable
     public TreasureHintTracker(
         IFramework framework,
         IChatGui chatGui,
+        IObjectTable objectTable,
         OccultCrescentScanner scanner,
         AocchLogger logger)
     {
         this.framework = framework;
         this.chatGui = chatGui;
+        this.objectTable = objectTable;
         this.scanner = scanner;
         this.logger = logger;
 
@@ -77,7 +81,7 @@ public sealed class TreasureHintTracker : IDisposable
         }
     }
 
-    public int ArmDebugLogMessageCapture(string reason, TimeSpan duration)
+    public int ArmDebugLogMessageCapture(string reason, TimeSpan duration, bool captureAllMessageIds = false)
     {
         int attemptId;
         lock (gate)
@@ -85,12 +89,14 @@ public sealed class TreasureHintTracker : IDisposable
             debugLogCaptureAttemptId++;
             attemptId = debugLogCaptureAttemptId;
             debugLogCaptureReason = reason;
+            debugLogCaptureAllMessageIds = captureAllMessageIds;
             debugLogCaptureDeadlineAt = DateTimeOffset.UtcNow + duration;
             debugLogCaptureEntries.Clear();
             latestDebugLogMessageSummary = string.Empty;
         }
 
-        logger.Info($"[TreasureHintTracker] op=debug-logmessage-capture-arm attempt={attemptId} reason=\"{SanitizeLogText(reason)}\" duration={duration.TotalSeconds:0.0}s ids={string.Join(",", GetDebugTreasureLogMessageIds())}");
+        var filter = captureAllMessageIds ? "all" : string.Join(",", GetDebugTreasureLogMessageIds());
+        logger.Info($"[TreasureHintTracker] op=debug-logmessage-capture-arm attempt={attemptId} reason=\"{SanitizeLogText(reason)}\" duration={duration.TotalSeconds:0.0}s ids={filter}");
         return attemptId;
     }
 
@@ -100,6 +106,7 @@ public sealed class TreasureHintTracker : IDisposable
         {
             debugLogCaptureDeadlineAt = DateTimeOffset.MinValue;
             debugLogCaptureReason = string.Empty;
+            debugLogCaptureAllMessageIds = false;
             debugLogCaptureEntries.Clear();
             latestDebugLogMessageSummary = string.Empty;
         }
@@ -372,6 +379,9 @@ public sealed class TreasureHintTracker : IDisposable
                 DistanceText = parsedEvent.DistanceText,
                 ReceivedAt = DateTimeOffset.UtcNow,
                 Revision = nextRevision,
+                ObservationPosition = parsedEvent.ObservationPosition != System.Numerics.Vector3.Zero
+                    ? parsedEvent.ObservationPosition
+                    : objectTable.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero,
             };
 
             var initialHint = snapshot.InitialHintEvent;
@@ -490,7 +500,7 @@ public sealed class TreasureHintTracker : IDisposable
                 return string.Empty;
             }
 
-            if (!GetDebugTreasureLogMessageIds().Contains(message.LogMessageId))
+            if (!debugLogCaptureAllMessageIds && !GetDebugTreasureLogMessageIds().Contains(message.LogMessageId))
             {
                 return string.Empty;
             }
