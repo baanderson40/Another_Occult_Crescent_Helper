@@ -952,14 +952,14 @@ public sealed class TreasureSearchController : IDisposable
             {
                 logger.Info($"{BuildLogTag()} op=refine-probe-empty candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementProbeAttemptCount} action=retry-current-position");
 
-                if (refinementProbeAttemptCount >= MaximumCandidateRefinementSteps)
+                if (TryBeginNearbyRevealFallback("refine-timeout-fallback"))
                 {
-                    AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} produced no usable event after {refinementProbeAttemptCount} refinement probe attempt(s); trying the next candidate.");
                     return;
                 }
 
-                if (TryBeginNearbyRevealFallback("refine-timeout-fallback"))
+                if (refinementProbeAttemptCount >= MaximumCandidateRefinementSteps)
                 {
+                    AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} produced no usable event after {refinementProbeAttemptCount} refinement probe attempt(s); trying the next candidate.");
                     return;
                 }
             }
@@ -1070,7 +1070,12 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=refine-move candidate={activeCandidateKey?.Label ?? "none"} stepIndex={refinementStepIndex}/{MaximumCandidateRefinementSteps} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} resolvedDirection={movePlan.Direction} raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> snapMethod={movePlan.SnapMethod} snapRadius={movePlan.SnapRadius:0} actualTarget={targetDistance:0.0}y");
-        if (!TryStartRefinementMove(activeCandidate, target, Math.Max(2.5f, 8f / 2f), $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}", targetAlreadyResolved: true))
+        // Keep the arrival radius below the requested displacement. Passing an equal radius
+        // lets the movement controller report arrival without moving from the current position.
+        var refinementArrivalTolerance = MathF.Min(
+            Math.Max(2.5f, 8f / 2f),
+            MathF.Max(1.5f, targetDistance - 0.5f));
+        if (!TryStartRefinementMove(activeCandidate, target, refinementArrivalTolerance, $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}", targetAlreadyResolved: true))
         {
             return;
         }
