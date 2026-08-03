@@ -24,6 +24,7 @@ const MAX_REQUEST_BYTES = 8 * 1024;
 const MAX_STRING_LENGTH = 128;
 const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/;
 const CANDIDATE_STATUSES = new Set(["pending", "review", "accepted", "rejected"]);
+const RETAINED_COFFER_DATA_IDS = new Set([2014741, 2014742, 2014743]);
 
 function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return Response.json(body, {
@@ -333,10 +334,9 @@ function validateObservation(value: unknown): string | null {
     return "Invalid territoryId.";
   }
 
-  if (observation.dataId !== null
-    && observation.dataId !== undefined
-    && !isIntegerInRange(observation.dataId, 1, 4_294_967_295)) {
-    return "Invalid dataId.";
+  if (!isIntegerInRange(observation.dataId, 1, 4_294_967_295)
+    || !RETAINED_COFFER_DATA_IDS.has(observation.dataId)) {
+    return "Only approved coffer data IDs are accepted.";
   }
 
   if (observation.mapId !== null
