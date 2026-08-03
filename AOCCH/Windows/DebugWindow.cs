@@ -15,7 +15,7 @@ public sealed class DebugWindow : Window, IDisposable
     private enum DebugSection
     {
         Overview,
-        DebugActions,
+        NorthHornPreview,
         Safety,
         AutomationTestReadiness,
         SelectedTarget,
@@ -52,17 +52,9 @@ public sealed class DebugWindow : Window, IDisposable
     private DebugSection selectedSection = DebugSection.Overview;
     private int shopAtkValueStartIndex;
     private int shopAtkValueCount = 160;
-    private string addonAtkValueName = "SelectYesno";
-    private int addonAtkValueIndex = 1;
-    private int addonAtkValueStartIndex;
-    private int addonAtkValueCount;
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
-    private bool waitForMagicalElixirReady;
-    private string northHornLgbCaptureArea = "BaseCamp";
-    private string northHornRevealCaptureRegion = "BaseCamp";
-    private string northHornRevealCaptureLabel = "P01";
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -136,7 +128,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.CriticalEngagements, "Critical Engagements");
         DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
         DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
-        DrawSectionButton(DebugSection.DebugActions, "Debug Actions");
+        DrawSectionButton(DebugSection.NorthHornPreview, "North Horn Preview");
         DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
         DrawSectionButton(DebugSection.Fates, "FATEs");
         DrawSectionButton(DebugSection.FarmSession, "Farm Session");
@@ -165,8 +157,8 @@ public sealed class DebugWindow : Window, IDisposable
             case DebugSection.Overview:
                 DrawOverview(snapshot);
                 break;
-            case DebugSection.DebugActions:
-                DrawDebugActions();
+            case DebugSection.NorthHornPreview:
+                DrawNorthHornPreview();
                 break;
             case DebugSection.Safety:
                 DrawSafety(snapshot);
@@ -249,137 +241,14 @@ public sealed class DebugWindow : Window, IDisposable
     private static string FormatFeatureAvailability(bool available)
         => available ? "Ready" : "Unavailable";
 
-    private void DrawDebugActions()
+    private void DrawNorthHornPreview()
     {
-        ImGui.TextUnformatted("Debug Actions");
-        ImGui.TextWrapped("These diagnostic operations are intentionally available only from the debug window.");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Generic Addon AtkValues");
-        ImGui.SetNextItemWidth(180f);
-        ImGui.InputText("Addon Name", ref addonAtkValueName, 128);
-        ImGui.SetNextItemWidth(90f);
-        ImGui.InputInt("Addon Index", ref addonAtkValueIndex);
-        ImGui.SetNextItemWidth(90f);
-        ImGui.InputInt("Start Index", ref addonAtkValueStartIndex);
-        ImGui.SetNextItemWidth(90f);
-        ImGui.InputInt("Count (0 = all)", ref addonAtkValueCount);
-        if (ImGui.Button("Dump Addon AtkValues"))
-        {
-            plugin.Logger.Info($"[DebugWindow] op=ui-action action=dump-addon-atkvalues addon={addonAtkValueName} addonIndex={addonAtkValueIndex} startIndex={addonAtkValueStartIndex} count={addonAtkValueCount}");
-            plugin.ShopInspectorController.DumpAddonAtkValues(addonAtkValueName, addonAtkValueIndex, addonAtkValueStartIndex, addonAtkValueCount);
-        }
-
+        ImGui.TextUnformatted("North Horn Status Preview");
+        ImGui.TextWrapped("Preview the North Horn feature status window without entering North Horn.");
         if (ImGui.Button("Open North Horn Status Preview"))
         {
             plugin.OpenNorthHornStatusPreview();
         }
-
-        ImGui.Checkbox("Wait for Magical Elixir readiness", ref waitForMagicalElixirReady);
-        if (ImGui.Button("Use Magical Elixir"))
-        {
-            plugin.RunMagicalElixirDebugTest(waitForMagicalElixirReady);
-        }
-
-        if (ImGui.Button("Test Lock-On On"))
-        {
-            plugin.RunDebugLockOnTest();
-        }
-
-        if (ImGui.Button("Log Pot Coffer Snapshot"))
-        {
-            plugin.LogPotCofferDebugSnapshot();
-        }
-
-        if (ImGui.Button("Start Pot Coffer Interaction"))
-        {
-            plugin.RunDebugPotInteraction();
-        }
-
-        if (ImGui.Button("Start Automatic Coffer Survey"))
-        {
-            plugin.RunDebugAutomaticCofferSurvey();
-        }
-
-        if (ImGui.Button("Probe Foray Target"))
-        {
-            plugin.RunProbeForay();
-        }
-
-        ImGui.SetNextItemWidth(180f);
-        ImGui.InputText("LGB Capture Area", ref northHornLgbCaptureArea, 64);
-        ImGui.SameLine();
-        if (ImGui.Button("Capture Nearest North Horn LGB"))
-        {
-            plugin.CaptureNearestNorthHornLgbDebug(northHornLgbCaptureArea);
-        }
-
-        ImGui.SetNextItemWidth(180f);
-        ImGui.InputText("Reveal Capture Region", ref northHornRevealCaptureRegion, 64);
-        ImGui.SetNextItemWidth(180f);
-        ImGui.InputText("Reveal Capture Label", ref northHornRevealCaptureLabel, 64);
-        if (ImGui.Button("Capture North Horn Reveal Candidate"))
-        {
-            plugin.CaptureNorthHornRevealCandidateDebug(northHornRevealCaptureRegion, northHornRevealCaptureLabel);
-        }
-
-        if (ImGui.Button("Dump Targeted Reveal Coffer"))
-        {
-            plugin.LogTargetedRevealCofferDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Visible Coffers"))
-        {
-            plugin.LogVisibleCoffersDebug();
-        }
-
-        if (ImGui.Button("Dump Loaded LGB Treasures"))
-        {
-            plugin.LogLoadedLgbTreasuresDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Loaded LGB Reveal Coffers"))
-        {
-            plugin.LogLoadedLgbRevealCoffersDebug();
-        }
-
-        if (ImGui.Button("Dump Loaded LGB EventRanges"))
-        {
-            plugin.LogLoadedLgbEventRangesDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Loaded LGB EventObjects"))
-        {
-            plugin.LogLoadedLgbEventObjectsDebug();
-        }
-
-        if (ImGui.Button("Dump Targeted Shop NPC"))
-        {
-            plugin.LogTargetedShopNpcDebug();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Dump Configured FATE/CE Tables"))
-        {
-            plugin.LogConfiguredEventTablesDebug();
-        }
-
-        if (ImGui.Button("Generate Event Data"))
-        {
-            plugin.GenerateEventDataDebug();
-        }
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Instance Search");
-        ImGui.TextWrapped(plugin.InstancedContentController.ContentMemberListAtkValueDumpStatus);
-        if (ImGui.Button("Dump ContentMemberList AtkValues"))
-        {
-            plugin.InstancedContentController.DumpContentMemberListAtkValues();
-        }
-        ImGui.TextDisabled("Run /search first. Logs all 14 AtkValues from the open addon.");
     }
 
     private static string FormatTimestamp(DateTimeOffset timestamp)

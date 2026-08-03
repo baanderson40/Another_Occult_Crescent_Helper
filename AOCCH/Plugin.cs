@@ -134,7 +134,7 @@ public sealed class Plugin : IDalamudPlugin
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
-        InstancedContentController = new InstancedContentController(GameGui, Logger);
+        InstancedContentController = new InstancedContentController(Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, ObjectTable, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferPositionOverrideStore, Configuration, Logger);
@@ -621,19 +621,6 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         RunMagicalElixirDebugAttempt();
-    }
-
-    internal void RunDebugLockOnTest()
-    {
-        var target = TargetManager.Target;
-        var targetSummary = target == null
-            ? "none"
-            : $"name=\"{target.Name.TextValue}\" objectId={target.GameObjectId:X} baseId={target.BaseId} valid={target.IsValid()} targetable={target.IsTargetable} position=<{target.Position.X:0.0}, {target.Position.Y:0.0}, {target.Position.Z:0.0}>";
-
-        Logger.Info($"[Plugin] op=debug-window-action action=test-lockon-on target={targetSummary}");
-        GameActionController.TrySetLockOn(enabled: true, "debug lock-on test");
-        Logger.Info($"[Plugin] op=debug-lockon-on result=requested target={targetSummary} leavesLockOnEnabled=true");
-        ChatGui.Print("Lock-on command requested. Lock-on was left enabled.");
     }
 
     private void RunMagicalElixirDebugAttempt()
