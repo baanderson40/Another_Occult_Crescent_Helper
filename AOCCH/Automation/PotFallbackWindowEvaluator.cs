@@ -15,27 +15,29 @@ public sealed class PotFallbackWindowEvaluator
         this.logger = logger;
     }
 
-    public PotFallbackStartDecision EvaluateCeStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure)
+    public PotFallbackStartDecision EvaluateCeStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure, string territoryKey)
     {
         var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.CeFallbackCutoffMinutes)),
             "CE",
-            canRunPotTreasure);
+            canRunPotTreasure,
+            territoryKey);
 
         logger.DebugThrottled("pot-fallback-ce", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for CE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
         return decision;
     }
 
-    public PotFallbackStartDecision EvaluateFateStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure)
+    public PotFallbackStartDecision EvaluateFateStart(PotCycleSnapshot potCycleSnapshot, DateTimeOffset now, bool canRunPotTreasure, string territoryKey)
     {
         var decision = EvaluateStart(
             potCycleSnapshot,
             now,
             TimeSpan.FromMinutes(Math.Max(0, configuration.FateFallbackCutoffMinutes)),
             "FATE",
-            canRunPotTreasure);
+            canRunPotTreasure,
+            territoryKey);
 
         logger.DebugThrottled("pot-fallback-fate", TimeSpan.FromSeconds(10), $"Pot fallback evaluation for FATE: allow={decision.AllowStart} departureAt={decision.DepartureAt:O} timeUntilDeparture={decision.TimeUntilDeparture} reason={decision.Reason}");
         return decision;
@@ -46,14 +48,15 @@ public sealed class PotFallbackWindowEvaluator
         DateTimeOffset now,
         TimeSpan cutoffWindow,
         string activityName,
-        bool canRunPotTreasure)
+        bool canRunPotTreasure,
+        string territoryKey)
     {
         if (!canRunPotTreasure)
         {
             return Allow($"{activityName} fallback start allowed because pot treasure is unavailable in this territory.");
         }
 
-        if (!configuration.EnablePotFarming)
+        if (!configuration.IsPotFarmingEnabled(territoryKey))
         {
             return Allow($"{activityName} fallback start allowed because pot farming is disabled.");
         }

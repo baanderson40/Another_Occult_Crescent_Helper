@@ -1035,7 +1035,6 @@ public sealed class MovementController : IDisposable
                 dismountAttempted = false;
                 dismountAttemptedAt = DateTimeOffset.MinValue;
                 stepAttemptCount++;
-                idlePathResetCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
                 lastProgressAt = DateTimeOffset.UtcNow;
                 lastDistance = distance;

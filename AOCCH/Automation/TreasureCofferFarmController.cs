@@ -1631,7 +1631,8 @@ public sealed class TreasureCofferFarmController : IDisposable
         => new(
             configuration.VisibleCofferKnowledgeHideOffset,
             configuration.KnowledgeThreatEnterDistance,
-            configuration.KnowledgeThreatExitDistance);
+            configuration.KnowledgeThreatExitDistance,
+            scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28);
 
     private DangerousTreasureTravelOptions GetVisibleDangerousTravelOptions()
         => new(

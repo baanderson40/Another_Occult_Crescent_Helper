@@ -637,7 +637,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 DataId = objectEntry.BaseId,
                 Name = objectEntry.Name.ToString(),
                 ObjectKind = objectKind,
-                RecognitionSource = recognitionSource,
+                RecognitionSource = isRevealCoffer ? revealRecognitionSource : recognitionSource,
                 Position = cofferPosition,
                 DistanceToPlayer = distanceToPlayer,
                 IsTargetable = objectEntry.IsTargetable,
@@ -908,8 +908,9 @@ public sealed class OccultCrescentScanner : IDisposable
             return;
         }
 
-        var potHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.PotKnowledgeHideOffset, 1, 28);
-        var visibleHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.VisibleCofferKnowledgeHideOffset, 1, 28);
+        var maximumKnowledgeLevel = ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28;
+        var potHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.PotKnowledgeHideOffset, 1, maximumKnowledgeLevel);
+        var visibleHideAtOrAbove = Math.Clamp(playerForayLevel.Value + configuration.VisibleCofferKnowledgeHideOffset, 1, maximumKnowledgeLevel);
         var entitySummary = entities.Count == 0
             ? "none"
             : string.Join(

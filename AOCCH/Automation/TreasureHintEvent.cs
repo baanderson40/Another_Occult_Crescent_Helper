@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 
 namespace AOCCH.Automation;
 
@@ -12,4 +13,5 @@ public sealed class TreasureHintEvent
     public string DistanceText { get; init; } = string.Empty;
     public DateTimeOffset ReceivedAt { get; init; }
     public int Revision { get; init; }
+    public Vector3 ObservationPosition { get; init; }
 }

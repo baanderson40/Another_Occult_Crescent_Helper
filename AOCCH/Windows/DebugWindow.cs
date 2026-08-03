@@ -61,6 +61,8 @@ public sealed class DebugWindow : Window, IDisposable
     private int selectedVisibleCofferRouteStartIndex;
     private bool waitForMagicalElixirReady;
     private string northHornLgbCaptureArea = "BaseCamp";
+    private string northHornRevealCaptureRegion = "BaseCamp";
+    private string northHornRevealCaptureLabel = "P01";
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -305,6 +307,15 @@ public sealed class DebugWindow : Window, IDisposable
         if (ImGui.Button("Capture Nearest North Horn LGB"))
         {
             plugin.CaptureNearestNorthHornLgbDebug(northHornLgbCaptureArea);
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText("Reveal Capture Region", ref northHornRevealCaptureRegion, 64);
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText("Reveal Capture Label", ref northHornRevealCaptureLabel, 64);
+        if (ImGui.Button("Capture North Horn Reveal Candidate"))
+        {
+            plugin.CaptureNorthHornRevealCandidateDebug(northHornRevealCaptureRegion, northHornRevealCaptureLabel);
         }
 
         if (ImGui.Button("Dump Targeted Reveal Coffer"))
@@ -1056,13 +1067,20 @@ public sealed class DebugWindow : Window, IDisposable
     {
         var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
         var now = DateTimeOffset.UtcNow;
-        var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
-        var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
+        var ceDecision = plugin.PotFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
+        var fateDecision = plugin.PotFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
         var departureAt = GetDepartureAt(potCycleSnapshot);
         var timeUntilDeparture = departureAt == DateTimeOffset.MinValue ? (TimeSpan?)null : departureAt - now;
 
         ImGui.TextUnformatted("Pot Control");
-        ImGui.TextUnformatted($"Enabled: {(configuration.EnablePotFarming ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Territory: {FormatValue(snapshot.TerritoryKey)}");
+        ImGui.TextUnformatted($"Enabled: {(configuration.IsPotFarmingEnabled(snapshot.TerritoryKey) ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Treasure Capability: {(snapshot.CanRunPotTreasure ? "Ready" : "Unavailable")}");
+        var maximumKnowledgeLevel = plugin.Scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28;
+        var potAggroCutoff = snapshot.PlayerForayLevel.HasValue
+            ? Math.Clamp(snapshot.PlayerForayLevel.Value + configuration.PotTreasureAggroLevelOffset, 1, maximumKnowledgeLevel)
+            : configuration.PotTreasureFallbackMaximumAggroLevel;
+        ImGui.TextUnformatted($"No-Ninja Aggro Cutoff: {potAggroCutoff} ({(snapshot.PlayerForayLevel.HasValue ? "Knowledge offset" : "fallback")})");
         ImGui.TextUnformatted($"Farm State: {potFarmController.State}");
         ImGui.TextWrapped($"Farm Transition: {potFarmController.LastTransition}");
         ImGui.TextWrapped($"Current Pot: {FormatValue(potFarmController.CurrentPotName)}");

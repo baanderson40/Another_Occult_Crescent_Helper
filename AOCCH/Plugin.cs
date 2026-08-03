@@ -38,6 +38,7 @@ public sealed class Plugin : IDalamudPlugin
     private const uint NorthHornTerritoryId = 1346;
     private const uint NorthHornLgbTreasureLayer = 43366;
     private const float NorthHornLgbCaptureForayScanRadius = 120f;
+    private const float NorthHornRevealCaptureForayScanRadius = 120f;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
@@ -135,7 +136,7 @@ public sealed class Plugin : IDalamudPlugin
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(GameGui, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
-        TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, Scanner, Logger);
+        TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, ObjectTable, Scanner, Logger);
         TreasureSearchController = new TreasureSearchController(Framework, Scanner, MovementController, GameActionController, TreasureHintTracker, DangerousTreasureTravelController, CofferPositionOverrideStore, Configuration, Logger);
         CofferInteractionController = new CofferInteractionController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, CofferPositionOverrideStore, Logger);
         CofferObservationSubmissionService = new CofferObservationSubmissionService(PluginInterface.ConfigDirectory.FullName, Configuration, Logger, typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "unknown");
@@ -625,7 +626,7 @@ public sealed class Plugin : IDalamudPlugin
     private void RunMagicalElixirDebugAttempt()
     {
         const string description = "manual test inventory attempt";
-        var attemptId = TreasureHintTracker.ArmDebugLogMessageCapture(description, TimeSpan.FromSeconds(5));
+        var attemptId = TreasureHintTracker.ArmDebugLogMessageCapture(description, TimeSpan.FromSeconds(5), captureAllMessageIds: true);
         Logger.Info($"[Plugin] op=magical-elixir-attempt-start attempt={attemptId} method=inventory description=\"{description}\"");
         LogMagicalElixirDebugSnapshot("before-inventory");
         var success = GameActionController.TryUseMagicalElixirViaInventory(description);
@@ -987,6 +988,50 @@ public sealed class Plugin : IDalamudPlugin
             $"nearestEntityDistance={(hasThreat ? threat.DistanceToPlayer : -1f):0.000}, " +
             $"nearestEntityDataId={(hasThreat ? threat.BaseId : 0)}, " +
             $"nearestEntityGameObjectId={(hasThreat ? threat.ObjectId : 0)} }},");
+    }
+
+    internal void CaptureNorthHornRevealCandidateDebug(string region, string label)
+    {
+        if (ClientState.TerritoryType != NorthHornTerritoryId)
+        {
+            Logger.Warning($"[North Horn Reveal Capture] capture-failed reason=wrong-territory territory={ClientState.TerritoryType} expected={NorthHornTerritoryId}");
+            ChatGui.Print("North Horn reveal capture requires North Horn.");
+            return;
+        }
+
+        var player = ObjectTable.LocalPlayer;
+        if (player == null)
+        {
+            Logger.Warning("[North Horn Reveal Capture] capture-failed reason=player-unavailable");
+            ChatGui.Print("North Horn reveal capture failed: player unavailable.");
+            return;
+        }
+
+        var trimmedRegion = (region ?? string.Empty).Trim();
+        var trimmedLabel = (label ?? string.Empty).Trim();
+        if (trimmedRegion.Length == 0 || trimmedLabel.Length == 0)
+        {
+            Logger.Warning($"[North Horn Reveal Capture] capture-failed reason=missing-label-or-region region=\"{EscapeLogValue(trimmedRegion)}\" label=\"{EscapeLogValue(trimmedLabel)}\"");
+            ChatGui.Print("North Horn reveal capture requires both a region and label.");
+            return;
+        }
+
+        var playerPosition = player.Position;
+        var hasThreat = Scanner.TryGetNearestForayThreat(playerPosition, NorthHornRevealCaptureForayScanRadius, out var threat);
+        var escapedRegion = EscapeLogValue(trimmedRegion);
+        var escapedLabel = EscapeLogValue(trimmedLabel);
+        var playerPositionText = $"{{x={playerPosition.X:0.000},y={playerPosition.Y:0.000},z={playerPosition.Z:0.000}}}";
+
+        Logger.Info(
+            $"[North Horn Reveal Capture] capture {{ label=\"{escapedLabel}\", region=\"{escapedRegion}\", " +
+            $"territory={ClientState.TerritoryType}, playerPosition={playerPositionText}, " +
+            $"aggroLevel={(hasThreat ? threat.KnowledgeLevel.ToString() : "unknown")}, " +
+            $"nearestEntity=\"{(hasThreat ? EscapeLogValue(threat.Name) : string.Empty)}\", " +
+            $"nearestEntityDistance={(hasThreat ? threat.DistanceToPlayer : -1f):0.000}, " +
+            $"nearestEntityDataId={(hasThreat ? threat.BaseId : 0)}, " +
+            $"nearestEntityGameObjectId={(hasThreat ? threat.ObjectId : 0)}, " +
+            $"timestamp=\"{DateTimeOffset.UtcNow:O}\" }},");
+        ChatGui.Print($"North Horn reveal candidate captured: {trimmedLabel} ({trimmedRegion}).");
     }
 
     private static float CalculateDistance(Vector3 left, Vector3 right)

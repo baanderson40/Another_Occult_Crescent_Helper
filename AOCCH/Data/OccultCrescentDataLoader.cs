@@ -117,6 +117,7 @@ public static class OccultCrescentDataLoader
             AethernetInteractDistanceMin = territory.AethernetInteractDistanceMin,
             AethernetInteractDistanceMax = territory.AethernetInteractDistanceMax,
             MountedTravelSpeed = territory.MountedTravelSpeed,
+            MaximumKnowledgeLevel = territory.MaximumKnowledgeLevel,
             Aethernets = territory.Aethernets,
             CriticalEncounters = territory.CriticalEncounters,
             Fates = territory.Fates,
@@ -388,9 +389,25 @@ public static class OccultCrescentDataLoader
                     errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid zero position");
                 }
 
+                if (candidate.ConfirmedCofferPosition is { } confirmedPosition
+                    && confirmedPosition.X == 0f
+                    && confirmedPosition.Y == 0f
+                    && confirmedPosition.Z == 0f)
+                {
+                    errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid zero confirmed coffer position");
+                }
+
+                ValidateTreasureCandidateAlternates(group, candidate, candidate.CloseAlternateCandidateKeys, "close", errors);
+                ValidateTreasureCandidateAlternates(group, candidate, candidate.ImmediateAlternateCandidateKeys, "immediate", errors);
+
                 if (candidate.AggroLevel < 0 || candidate.HideThresholdDistance < 0)
                 {
                     errors.Add($"treasure candidate key='{candidate.CandidateKey}' has invalid safety values");
+                }
+
+                if (candidate.AggroLevel > territory.MaximumKnowledgeLevel)
+                {
+                    errors.Add($"treasure candidate key='{candidate.CandidateKey}' aggro level exceeds the territory maximum knowledge level");
                 }
 
                 foreach (var waypoint in candidate.ApproachWaypoints)
@@ -405,6 +422,53 @@ public static class OccultCrescentDataLoader
                         errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an invalid approach waypoint arrival distance");
                     }
                 }
+            }
+        }
+    }
+
+    private static void ValidateTreasureCandidateAlternates(
+        TreasureCofferGroupData group,
+        TreasureCofferCandidateData candidate,
+        IReadOnlyList<string> alternateKeys,
+        string relationship,
+        List<string> errors)
+    {
+        foreach (var duplicateKey in alternateKeys
+                     .Where(key => !string.IsNullOrWhiteSpace(key))
+                     .GroupBy(key => key, StringComparer.OrdinalIgnoreCase)
+                     .Where(keys => keys.Count() > 1)
+                     .Select(keys => keys.Key))
+        {
+            errors.Add($"treasure candidate key='{candidate.CandidateKey}' has duplicate {relationship} alternate key='{duplicateKey}'");
+        }
+
+        foreach (var alternateKey in alternateKeys)
+        {
+            if (string.IsNullOrWhiteSpace(alternateKey))
+            {
+                errors.Add($"treasure candidate key='{candidate.CandidateKey}' has an empty {relationship} alternate key");
+                continue;
+            }
+
+            if (string.Equals(candidate.CandidateKey, alternateKey, StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"treasure candidate key='{candidate.CandidateKey}' references itself as a {relationship} alternate");
+                continue;
+            }
+
+            var alternate = group.Candidates.FirstOrDefault(entry => string.Equals(entry.CandidateKey, alternateKey, StringComparison.OrdinalIgnoreCase));
+            if (alternate == null)
+            {
+                errors.Add($"treasure candidate key='{candidate.CandidateKey}' references missing {relationship} alternate key='{alternateKey}'");
+                continue;
+            }
+
+            var reciprocalKeys = relationship == "immediate"
+                ? alternate.ImmediateAlternateCandidateKeys
+                : alternate.CloseAlternateCandidateKeys;
+            if (!reciprocalKeys.Contains(candidate.CandidateKey, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add($"treasure candidate key='{candidate.CandidateKey}' has non-reciprocal {relationship} alternate key='{alternateKey}'");
             }
         }
     }
@@ -443,13 +507,45 @@ public static class OccultCrescentDataLoader
                 .Where(group => group.FateId == potFate.FateId)
                 .Select(group => group.GroupKey)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var requiredGroupKey in RequiredTreasureGroupKeys)
+            var requiredGroupKeys = territory.PotTreasure.SearchStrategy == TreasureSearchStrategy.GeometricCandidates
+                ? RequiredGeometricTreasureGroupKeys
+                : RequiredTreasureGroupKeys;
+            foreach (var requiredGroupKey in requiredGroupKeys)
             {
                 if (!groupKeys.Contains(requiredGroupKey))
                 {
                     errors.Add($"pot FATE {potFate.FateId} is missing treasure group '{requiredGroupKey}'");
                 }
             }
+        }
+
+        if (territory.MaximumKnowledgeLevel <= 0)
+        {
+            errors.Add("pot treasure requires a positive maximum knowledge level");
+        }
+
+        if (!Enum.IsDefined(territory.PotTreasure.SearchStrategy))
+        {
+            errors.Add("pot treasure has an unknown search strategy");
+        }
+
+        if (territory.VisibleCoffers.BaseIds.Count == 0 && territory.VisibleCoffers.LocalizedNames.Count == 0)
+        {
+            errors.Add("pot treasure requires coffer reveal recognition metadata");
+        }
+
+        if (territory.PotTreasure.SearchStrategy == TreasureSearchStrategy.GeometricCandidates
+            && (!float.IsFinite(territory.PotTreasure.GeometricMaximumHintAngleDegrees)
+                || territory.PotTreasure.GeometricMaximumHintAngleDegrees <= 0f
+                || territory.PotTreasure.GeometricMaximumHintAngleDegrees > 180f))
+        {
+            errors.Add("geometric pot treasure requires a maximum hint angle between 0 and 180 degrees");
+        }
+
+        if (territory.PotTreasure.SearchStrategy == TreasureSearchStrategy.GeometricCandidates
+            && territory.VisibleCoffers.PotRevealObjectKinds.Count == 0)
+        {
+            errors.Add("geometric pot treasure requires at least one reveal object kind");
         }
 
         if (territory.PotTreasure.TreasureBuffStatusId == 0)
@@ -481,6 +577,8 @@ public static class OccultCrescentDataLoader
     [
         "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest",
     ];
+
+    private static readonly string[] RequiredGeometricTreasureGroupKeys = ["geometry"];
 
     private static void ValidateVisibleCofferSpots(OccultCrescentTerritoryData territory, List<string> errors)
     {

@@ -22,6 +22,14 @@ public static class CofferRecognition
 
     public static bool TryRecognizePotReveal(VisibleCofferData data, IGameObject gameObject, out string source)
     {
+        var objectKind = gameObject.ObjectKind.ToString();
+        if (data.PotRevealObjectKinds.Count > 0
+            && !data.PotRevealObjectKinds.Any(kind => string.Equals(kind, objectKind, StringComparison.OrdinalIgnoreCase)))
+        {
+            source = string.Empty;
+            return false;
+        }
+
         if (data.BaseIds.Contains(gameObject.BaseId))
         {
             source = "base-id";

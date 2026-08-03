@@ -46,7 +46,7 @@ public enum DangerousTreasureWalkingPhase
     FinalApproach,
 }
 
-public readonly record struct DangerousTreasureTravelOptions(int GearsetNumber, int HideThresholdDistance, int MaximumAggroLevel);
+public readonly record struct DangerousTreasureTravelOptions(int GearsetNumber, int HideThresholdDistance, int MaximumAggroLevel, bool FinalDestinationAlreadyResolved = false);
 
 public sealed class DangerousTreasureTravelController : IDisposable
 {
@@ -86,6 +86,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     private string activeCandidateLabel = string.Empty;
     private string previousCandidateLabel = string.Empty;
     private Vector3 finalDestination;
+    private bool finalDestinationAlreadyResolved;
     private float arrivalTolerance;
     private DateTimeOffset runStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
@@ -269,6 +270,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeCandidateLabel = string.Empty;
             previousCandidateLabel = string.Empty;
             finalDestination = Vector3.Zero;
+            finalDestinationAlreadyResolved = false;
             arrivalTolerance = 0f;
             runStartedAt = DateTimeOffset.MinValue;
             stateEnteredAt = DateTimeOffset.MinValue;
@@ -477,6 +479,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
             activeCandidateLabel = candidate.Label;
             previousCandidateLabel = previousCandidate?.Label ?? string.Empty;
             finalDestination = destination;
+            finalDestinationAlreadyResolved = options.FinalDestinationAlreadyResolved;
             arrivalTolerance = finalArrivalTolerance;
             runStartedAt = DateTimeOffset.UtcNow;
             lastError = string.Empty;
@@ -1317,7 +1320,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         logger.Info($"{BuildLogTag()} op=direct-travel-resume candidate={activeCandidateLabel} reason={reason} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} destination={FormatVector(finalDestination)} exitRange={activeKnowledgeThreatPolicy?.ExitDistance:0.0}");
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true))
+        if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true, destinationAlreadyResolved: finalDestinationAlreadyResolved))
         {
             SkipCandidate(movementController.LastError.Length == 0
                 ? $"Failed to resume direct travel after the knowledge threat cleared for {activeCandidateLabel}."
@@ -1707,7 +1710,8 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         movementController.SetLogOwner(currentRunId);
         logger.Info($"{BuildLogTag()} op=approach-move-start candidate={activeCandidateLabel} phase={phase} destination={FormatVector(destination)} arrivalTolerance={destinationArrivalTolerance:0.0} allowMount={allowMount} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} reason={reason}");
-        if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount))
+        var destinationAlreadyResolved = finalDestinationAlreadyResolved && phase == DangerousTreasureWalkingPhase.FinalApproach;
+        if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount, destinationAlreadyResolved: destinationAlreadyResolved))
         {
             SkipCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start movement for dangerous treasure candidate {activeCandidateLabel}."

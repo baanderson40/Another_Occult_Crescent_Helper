@@ -41,6 +41,7 @@ public sealed class TreasureSearchController : IDisposable
     private const float MaximumTrustedAttributionDistance = 25f;
     private const float CandidateHandoffRadius = 25f;
     private const float CandidateHandoffAdvantage = 10f;
+    private const float ConfiguredAlternateMaximumHintAngleDegrees = 50f;
     private const float MappedPointRetryArrivalTolerance = 4.5f;
     private const float LocalMoveSkipDistance = 3f;
     private const float PotRevealCofferScanRadius = 28f;
@@ -77,6 +78,7 @@ public sealed class TreasureSearchController : IDisposable
     private readonly object gate = new();
     private readonly HashSet<string> handledCandidateLabels = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TreasureCofferCandidateData> orderedCandidates = [];
+    private readonly List<TreasureHintObservation> geometricObservations = [];
     private TreasureSearchState state = TreasureSearchState.Idle;
     private TreasureSearchRunResult lastResult;
     private string currentSearchRunId = string.Empty;
@@ -111,6 +113,8 @@ public sealed class TreasureSearchController : IDisposable
     private int refinementMoveRecoveryAttemptCount;
     private bool refinementCandidateLocked;
     private bool mappedPointRetryUsed;
+    private bool confirmedCofferVerificationUsed;
+    private bool confirmedCofferVerificationMovePending;
     private VisibleCofferMatch? activeVisibleCofferMatch;
     private TreasureCandidateKey? activeCandidateKey;
     private bool activeCandidateUsesOverride;
@@ -333,8 +337,11 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        // Item 12 starts from the first parsed hint; later revisions may hand off.
-        var groupKey = GetGroupKey(hintSnapshot.InitialHintEvent?.Direction ?? TreasureDirection.Unknown);
+        var searchStrategy = scanner.ActiveTerritoryData?.PotTreasure.SearchStrategy ?? TreasureSearchStrategy.DirectionGroups;
+        var initialHint = hintSnapshot.InitialHintEvent;
+        var groupKey = searchStrategy == TreasureSearchStrategy.GeometricCandidates
+            ? "geometry"
+            : GetGroupKey(initialHint?.Direction ?? TreasureDirection.Unknown);
         if (groupKey.Length == 0)
         {
             SetFailure("Treasure search could not map the current treasure hint to a coffer group.");
@@ -347,8 +354,34 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
+        lock (gate)
+        {
+            handledCandidateLabels.Clear();
+            orderedCandidates.Clear();
+            geometricObservations.Clear();
+        }
+
         activeFateName = fateName;
-        var runOrderedCandidates = BuildOrderedCandidates(group, originCenter);
+        var initialObservationPosition = initialHint != null && initialHint.ObservationPosition != Vector3.Zero
+            ? initialHint.ObservationPosition
+            : originCenter;
+        var initialObservations = new List<TreasureHintObservation>();
+        if (searchStrategy == TreasureSearchStrategy.GeometricCandidates && initialHint != null)
+        {
+            initialObservations.Add(new TreasureHintObservation(initialObservationPosition, initialHint.Direction));
+            if (hintSnapshot.LastHintEvent is { } lastHint && lastHint.Revision != initialHint.Revision)
+            {
+                var lastObservationPosition = lastHint.ObservationPosition != Vector3.Zero
+                    ? lastHint.ObservationPosition
+                    : initialObservationPosition;
+                initialObservations.Add(new TreasureHintObservation(lastObservationPosition, lastHint.Direction));
+            }
+        }
+
+        var rankingOrigin = initialObservations.Count > 0 ? initialObservations[^1].Position : initialObservationPosition;
+        var runOrderedCandidates = searchStrategy == TreasureSearchStrategy.GeometricCandidates
+            ? BuildGeometricCandidates(group, initialObservations, rankingOrigin)
+            : BuildOrderedCandidates(group, originCenter);
         if (runOrderedCandidates.Count == 0)
         {
             SetFailure($"Treasure search has no eligible coffer candidates for fate {fateId} group {groupKey}.");
@@ -364,6 +397,8 @@ public sealed class TreasureSearchController : IDisposable
             handledCandidateLabels.Clear();
             orderedCandidates.Clear();
             orderedCandidates.AddRange(runOrderedCandidates);
+            geometricObservations.Clear();
+            geometricObservations.AddRange(initialObservations);
             currentCandidateIndex = 0;
             activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = hintSnapshot.Revision;
@@ -429,6 +464,7 @@ public sealed class TreasureSearchController : IDisposable
             lastHandoffReason = string.Empty;
             handledCandidateLabels.Clear();
             orderedCandidates.Clear();
+            geometricObservations.Clear();
             traversalOriginCenter = Vector3.Zero;
             ClearCandidateTravelProgressTracking();
             candidateArrivedAt = DateTimeOffset.MinValue;
@@ -448,6 +484,8 @@ public sealed class TreasureSearchController : IDisposable
             refinementMoveRecoveryAttemptCount = 0;
             refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
@@ -723,6 +761,14 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
+        if (!configuration.UseNinjaForDangerousArea
+            && TryGetCurrentCandidate(out var probeCandidate)
+            && IsAbovePotTreasureAggroLimit(probeCandidate))
+        {
+            AdvanceCandidate($"Skipping treasure probe at candidate {probeCandidate.Label} because aggro level {probeCandidate.AggroLevel} exceeds the current no-Ninja cutoff {GetPotTreasureAggroLimit()} ({GetPotTreasureAggroLimitSource()}).");
+            return;
+        }
+
         if (candidateProbeBaselineSessionId != 0
             && treasureHintTracker.TryGetLatestEventSince(candidateProbeBaselineSessionId, candidateProbeBaselineRevision, out var latestEvent)
             && latestEvent != null)
@@ -738,7 +784,18 @@ public sealed class TreasureSearchController : IDisposable
                 case TreasureHintKind.Hint:
                     if (IsLocalTreasureDistance(latestEvent.DistanceBucket))
                     {
+                        if (TryGetCurrentCandidate(out var currentProbeCandidate)
+                            && TryBeginConfirmedCofferVerification(currentProbeCandidate, latestEvent))
+                        {
+                            return;
+                        }
+
                         BeginCandidateRefinement(latestEvent);
+                        return;
+                    }
+
+                    if (IsGeometricSearch() && TryReplanGeometricCandidates(latestEvent, $"Non-local probe at {activeCandidateKey?.Label}"))
+                    {
                         return;
                     }
 
@@ -853,7 +910,6 @@ public sealed class TreasureSearchController : IDisposable
                 refinementProbeBaselineSessionId = treasureHintTracker.Snapshot.SessionId;
                 refinementProbeBaselineRevision = Math.Max(refinementProbeBaselineRevision, refinementLatestEvent.Revision);
                 refinementProbeDeadlineAt = DateTimeOffset.MinValue;
-                refinementMoveRecoveryAttemptCount = 0;
             }
         }
 
@@ -896,6 +952,12 @@ public sealed class TreasureSearchController : IDisposable
             {
                 logger.Info($"{BuildLogTag()} op=refine-probe-empty candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementProbeAttemptCount} action=retry-current-position");
 
+                if (refinementProbeAttemptCount >= MaximumCandidateRefinementSteps)
+                {
+                    AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} produced no usable event after {refinementProbeAttemptCount} refinement probe attempt(s); trying the next candidate.");
+                    return;
+                }
+
                 if (TryBeginNearbyRevealFallback("refine-timeout-fallback"))
                 {
                     return;
@@ -936,8 +998,22 @@ public sealed class TreasureSearchController : IDisposable
 
         if (!IsLocalTreasureDistance(refinementEvent.DistanceBucket))
         {
+            if (IsGeometricSearch() && TryReplanGeometricCandidates(refinementEvent, $"Non-local refinement at {activeCandidateKey?.Label}"))
+            {
+                return;
+            }
+
             AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} returned a non-local hint ({refinementEvent.DistanceBucket} {refinementEvent.Direction}) during refinement; trying the next candidate.");
             return;
+        }
+
+        if (confirmedCofferVerificationUsed)
+        {
+            confirmedCofferVerificationUsed = false;
+            if (TrySwitchToConfiguredAlternate(activeCandidate, refinementEvent))
+            {
+                return;
+            }
         }
 
         var candidatePosition = ActiveCandidateResolvedPosition != Vector3.Zero
@@ -965,6 +1041,8 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
+        refinementStepIndex++;
+
         var moveStep = GetRefinementStepSize(refinementEvent.DistanceBucket);
         var movePlan = ResolveRefinementMove(playerPosition, refinementEvent.Direction, moveStep);
         if (movePlan == null)
@@ -991,7 +1069,6 @@ public sealed class TreasureSearchController : IDisposable
             return;
         }
 
-        refinementStepIndex++;
         logger.Info($"{BuildLogTag()} op=refine-move candidate={activeCandidateKey?.Label ?? "none"} stepIndex={refinementStepIndex}/{MaximumCandidateRefinementSteps} distance={refinementEvent.DistanceBucket} direction={refinementEvent.Direction} resolvedDirection={movePlan.Direction} raw=<{movePlan.RawTarget.X:0.0}, {movePlan.RawTarget.Y:0.0}, {movePlan.RawTarget.Z:0.0}> resolved=<{target.X:0.0}, {target.Y:0.0}, {target.Z:0.0}> snapMethod={movePlan.SnapMethod} snapRadius={movePlan.SnapRadius:0} actualTarget={targetDistance:0.0}y");
         if (!TryStartRefinementMove(activeCandidate, target, Math.Max(2.5f, 8f / 2f), $"Treasure candidate {activeCandidate.Label} local refinement {refinementStepIndex}/{MaximumCandidateRefinementSteps}", targetAlreadyResolved: true))
         {
@@ -1007,6 +1084,17 @@ public sealed class TreasureSearchController : IDisposable
         if (!hintSnapshot.HasActiveSession || !hintSnapshot.HasInitialHint || hintSnapshot.Revision <= consumedHintRevision)
         {
             return false;
+        }
+
+        if (IsGeometricSearch())
+        {
+            var geometricHint = hintSnapshot.LastHintEvent ?? hintSnapshot.InitialHintEvent;
+            if (geometricHint == null)
+            {
+                return false;
+            }
+
+            return TryReplanGeometricCandidates(geometricHint, $"Hint revision {hintSnapshot.Revision} received during candidate travel");
         }
 
         var groupKey = GetGroupKey(hintSnapshot.LastHintEvent?.Direction ?? hintSnapshot.InitialHintEvent?.Direction ?? TreasureDirection.Unknown);
@@ -1090,6 +1178,8 @@ public sealed class TreasureSearchController : IDisposable
             refinementMoveRecoveryAttemptCount = 0;
             refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
             activeVisibleCofferMatch = null;
             activeCandidateKey = null;
             activeCandidateUsesOverride = false;
@@ -1097,6 +1187,89 @@ public sealed class TreasureSearchController : IDisposable
             revealedCofferLatched = false;
         }
 
+        logger.ResetThrottle("treasure-search-travel");
+        return BeginCurrentCandidate(lastHandoffReason);
+    }
+
+    private bool TryReplanGeometricCandidates(TreasureHintEvent hintEvent, string reason)
+    {
+        if (hintEvent.Direction == TreasureDirection.Unknown
+            || !TryGetGroup(activeFateId, "geometry", out var group))
+        {
+            lock (gate)
+            {
+                consumedHintRevision = Math.Max(consumedHintRevision, hintEvent.Revision);
+            }
+
+            return false;
+        }
+
+        var observationPosition = hintEvent.ObservationPosition != Vector3.Zero
+            ? hintEvent.ObservationPosition
+            : Plugin.ObjectTable.LocalPlayer?.Position ?? traversalOriginCenter;
+        var observations = geometricObservations.ToList();
+        if (!observations.Any(observation => observation.Position == observationPosition && observation.Direction == hintEvent.Direction))
+        {
+            observations.Add(new TreasureHintObservation(observationPosition, hintEvent.Direction));
+        }
+
+        var runOrderedCandidates = BuildGeometricCandidates(group, observations, observationPosition);
+        if (runOrderedCandidates.Count == 0)
+        {
+            if (dangerousTreasureTravelController.IsRunning)
+            {
+                dangerousTreasureTravelController.Stop("Geometric treasure search has no consistent candidates.");
+            }
+
+            movementController.Stop("Geometric treasure search has no consistent candidates.");
+            SetFailure($"Geometric treasure search has no candidates consistent with hint revision {hintEvent.Revision}.");
+            return true;
+        }
+
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            dangerousTreasureTravelController.Stop("Geometric treasure hint replan.");
+        }
+
+        movementController.Stop("Geometric treasure hint replan.");
+        lock (gate)
+        {
+            geometricObservations.Clear();
+            geometricObservations.AddRange(observations);
+            orderedCandidates.Clear();
+            orderedCandidates.AddRange(runOrderedCandidates);
+            currentCandidateIndex = 0;
+            activeCandidateApproachWaypointIndex = -1;
+            consumedHintRevision = Math.Max(consumedHintRevision, hintEvent.Revision);
+            lastHandoffReason = $"{reason}; geometrically ranked {runOrderedCandidates.Count} remaining candidate(s).";
+            ClearCandidateTravelProgressTracking();
+            candidateArrivedAt = DateTimeOffset.MinValue;
+            candidateProbeDeadlineAt = DateTimeOffset.MinValue;
+            candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
+            candidateProbeAttemptCount = 0;
+            candidateProbeBaselineSessionId = 0;
+            candidateProbeBaselineRevision = 0;
+            refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
+            refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+            refinementStepIndex = 0;
+            refinementMoveRecoveryAttemptCount = 0;
+            refinementCandidateLocked = false;
+            mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
+            activeVisibleCofferMatch = null;
+            activeCandidateKey = null;
+            activeCandidateUsesOverride = false;
+            activeCandidateResolvedPosition = Vector3.Zero;
+            revealedCofferLatched = false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=geometric-replan revision={hintEvent.Revision} direction={hintEvent.Direction} observation=<{observationPosition.X:0.0}, {observationPosition.Y:0.0}, {observationPosition.Z:0.0}> observations={observations.Count} candidates={runOrderedCandidates.Count}");
         logger.ResetThrottle("treasure-search-travel");
         return BeginCurrentCandidate(lastHandoffReason);
     }
@@ -1420,6 +1593,8 @@ public sealed class TreasureSearchController : IDisposable
             refinementMoveRecoveryAttemptCount = 0;
             refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
             activeVisibleCofferMatch = null;
             activeCandidateUsesOverride = false;
             activeCandidateResolvedPosition = Vector3.Zero;
@@ -1442,7 +1617,9 @@ public sealed class TreasureSearchController : IDisposable
 
         var candidateKey = ToCandidateKey(candidate);
         var canonicalPosition = candidate.Position.ToVector3();
-        var usedOverride = cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition);
+        var exactCandidatePosition = IsGeometricSearch();
+        var overridePosition = Vector3.Zero;
+        var usedOverride = !exactCandidatePosition && cofferPositionOverrideStore.TryResolvePosition(candidateKey, out overridePosition);
         var targetPosition = usedOverride ? overridePosition : canonicalPosition;
         ForayThreatEntity? threat = null;
         var hideAtOrAbove = 0;
@@ -1450,9 +1627,11 @@ public sealed class TreasureSearchController : IDisposable
             && TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out threat, out hideAtOrAbove);
         var isDangerousCandidate = configuration.UseNinjaForDangerousArea
             ? !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)
-            : IsAggroDangerousCandidate(candidate);
+            : IsAbovePotTreasureAggroLimit(candidate);
         var requiresDangerousTravel = isDangerousCandidate || hasKnowledgeThreat;
-        var destination = movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        var destination = exactCandidatePosition
+            ? targetPosition
+            : movementController.FindNearestNavigablePoint(targetPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             var navFailureReason = $"Treasure candidate {candidate.Label} has no reliable vnavmesh point near <{targetPosition.X:0.0}, {targetPosition.Y:0.0}, {targetPosition.Z:0.0}>.";
@@ -1475,7 +1654,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
         }
-        else if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat))
+        else if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat, exactCandidatePosition))
         {
             return false;
         }
@@ -1510,6 +1689,8 @@ public sealed class TreasureSearchController : IDisposable
             refinementMoveRecoveryAttemptCount = 0;
             refinementCandidateLocked = false;
             mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
             activeVisibleCofferMatch = null;
             activeCandidateUsesOverride = usedOverride;
             activeCandidateResolvedPosition = targetPosition;
@@ -1531,7 +1712,8 @@ public sealed class TreasureSearchController : IDisposable
         => new(
             configuration.PotKnowledgeHideOffset,
             configuration.KnowledgeThreatEnterDistance,
-            configuration.KnowledgeThreatExitDistance);
+            configuration.KnowledgeThreatExitDistance,
+            scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28);
 
     private bool TryGetPotKnowledgeThreat(float radius, out ForayThreatEntity? threat, out int hideAtOrAbove)
         => KnowledgeThreatEvaluator.TryFindThreat(scanner.Snapshot, GetPotKnowledgeThreatPolicy(), radius, out threat, out hideAtOrAbove);
@@ -1547,7 +1729,10 @@ public sealed class TreasureSearchController : IDisposable
             return false;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        var exactCandidatePosition = IsGeometricSearch();
+        var destination = exactCandidatePosition
+            ? activeCandidateResolvedPosition
+            : movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             SetFailure($"Treasure candidate {candidate.Label} has no reliable vnavmesh point while responding to a live knowledge threat.");
@@ -1556,7 +1741,7 @@ public sealed class TreasureSearchController : IDisposable
 
         movementController.Stop("Live knowledge threat entered the pot treasure Hide range.");
         logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=pot-reveal candidate={candidate.Label} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.PotKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
-        if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(), GetPotKnowledgeThreatPolicy()))
+        if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(exactCandidatePosition), GetPotKnowledgeThreatPolicy()))
         {
             SetFailure(dangerousTreasureTravelController.LastError.Length == 0
                 ? $"Failed to start Ninja/Hide travel after detecting a live knowledge threat for {candidate.Label}."
@@ -1620,15 +1805,18 @@ public sealed class TreasureSearchController : IDisposable
             && TryGetPotKnowledgeThreat(configuration.KnowledgeThreatEnterDistance, out _, out _);
         var requiresDangerousTravel = configuration.UseNinjaForDangerousArea
             ? (!scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(candidate)) || hasKnowledgeThreat
-            : IsAggroDangerousCandidate(candidate);
-        var destination = movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+            : IsAbovePotTreasureAggroLimit(candidate);
+        var exactCandidatePosition = IsGeometricSearch();
+        var destination = exactCandidatePosition
+            ? activeCandidateResolvedPosition
+            : movementController.FindNearestNavigablePoint(activeCandidateResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             SetFailure($"Treasure candidate {candidate.Label} has no reliable vnavmesh point near <{activeCandidateResolvedPosition.X:0.0}, {activeCandidateResolvedPosition.Y:0.0}, {activeCandidateResolvedPosition.Z:0.0}> after its approach waypoint.");
             return true;
         }
 
-        if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat))
+        if (!TryStartFinalCandidateTravel(candidate, destination.Value, requiresDangerousTravel, hasKnowledgeThreat, exactCandidatePosition))
         {
             return true;
         }
@@ -1637,7 +1825,7 @@ public sealed class TreasureSearchController : IDisposable
         return true;
     }
 
-    private bool TryStartFinalCandidateTravel(TreasureCofferCandidateData candidate, Vector3 destination, bool requiresDangerousTravel, bool hasKnowledgeThreat)
+    private bool TryStartFinalCandidateTravel(TreasureCofferCandidateData candidate, Vector3 destination, bool requiresDangerousTravel, bool hasKnowledgeThreat, bool destinationAlreadyResolved)
     {
         candidateTravelTarget = destination;
         if (requiresDangerousTravel)
@@ -1649,7 +1837,7 @@ public sealed class TreasureSearchController : IDisposable
             }
 
             KnowledgeThreatPolicy? knowledgeThreatPolicy = hasKnowledgeThreat ? GetPotKnowledgeThreatPolicy() : null;
-            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination, CandidateArrivalTolerance, GetDangerousTravelOptions(), knowledgeThreatPolicy))
+            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), candidate, destination, CandidateArrivalTolerance, GetDangerousTravelOptions(destinationAlreadyResolved), knowledgeThreatPolicy))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1666,7 +1854,7 @@ public sealed class TreasureSearchController : IDisposable
             return true;
         }
 
-        if (movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance))
+        if (movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance, destinationAlreadyResolved: destinationAlreadyResolved))
         {
             return true;
         }
@@ -1679,6 +1867,11 @@ public sealed class TreasureSearchController : IDisposable
 
     private Vector3 ResolveCandidatePosition(TreasureCofferCandidateData candidate)
     {
+        if (IsGeometricSearch())
+        {
+            return candidate.Position.ToVector3();
+        }
+
         var candidateKey = ToCandidateKey(candidate);
         return cofferPositionOverrideStore.TryResolvePosition(candidateKey, out var overridePosition)
             ? overridePosition
@@ -1847,12 +2040,149 @@ public sealed class TreasureSearchController : IDisposable
         TransitionTo(TreasureSearchState.RefiningCandidate, $"Treasure candidate {activeCandidateKey?.Label} produced a local hint ({latestEvent.DistanceBucket} {latestEvent.Direction}); starting local refinement.");
     }
 
+    private bool TryBeginConfirmedCofferVerification(TreasureCofferCandidateData candidate, TreasureHintEvent hintEvent)
+    {
+        var alternateKeys = GetConfiguredAlternateKeys(candidate, hintEvent.DistanceBucket);
+        if (alternateKeys.Count == 0 || candidate.ConfirmedCofferPosition is not { } confirmedCofferPosition)
+        {
+            return false;
+        }
+
+        var confirmedPosition = confirmedCofferPosition.ToVector3();
+        var destination = movementController.FindNearestNavigablePoint(confirmedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        if (!destination.HasValue)
+        {
+            logger.Info($"{BuildLogTag()} op=confirmed-coffer-verify-declined candidate={candidate.Label} distance={hintEvent.DistanceBucket} reason=no-navigable-confirmed-position action=normal-refinement");
+            return false;
+        }
+
+        var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position ?? destination.Value;
+        var targetDistance = CalculateFlatDistance(playerPosition, destination.Value);
+        lock (gate)
+        {
+            refinementEvent = null;
+            refinementProbeDeadlineAt = DateTimeOffset.MinValue;
+            refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
+            refinementProbeAttemptCount = 0;
+            refinementProbeBaselineSessionId = 0;
+            refinementProbeBaselineRevision = 0;
+            refinementMoveDeadlineAt = DateTimeOffset.MinValue;
+            refinementStepIndex = 0;
+            refinementMoveRecoveryAttemptCount = 0;
+            refinementCandidateLocked = true;
+            mappedPointRetryUsed = true;
+            confirmedCofferVerificationUsed = targetDistance <= LocalMoveSkipDistance;
+            confirmedCofferVerificationMovePending = targetDistance > LocalMoveSkipDistance;
+            candidateProbeDeadlineAt = DateTimeOffset.MinValue;
+            candidateProbeLastAttemptAt = DateTimeOffset.MinValue;
+        }
+
+        logger.Info($"{BuildLogTag()} op=confirmed-coffer-verify candidate={candidate.Label} sourceDistance={hintEvent.DistanceBucket} confirmed=<{confirmedPosition.X:0.0}, {confirmedPosition.Y:0.0}, {confirmedPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> travelDistance={targetDistance:0.0}y alternates=[{string.Join(", ", alternateKeys)}]");
+        TransitionTo(TreasureSearchState.RefiningCandidate, $"Treasure candidate {candidate.Label} produced {hintEvent.DistanceBucket}; verifying its confirmed coffer position before considering configured alternates.");
+
+        if (targetDistance <= LocalMoveSkipDistance)
+        {
+            return true;
+        }
+
+        TryStartRefinementMove(
+            candidate,
+            destination.Value,
+            Math.Max(2.5f, LocalMoveSkipDistance),
+            $"Treasure candidate {candidate.Label} confirmed coffer verification",
+            targetAlreadyResolved: true);
+        return true;
+    }
+
+    private bool TrySwitchToConfiguredAlternate(TreasureCofferCandidateData currentCandidate, TreasureHintEvent hintEvent)
+    {
+        var alternateKeys = GetConfiguredAlternateKeys(currentCandidate, hintEvent.DistanceBucket);
+        if (alternateKeys.Count == 0
+            || hintEvent.Direction == TreasureDirection.Unknown
+            || !TryGetGroup(activeFateId, currentCandidate.GroupKey, out var group))
+        {
+            return false;
+        }
+
+        var alternatives = group.Candidates
+            .Where(candidate => alternateKeys.Contains(candidate.CandidateKey, StringComparer.OrdinalIgnoreCase))
+            .Where(candidate => !IsHandledCandidate(candidate.Label))
+            .Where(candidate => configuration.UseNinjaForDangerousArea || !IsAbovePotTreasureAggroLimit(candidate))
+            .ToArray();
+        if (alternatives.Length == 0)
+        {
+            logger.Info($"{BuildLogTag()} op=configured-alternate-declined candidate={currentCandidate.Label} distance={hintEvent.DistanceBucket} reason=no-unhandled-eligible-alternate action=normal-refinement");
+            return false;
+        }
+
+        var observationPosition = hintEvent.ObservationPosition != Vector3.Zero
+            ? hintEvent.ObservationPosition
+            : Plugin.ObjectTable.LocalPlayer?.Position ?? currentCandidate.ConfirmedCofferPosition?.ToVector3() ?? currentCandidate.Position.ToVector3();
+        var rankedAlternatives = GeometricTreasureCandidatePlanner.Rank(
+            alternatives,
+            [new TreasureHintObservation(observationPosition, hintEvent.Direction)],
+            handledCandidateLabels,
+            observationPosition,
+            ConfiguredAlternateMaximumHintAngleDegrees);
+        if (rankedAlternatives.Count == 0)
+        {
+            logger.Info($"{BuildLogTag()} op=configured-alternate-declined candidate={currentCandidate.Label} distance={hintEvent.DistanceBucket} direction={hintEvent.Direction} reason=no-directionally-consistent-alternate action=normal-refinement");
+            return false;
+        }
+
+        var alternate = rankedAlternatives[0];
+        lock (gate)
+        {
+            var priorCurrentIndex = currentCandidateIndex;
+            var alternateIndex = orderedCandidates.FindIndex(candidate => string.Equals(candidate.CandidateKey, alternate.CandidateKey, StringComparison.OrdinalIgnoreCase));
+            if (alternateIndex >= 0)
+            {
+                orderedCandidates.RemoveAt(alternateIndex);
+                if (alternateIndex < priorCurrentIndex)
+                {
+                    priorCurrentIndex--;
+                }
+            }
+
+            alternateIndex = Math.Min(priorCurrentIndex + 1, orderedCandidates.Count);
+            orderedCandidates.Insert(alternateIndex, alternate);
+            currentCandidateIndex = alternateIndex;
+            activeCandidateApproachWaypointIndex = -1;
+            lastHandoffReason = $"Verified {hintEvent.DistanceBucket} handoff from {currentCandidate.Label} to configured alternate {alternate.Label}.";
+        }
+
+        if (dangerousTreasureTravelController.IsRunning)
+        {
+            dangerousTreasureTravelController.Stop($"Configured treasure alternate handoff to {alternate.Label}.");
+        }
+
+        if (movementController.IsPathBusy)
+        {
+            movementController.Stop($"Configured treasure alternate handoff to {alternate.Label}.");
+        }
+
+        logger.Info($"{BuildLogTag()} op=configured-alternate fromCandidate={currentCandidate.Label} toCandidate={alternate.Label} distance={hintEvent.DistanceBucket} direction={hintEvent.Direction} observation=<{observationPosition.X:0.0}, {observationPosition.Y:0.0}, {observationPosition.Z:0.0}> action=travel-alternate");
+        return BeginCurrentCandidate(lastHandoffReason);
+    }
+
+    private static IReadOnlyList<string> GetConfiguredAlternateKeys(TreasureCofferCandidateData candidate, string distanceBucket)
+        => IsImmediateTreasureDistance(distanceBucket)
+            ? candidate.ImmediateAlternateCandidateKeys
+            : string.Equals(distanceBucket, "close", StringComparison.Ordinal)
+                ? candidate.CloseAlternateCandidateKeys
+                : [];
+
     private bool TickRefinementMovement(TreasureCofferCandidateData activeCandidate)
     {
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
                 dangerousTreasureTravelController.AcknowledgeTerminalState();
+                if (confirmedCofferVerificationMovePending)
+                {
+                    confirmedCofferVerificationMovePending = false;
+                    confirmedCofferVerificationUsed = true;
+                }
                 var dangerousHandoffResult = TryApplyRefinementCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "dangerous refinement arrival");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 refinementMoveRecoveryAttemptCount = 0;
@@ -1901,6 +2231,11 @@ public sealed class TreasureSearchController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Reached local treasure refinement target.");
+                if (confirmedCofferVerificationMovePending)
+                {
+                    confirmedCofferVerificationMovePending = false;
+                    confirmedCofferVerificationUsed = true;
+                }
                 var handoffResult = TryApplyRefinementCandidateHandoff(Plugin.ObjectTable.LocalPlayer?.Position ?? activeCandidateResolvedPosition, "local refinement arrival");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 refinementMoveRecoveryAttemptCount = 0;
@@ -1936,7 +2271,9 @@ public sealed class TreasureSearchController : IDisposable
 
         var resolvedDestination = destination.Value;
 
-        var isDangerousCandidate = IsDangerousCandidate(activeCandidate);
+        var isDangerousCandidate = configuration.UseNinjaForDangerousArea
+            ? (IsGeometricSearch() ? IsStaticDangerousCandidate(activeCandidate) : IsDangerousCandidate(activeCandidate))
+            : IsAbovePotTreasureAggroLimit(activeCandidate);
         if (isDangerousCandidate)
         {
             if (!configuration.UseNinjaForDangerousArea)
@@ -1945,7 +2282,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
 
-            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), activeCandidate, resolvedDestination, arrivalTolerance, GetDangerousTravelOptions()))
+            if (!dangerousTreasureTravelController.Start("TreasureSearch", GetTraversalPreviousCandidate(CurrentCandidateIndex), activeCandidate, resolvedDestination, arrivalTolerance, GetDangerousTravelOptions(targetAlreadyResolved)))
             {
                 if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
                 {
@@ -1987,6 +2324,8 @@ public sealed class TreasureSearchController : IDisposable
         refinementProbeDeadlineAt = DateTimeOffset.MinValue;
         refinementProbeLastAttemptAt = DateTimeOffset.MinValue;
         refinementProbeAttemptCount = 0;
+        confirmedCofferVerificationUsed = false;
+        confirmedCofferVerificationMovePending = false;
         logger.Info($"{BuildLogTag()} op=refine-move-recover candidate={activeCandidateKey?.Label ?? "none"} attempt={refinementMoveRecoveryAttemptCount}/{MaximumRefinementMoveRecoveryAttempts} reason={failureReason} action=probe-current-position");
         logger.ResetThrottle("treasure-search-refine");
         logger.ResetThrottle("treasure-search-refine-probe");
@@ -2027,7 +2366,7 @@ public sealed class TreasureSearchController : IDisposable
                 continue;
             }
 
-            if (IsAggroDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
+            if (!configuration.UseNinjaForDangerousArea && IsAbovePotTreasureAggroLimit(candidate))
             {
                 continue;
             }
@@ -2047,9 +2386,11 @@ public sealed class TreasureSearchController : IDisposable
         var handoffCandidate = orderedCandidates[bestIndex];
         var handoffIsDangerous = configuration.UseNinjaForDangerousArea
             ? !scanner.Snapshot.PlayerForayLevel.HasValue && IsDangerousCandidate(handoffCandidate)
-            : IsAggroDangerousCandidate(handoffCandidate);
+            : IsAbovePotTreasureAggroLimit(handoffCandidate);
         var handoffKey = ToCandidateKey(handoffCandidate);
-        var usedOverride = cofferPositionOverrideStore.TryResolvePosition(handoffKey, out var overridePosition);
+        var exactCandidatePosition = IsGeometricSearch();
+        var overridePosition = Vector3.Zero;
+        var usedOverride = !exactCandidatePosition && cofferPositionOverrideStore.TryResolvePosition(handoffKey, out overridePosition);
         var handoffResolvedPosition = usedOverride ? overridePosition : handoffCandidate.Position.ToVector3();
         lock (gate)
         {
@@ -2062,6 +2403,8 @@ public sealed class TreasureSearchController : IDisposable
             activeCandidateUsesOverride = usedOverride;
             activeCandidateResolvedPosition = handoffResolvedPosition;
             mappedPointRetryUsed = false;
+            confirmedCofferVerificationUsed = false;
+            confirmedCofferVerificationMovePending = false;
             lastHandoffReason = $"Handoff from {currentCandidate.Label} to {handoffCandidate.Label} using {reason}.";
             activeCandidateProbeOperationId = string.Empty;
             activeRefinementProbeOperationId = string.Empty;
@@ -2089,14 +2432,16 @@ public sealed class TreasureSearchController : IDisposable
             return CandidateHandoffResult.Updated;
         }
 
-        var destination = movementController.FindNearestNavigablePoint(handoffResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
+        var destination = exactCandidatePosition
+            ? handoffResolvedPosition
+            : movementController.FindNearestNavigablePoint(handoffResolvedPosition, halfExtentXZ: 5f, halfExtentY: 5f);
         if (!destination.HasValue)
         {
             AdvanceCandidate($"Treasure candidate {handoffCandidate.Label} handoff target has no reliable vnavmesh point near <{handoffResolvedPosition.X:0.0}, {handoffResolvedPosition.Y:0.0}, {handoffResolvedPosition.Z:0.0}>.");
             return CandidateHandoffResult.DangerousTransitionStarted;
         }
 
-        if (!dangerousTreasureTravelController.Start("TreasureSearch", currentCandidate, handoffCandidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions()))
+        if (!dangerousTreasureTravelController.Start("TreasureSearch", currentCandidate, handoffCandidate, destination.Value, CandidateArrivalTolerance, GetDangerousTravelOptions(exactCandidatePosition)))
         {
             if (dangerousTreasureTravelController.LastResult == DangerousTreasureTravelResult.CandidateSkipped)
             {
@@ -2134,11 +2479,16 @@ public sealed class TreasureSearchController : IDisposable
     {
         var safeCandidates = new List<TreasureCofferCandidateData>();
         var dangerousCandidates = new List<TreasureCofferCandidateData>();
+        if (!configuration.UseNinjaForDangerousArea)
+        {
+            logger.Info($"{BuildLogTag()} op=candidate-eligibility cutoff={GetPotTreasureAggroLimit()} source={GetPotTreasureAggroLimitSource()} knowledge={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.PotTreasureAggroLevelOffset} fallback={configuration.PotTreasureFallbackMaximumAggroLevel}");
+        }
 
         foreach (var candidate in group.Candidates)
         {
-            if (IsAggroDangerousCandidate(candidate) && !configuration.UseNinjaForDangerousArea)
+            if (!configuration.UseNinjaForDangerousArea && IsAbovePotTreasureAggroLimit(candidate))
             {
+                logger.Info($"{BuildLogTag()} op=candidate-ineligible candidate={candidate.Label} candidateAggro={candidate.AggroLevel} cutoff={GetPotTreasureAggroLimit()} source={GetPotTreasureAggroLimitSource()} reason=no-ninja-aggro-cutoff");
                 continue;
             }
 
@@ -2171,6 +2521,59 @@ public sealed class TreasureSearchController : IDisposable
         return finalOrder;
     }
 
+    private List<TreasureCofferCandidateData> BuildGeometricCandidates(
+        TreasureCofferGroupData group,
+        IReadOnlyList<TreasureHintObservation> observations,
+        Vector3 currentPosition)
+    {
+        var eligibleCandidates = group.Candidates
+            .Where(candidate => configuration.UseNinjaForDangerousArea || !IsAbovePotTreasureAggroLimit(candidate))
+            .ToArray();
+        if (!configuration.UseNinjaForDangerousArea)
+        {
+            var skippedCandidates = group.Candidates.Except(eligibleCandidates).Select(candidate => $"{candidate.Label}:{candidate.AggroLevel}");
+            logger.Info($"{BuildLogTag()} op=geometric-eligibility cutoff={GetPotTreasureAggroLimit()} source={GetPotTreasureAggroLimitSource()} skipped=[{string.Join(", ", skippedCandidates)}]");
+        }
+        var maximumAngle = scanner.ActiveTerritoryData?.PotTreasure.GeometricMaximumHintAngleDegrees ?? 95f;
+        var ranked = GeometricTreasureCandidatePlanner.Rank(
+            eligibleCandidates,
+            observations,
+            handledCandidateLabels,
+            currentPosition,
+            maximumAngle);
+        PromoteConfirmedAlternateAnchors(ranked);
+        logger.Info($"{BuildLogTag()} op=geometric-candidate-order fate=\"{activeFateName}\" observations={observations.Count} eligible={eligibleCandidates.Length} handled={handledCandidateLabels.Count} final=[{string.Join(", ", ranked.Select(candidate => candidate.Label))}]");
+        return ranked;
+    }
+
+    private static void PromoteConfirmedAlternateAnchors(List<TreasureCofferCandidateData> candidates)
+    {
+        for (var index = 0; index < candidates.Count; index++)
+        {
+            var candidate = candidates[index];
+            if (candidate.ConfirmedCofferPosition != null || candidate.CloseAlternateCandidateKeys.Count == 0)
+            {
+                continue;
+            }
+
+            var confirmedAlternateIndex = candidates.FindIndex(
+                index + 1,
+                alternate => alternate.ConfirmedCofferPosition != null
+                    && candidate.CloseAlternateCandidateKeys.Contains(alternate.CandidateKey, StringComparer.OrdinalIgnoreCase));
+            if (confirmedAlternateIndex < 0)
+            {
+                continue;
+            }
+
+            var confirmedAlternate = candidates[confirmedAlternateIndex];
+            candidates.RemoveAt(confirmedAlternateIndex);
+            candidates.Insert(index, confirmedAlternate);
+        }
+    }
+
+    private bool IsGeometricSearch()
+        => scanner.ActiveTerritoryData?.PotTreasure.SearchStrategy == TreasureSearchStrategy.GeometricCandidates;
+
     private List<TreasureCofferCandidateData> OrderCandidatesNearestNeighbor(IReadOnlyList<TreasureCofferCandidateData> candidates, Vector3 originCenter)
     {
         var remaining = candidates.ToList();
@@ -2191,14 +2594,47 @@ public sealed class TreasureSearchController : IDisposable
     }
 
     private bool IsDangerousCandidate(TreasureCofferCandidateData candidate)
-        => candidate.AggroLevel > configuration.MaximumAggroLevel
+        => candidate.AggroLevel > configuration.PotTreasureFallbackMaximumAggroLevel
             || (candidate.HideThresholdDistance ?? 0) > 0;
 
     private bool IsAggroDangerousCandidate(TreasureCofferCandidateData candidate)
-        => candidate.AggroLevel > configuration.MaximumAggroLevel;
+        => candidate.AggroLevel > configuration.PotTreasureFallbackMaximumAggroLevel;
 
-    private DangerousTreasureTravelOptions GetDangerousTravelOptions()
-        => new(configuration.NinjaGearsetNumber, configuration.HideThresholdDistance, configuration.MaximumAggroLevel);
+    private int GetPotTreasureAggroLimit()
+        => scanner.Snapshot.PlayerForayLevel is { } knowledgeLevel
+            ? Math.Clamp(
+                knowledgeLevel + configuration.PotTreasureAggroLevelOffset,
+                1,
+                scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28)
+            : configuration.PotTreasureFallbackMaximumAggroLevel;
+
+    private string GetPotTreasureAggroLimitSource()
+        => scanner.Snapshot.PlayerForayLevel.HasValue ? "knowledge-offset" : "fallback";
+
+    private bool IsAbovePotTreasureAggroLimit(TreasureCofferCandidateData candidate)
+        => candidate.AggroLevel > GetPotTreasureAggroLimit();
+
+    private bool IsStaticDangerousCandidate(TreasureCofferCandidateData candidate)
+    {
+        if (!IsGeometricSearch() || !scanner.Snapshot.PlayerForayLevel.HasValue)
+        {
+            return IsAggroDangerousCandidate(candidate);
+        }
+
+        var hideAtOrAbove = GetPotKnowledgeThreatPolicy().GetHideAtOrAbove(scanner.Snapshot.PlayerForayLevel.Value);
+        return candidate.AggroLevel >= hideAtOrAbove;
+    }
+
+    private DangerousTreasureTravelOptions GetDangerousTravelOptions(bool destinationAlreadyResolved = false)
+    {
+        var maximumAggroLevel = configuration.PotTreasureFallbackMaximumAggroLevel;
+        if (IsGeometricSearch() && scanner.Snapshot.PlayerForayLevel.HasValue)
+        {
+            maximumAggroLevel = GetPotKnowledgeThreatPolicy().GetHideAtOrAbove(scanner.Snapshot.PlayerForayLevel.Value) - 1;
+        }
+
+        return new(configuration.NinjaGearsetNumber, configuration.HideThresholdDistance, maximumAggroLevel, destinationAlreadyResolved);
+    }
 
     private bool TryHandleCandidateTravelStall()
     {
@@ -2665,6 +3101,12 @@ public sealed class TreasureSearchController : IDisposable
     private bool TryStartRefinementProbe(string reason)
     {
         var now = DateTimeOffset.UtcNow;
+        if (refinementProbeAttemptCount >= MaximumCandidateRefinementSteps)
+        {
+            AdvanceCandidate($"Treasure candidate {activeCandidateKey?.Label} reached the {MaximumCandidateRefinementSteps}-attempt refinement probe limit; trying the next candidate.");
+            return false;
+        }
+
         if (refinementProbeLastAttemptAt != DateTimeOffset.MinValue && now - refinementProbeLastAttemptAt < CandidateProbeRetryDelay)
         {
             logger.DebugThrottled(
@@ -2711,7 +3153,21 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool EnsureRefinementProbeReady(TreasureCofferCandidateData activeCandidate)
     {
-        if (!IsDangerousCandidate(activeCandidate))
+        if (!configuration.UseNinjaForDangerousArea)
+        {
+            if (IsAbovePotTreasureAggroLimit(activeCandidate))
+            {
+                AdvanceCandidate($"Skipping treasure refinement probe at candidate {activeCandidate.Label} because aggro level {activeCandidate.AggroLevel} exceeds the current no-Ninja cutoff {GetPotTreasureAggroLimit()} ({GetPotTreasureAggroLimitSource()}).");
+                return false;
+            }
+
+            return true;
+        }
+
+        var isDangerousCandidate = IsGeometricSearch()
+            ? IsStaticDangerousCandidate(activeCandidate)
+            : IsDangerousCandidate(activeCandidate);
+        if (!isDangerousCandidate)
         {
             return true;
         }
@@ -2780,6 +3236,7 @@ public sealed class TreasureSearchController : IDisposable
             {
                 handledCandidateLabels.Clear();
                 orderedCandidates.Clear();
+                geometricObservations.Clear();
                 traversalOriginCenter = Vector3.Zero;
                 pendingCandidateAdvanceReason = string.Empty;
                 lastNavmeshRejectionSummary = string.Empty;

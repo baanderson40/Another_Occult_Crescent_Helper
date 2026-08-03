@@ -767,7 +767,7 @@ public sealed class FarmSessionController : IDisposable
         switch (snapshot.EffectiveTarget.Kind)
         {
             case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
-                var ceStartDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
+                var ceStartDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
                 if (!ceStartDecision.AllowStart)
                 {
                     TransitionTo(FarmSessionState.IdleWaiting, ceStartDecision.Reason, "Idle waiting");
@@ -792,7 +792,7 @@ public sealed class FarmSessionController : IDisposable
                     "Critical Engagement");
                 return;
             case SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null:
-                var fateStartDecision = potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure);
+                var fateStartDecision = potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
                 if (!fateStartDecision.AllowStart)
                 {
                     TransitionTo(FarmSessionState.IdleWaiting, fateStartDecision.Reason, "Idle waiting");
@@ -1022,9 +1022,9 @@ public sealed class FarmSessionController : IDisposable
         => snapshot.EffectiveTarget.Kind switch
         {
             SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null
-                => potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure),
+                => potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey),
             SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null
-                => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure),
+                => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey),
             _ => null,
         };
 

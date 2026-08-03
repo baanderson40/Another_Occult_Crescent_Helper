@@ -66,6 +66,13 @@ public sealed class TerritoryPotStartingSetting
 }
 
 [Serializable]
+public sealed class TerritoryPotFarmingSetting
+{
+    public string TerritoryKey { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+}
+
+[Serializable]
 public class Configuration : IPluginConfiguration
 {
     [JsonIgnore]
@@ -77,7 +84,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 8;
+    public int Version { get; set; } = 10;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -94,16 +101,21 @@ public class Configuration : IPluginConfiguration
     public bool EnableBuffRotation { get; set; } = true;
     public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
+    // Retained only to migrate the version 8 global preference into South Horn.
     public bool EnablePotFarming { get; set; } = true;
     public StartingPotFateMode StartingPotFate { get; set; } = StartingPotFateMode.Auto;
     public List<TerritoryPotStartingSetting> StartingPotFates { get; set; } = [];
+    public List<TerritoryPotFarmingSetting> PotFarmingTerritories { get; set; } = [];
     public int SpawnLeadMinutes { get; set; } = 5;
     public bool ManageInstanceTime { get; set; }
     public int FateCompletionBudgetMinutes { get; set; } = 5;
     public int TreasureHuntBudgetMinutes { get; set; } = 5;
     public int InstanceExitBufferMinutes { get; set; } = 2;
     public int SpawnArrivalRadius { get; set; } = 18;
+    // Retained only to migrate the version 9 Pot fallback cutoff.
     public int MaximumAggroLevel { get; set; } = 20;
+    public int PotTreasureAggroLevelOffset { get; set; } = -1;
+    public int PotTreasureFallbackMaximumAggroLevel { get; set; } = 20;
     public int VisibleTreasureCofferAggroLevelOffset { get; set; } = -1;
     public int VisibleTreasureCofferFallbackMaximumAggroLevel { get; set; } = 20;
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
@@ -213,6 +225,33 @@ public class Configuration : IPluginConfiguration
         return true;
     }
 
+    public bool IsPotFarmingEnabled(string territoryKey)
+    {
+        NormalizeTerritorySettings();
+        var setting = PotFarmingTerritories.FirstOrDefault(entry => MatchesTerritory(entry.TerritoryKey, territoryKey));
+        return setting?.Enabled
+            ?? string.Equals(territoryKey, "southHorn", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool SetPotFarmingEnabled(string territoryKey, bool enabled)
+    {
+        NormalizeTerritorySettings();
+        var setting = PotFarmingTerritories.FirstOrDefault(entry => MatchesTerritory(entry.TerritoryKey, territoryKey));
+        if (setting == null)
+        {
+            PotFarmingTerritories.Add(new TerritoryPotFarmingSetting { TerritoryKey = territoryKey, Enabled = enabled });
+            return true;
+        }
+
+        if (setting.Enabled == enabled)
+        {
+            return false;
+        }
+
+        setting.Enabled = enabled;
+        return true;
+    }
+
     public int GetCurrencyShopReserve(string territoryKey, uint currencyItemId)
         => CurrencyShopReserves.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.CurrencyItemId == currencyItemId)?.ReserveAmount ?? 0;
 
@@ -259,6 +298,7 @@ public class Configuration : IPluginConfiguration
         NormalizeTerritorySettings();
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        ClampPotTreasureAggroSettings();
         ClampVisibleCofferAggroSettings();
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
@@ -275,6 +315,7 @@ public class Configuration : IPluginConfiguration
         var southHorn = catalog.GetTerritoryOrNull("southHorn");
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
+        ClampPotTreasureAggroSettings();
         ClampVisibleCofferAggroSettings();
         MainWindowStatusTextScalePercent = Math.Clamp(MainWindowStatusTextScalePercent, 85, 150);
         MeleeTargetRange = ClampTargetRange(MeleeTargetRange);
@@ -282,7 +323,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 8)
+        if (Version >= 10)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -401,10 +442,33 @@ public class Configuration : IPluginConfiguration
             StartingPotFate = StartingPotFateMode.Auto;
         }
 
+        if (Version < 9)
+        {
+            var southEnabled = EnablePotFarming;
+            if (!PotFarmingTerritories.Any(setting => MatchesTerritory(setting.TerritoryKey, "southHorn")))
+            {
+                SetPotFarmingEnabled("southHorn", southEnabled);
+            }
+
+            if (!PotFarmingTerritories.Any(setting => MatchesTerritory(setting.TerritoryKey, "northHorn")))
+            {
+                SetPotFarmingEnabled("northHorn", false);
+            }
+
+            logger?.Info($"[Configuration] op=migration-scope-pot-farming territoryKey=southHorn enabled={IsPotFarmingEnabled("southHorn")}");
+            logger?.Info($"[Configuration] op=migration-scope-pot-farming territoryKey=northHorn enabled={IsPotFarmingEnabled("northHorn")}");
+        }
+
+        if (Version < 10)
+        {
+            PotTreasureFallbackMaximumAggroLevel = Math.Clamp(MaximumAggroLevel, 0, 50);
+            logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=PotTreasureFallbackMaximumAggroLevel value={PotTreasureFallbackMaximumAggroLevel}");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 8;
-        logger?.Info("[Configuration] op=migration-complete version=8");
+        Version = 10;
+        logger?.Info("[Configuration] op=migration-complete version=10");
         return true;
     }
 
@@ -476,6 +540,7 @@ public class Configuration : IPluginConfiguration
         DisabledTerritoryCriticalEncounterIds ??= [];
         DisabledTerritoryFateIds ??= [];
         StartingPotFates ??= [];
+        PotFarmingTerritories ??= [];
 
         foreach (var setting in DisabledTerritoryCriticalEncounterIds)
         {
@@ -491,12 +556,17 @@ public class Configuration : IPluginConfiguration
         {
             setting.TerritoryKey ??= string.Empty;
         }
+
+        foreach (var setting in PotFarmingTerritories)
+        {
+            setting.TerritoryKey ??= string.Empty;
+        }
     }
 
     private void ClampKnowledgeThreatSettings()
     {
-        PotKnowledgeHideOffset = Math.Clamp(PotKnowledgeHideOffset, -27, 27);
-        VisibleCofferKnowledgeHideOffset = Math.Clamp(VisibleCofferKnowledgeHideOffset, -27, 27);
+        PotKnowledgeHideOffset = Math.Clamp(PotKnowledgeHideOffset, -49, 49);
+        VisibleCofferKnowledgeHideOffset = Math.Clamp(VisibleCofferKnowledgeHideOffset, -49, 49);
         KnowledgeThreatEnterDistance = Math.Clamp(KnowledgeThreatEnterDistance, 1, 50);
         KnowledgeThreatExitDistance = Math.Clamp(KnowledgeThreatExitDistance, KnowledgeThreatEnterDistance, 100);
     }
@@ -505,5 +575,11 @@ public class Configuration : IPluginConfiguration
     {
         VisibleTreasureCofferAggroLevelOffset = Math.Clamp(VisibleTreasureCofferAggroLevelOffset, -40, 50);
         VisibleTreasureCofferFallbackMaximumAggroLevel = Math.Clamp(VisibleTreasureCofferFallbackMaximumAggroLevel, 0, 50);
+    }
+
+    private void ClampPotTreasureAggroSettings()
+    {
+        PotTreasureAggroLevelOffset = Math.Clamp(PotTreasureAggroLevelOffset, -49, 50);
+        PotTreasureFallbackMaximumAggroLevel = Math.Clamp(PotTreasureFallbackMaximumAggroLevel, 0, 50);
     }
 }
