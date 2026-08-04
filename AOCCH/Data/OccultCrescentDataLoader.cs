@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AOCCH.Automation;
 using AOCCH.Logging;
 using AOCCH.Shopping;
 using Dalamud.Plugin;
@@ -570,6 +571,69 @@ public static class OccultCrescentDataLoader
         else if (logMessageIds.GroupBy(id => id).Any(group => group.Count() > 1))
         {
             errors.Add("pot treasure behavior has duplicate log message IDs");
+        }
+
+        if (string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateSecondChanceAreas(territory, errors);
+        }
+    }
+
+    private static void ValidateSecondChanceAreas(OccultCrescentTerritoryData territory, List<string> errors)
+    {
+        var areas = territory.PotTreasure.SecondChanceAreas;
+        if (areas.Count == 0)
+        {
+            errors.Add("North Horn pot treasure is missing Second Chance area data");
+            return;
+        }
+
+        var aethernetNames = territory.Aethernets.Select(aethernet => aethernet.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var secondChanceCandidates = territory.TreasureCofferGroups
+            .Where(group => group.GroupKey.Equals("second-chance", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(group => group.Candidates)
+            .Select(candidate => candidate.CandidateKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var area in areas)
+        {
+            if (!Enum.TryParse<TreasureDirection>(area.Direction, ignoreCase: true, out _))
+            {
+                errors.Add($"Second Chance area '{area.DisplayName}' has an unknown direction '{area.Direction}'");
+            }
+
+            if (string.IsNullOrWhiteSpace(area.AreaKey) || string.IsNullOrWhiteSpace(area.DisplayName))
+            {
+                errors.Add("Second Chance area is missing an area key or display name");
+            }
+
+            if (!aethernetNames.Contains(area.Aethernet))
+            {
+                errors.Add($"Second Chance area '{area.DisplayName}' references missing aethernet '{area.Aethernet}'");
+            }
+
+            if (area.CandidateKeys.Count == 0)
+            {
+                errors.Add($"Second Chance area '{area.DisplayName}' has no candidates");
+            }
+
+            foreach (var candidateKey in area.CandidateKeys)
+            {
+                if (!secondChanceCandidates.Contains(candidateKey))
+                {
+                    errors.Add($"Second Chance area '{area.DisplayName}' references missing candidate '{candidateKey}'");
+                }
+            }
+
+            if (area.WindCurrentAdvanceOnJump && area.WindCurrentPosition == null)
+            {
+                errors.Add($"Second Chance area '{area.DisplayName}' requires Wind Current metadata but has no position");
+            }
+        }
+
+        if (areas.Select(area => area.Direction).Distinct(StringComparer.OrdinalIgnoreCase).Count() != areas.Count)
+        {
+            errors.Add("North Horn Second Chance areas contain duplicate directions");
         }
     }
 

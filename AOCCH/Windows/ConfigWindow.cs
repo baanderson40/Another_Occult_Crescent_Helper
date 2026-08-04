@@ -260,6 +260,18 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.SpawnArrivalRadius));
         DrawSettingTooltip("How close you need to be to the pot FATE marker before stopping to wait.");
 
+        if (string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
+        {
+            var enableSecondChance = configuration.EnableNorthHornSecondChanceCoffers;
+            if (ImGui.Checkbox("Enable Bonus Coffer", ref enableSecondChance))
+            {
+                logger.Info($"[Config] op=setting-change key=EnableNorthHornSecondChanceCoffers old={configuration.EnableNorthHornSecondChanceCoffers} new={enableSecondChance}");
+                configuration.EnableNorthHornSecondChanceCoffers = enableSecondChance;
+                configuration.Save();
+            }
+            DrawSettingTooltip("After the first coffer, returns to Base Camp, uses another Magical Elixir, teleports to the KI-selected area, and searches the high-aggro bonus coffer.");
+        }
+
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");
         ImGui.SameLine();

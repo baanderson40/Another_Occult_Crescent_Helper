@@ -7,7 +7,7 @@ namespace AOCCH.Windows;
 
 public sealed class NorthHornStatusWindow : Window, IDisposable
 {
-    public const int CurrentStatusRevision = 6;
+    public const int CurrentStatusRevision = 7;
 
     private readonly Plugin plugin;
     private readonly Configuration configuration;
@@ -50,7 +50,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             ImGui.Separator();
         }
 
-        ImGui.TextWrapped("North Horn pot FATE and first-coffer reveal automation is available as an opt-in feature. Second Chance coffers are not automated yet.");
+        ImGui.TextWrapped("North Horn pot FATE and first-coffer reveal automation is available as an opt-in feature. Bonus coffers are also available as a separate high-aggro opt-in.");
         ImGui.Spacing();
 
         if (ImGui.BeginTable("NorthHornStatusTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchProp))
@@ -63,7 +63,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             DrawStatusRow("Critical Engagements", "Supported", "Available");
             DrawStatusRow("FATE Farming", "Supported", "Available");
             DrawStatusRow("Shopping", "Supported", "Available");
-            DrawStatusRow("Pot / Reveal Coffers", "Partial", "First coffer");
+            DrawStatusRow("Pot / Reveal Coffers", "Partial", "First + Second Chance");
             DrawStatusRow("Overworld Coffers", "Supported", "Available");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");

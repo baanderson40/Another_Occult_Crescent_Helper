@@ -32,6 +32,8 @@ public sealed class PotFarmController : IDisposable
     private const float PotWaitPointDuplicateTolerance = 1f;
     private const float TreasureCenterArrivalTolerance = 5f;
     private const float TreasureSearchStartDistanceLimit = 60f;
+    private static readonly TimeSpan SecondChanceDirectionTimeout = TimeSpan.FromSeconds(5);
+    private const int WindCurrentJumpCondition = 61;
 
     private readonly IFramework framework;
     private readonly OccultCrescentScanner scanner;
@@ -84,6 +86,14 @@ public sealed class PotFarmController : IDisposable
     private bool isWaitingForConfiguredBootstrapPot;
     private PotFarmRunResult completionResultAfterRecovery;
     private PotInstanceTimeDecision lastInstanceTimeDecision = new();
+    private bool secondChanceReturning;
+    private SecondChanceAreaData? secondChanceArea;
+    private int secondChanceDirectionBaselineSessionId;
+    private int secondChanceDirectionBaselineRevision;
+    private DateTimeOffset secondChanceDirectionDeadlineAt = DateTimeOffset.MinValue;
+    private bool secondChanceWindCurrentPending;
+    private DateTimeOffset secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
+    private bool secondChanceInteractionActive;
 
     public PotFarmController(
         IFramework framework,
@@ -394,6 +404,14 @@ public sealed class PotFarmController : IDisposable
             lastError = string.Empty;
             lastResult = PotFarmRunResult.None;
             lastInstanceTimeDecision = new();
+            secondChanceReturning = false;
+            secondChanceArea = null;
+            secondChanceDirectionBaselineSessionId = 0;
+            secondChanceDirectionBaselineRevision = 0;
+            secondChanceDirectionDeadlineAt = DateTimeOffset.MinValue;
+            secondChanceWindCurrentPending = false;
+            secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
+            secondChanceInteractionActive = false;
         }
 
         logger.Info($"{BuildLogTag()} op=start controlReason={PotControlReason.ActiveRun}");
@@ -472,6 +490,14 @@ public sealed class PotFarmController : IDisposable
             isWaitingForConfiguredBootstrapPot = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
             lastInstanceTimeDecision = new();
+            secondChanceReturning = false;
+            secondChanceArea = null;
+            secondChanceDirectionBaselineSessionId = 0;
+            secondChanceDirectionBaselineRevision = 0;
+            secondChanceDirectionDeadlineAt = DateTimeOffset.MinValue;
+            secondChanceWindCurrentPending = false;
+            secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
+            secondChanceInteractionActive = false;
         }
 
         logger.Info($"[Pot] op=reset reason={reason}");
@@ -543,6 +569,19 @@ public sealed class PotFarmController : IDisposable
         logger.ResetThrottle("pot-death-recovery-hold");
 
         var scannerSnapshot = scanner.Snapshot;
+        if (currentState is PotFarmState.ReturningForSecondChance
+            or PotFarmState.WaitingForSecondChanceDirection
+            or PotFarmState.TravelingToSecondChanceArea
+            or PotFarmState.PreparingSecondChanceWindCurrent
+            or PotFarmState.RunningSecondChanceSearch)
+        {
+            if (!scannerSnapshot.HasTreasureBuff)
+            {
+                AbandonSecondChance("Cache Me If You Can expired during the second-chance flow.");
+                return;
+            }
+        }
+
         if (leavePending)
         {
             if (!scannerSnapshot.IsInSupportedTerritory || !scannerSnapshot.CanRunPotTreasure)
@@ -575,7 +614,13 @@ public sealed class PotFarmController : IDisposable
             return;
         }
 
-        if (currentState != PotFarmState.RunningPotFate && scannerSnapshot.ActivePotFate != null)
+        if (currentState != PotFarmState.RunningPotFate
+            && currentState is not PotFarmState.ReturningForSecondChance
+            and not PotFarmState.WaitingForSecondChanceDirection
+            and not PotFarmState.TravelingToSecondChanceArea
+            and not PotFarmState.PreparingSecondChanceWindCurrent
+            and not PotFarmState.RunningSecondChanceSearch
+            && scannerSnapshot.ActivePotFate != null)
         {
             if (StartActivePotFate(scannerSnapshot.ActivePotFate))
             {
@@ -589,6 +634,11 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.TreasurePending
             and not PotFarmState.RunningTreasureSearch
             and not PotFarmState.RecoveringToBase
+            and not PotFarmState.ReturningForSecondChance
+            and not PotFarmState.WaitingForSecondChanceDirection
+            and not PotFarmState.TravelingToSecondChanceArea
+            and not PotFarmState.PreparingSecondChanceWindCurrent
+            and not PotFarmState.RunningSecondChanceSearch
             and not PotFarmState.RunningCofferInteraction
             && scannerSnapshot.HasTreasureBuff
             && hasTreasurePotContext)
@@ -631,7 +681,20 @@ public sealed class PotFarmController : IDisposable
                 TickRunningCofferInteraction();
                 break;
             case PotFarmState.RecoveringToBase:
+            case PotFarmState.ReturningForSecondChance:
                 TickRecoveringToBase();
+                break;
+            case PotFarmState.WaitingForSecondChanceDirection:
+                TickWaitingForSecondChanceDirection();
+                break;
+            case PotFarmState.TravelingToSecondChanceArea:
+                TickTravelingToSecondChanceArea();
+                break;
+            case PotFarmState.PreparingSecondChanceWindCurrent:
+                TickPreparingSecondChanceWindCurrent();
+                break;
+            case PotFarmState.RunningSecondChanceSearch:
+                TickRunningSecondChanceSearch();
                 break;
         }
     }
@@ -810,6 +873,14 @@ public sealed class PotFarmController : IDisposable
         {
             case MovementState.Arrived:
                 movementController.Stop("Pot recovery completed.");
+                if (secondChanceReturning)
+                {
+                    secondChanceReturning = false;
+                    logger.Info($"{BuildLogTag()} op=second-chance-return-complete action=use-magical-elixir");
+                    BeginSecondChanceDirectionWait();
+                    return;
+                }
+
                 if (resumeBootstrapAfterRecovery)
                 {
                     TransitionTo(PotFarmState.Bootstrapping, "Pot recovery completed; resuming bootstrap.");
@@ -1143,6 +1214,19 @@ public sealed class PotFarmController : IDisposable
         switch (cofferInteractionController.LastResult)
         {
             case CofferInteractionResult.Opened:
+                if (!secondChanceInteractionActive
+                    && IsNorthHornSecondChanceEnabled()
+                    && treasureHintTracker.Snapshot.HasBonusOfferLatched)
+                {
+                    secondChanceReturning = true;
+                    logger.Info($"{BuildLogTag()} op=first-coffer-confirmed bonusOffer=true action=return-for-second-chance");
+                    BeginRecoveryToBase(
+                        "First treasure coffer confirmed; returning to Base Camp before the enabled Second Chance search.",
+                        resumeBootstrapAfterRecovery: false,
+                        completionResult: PotFarmRunResult.None);
+                    return;
+                }
+
                 treasureHintTracker.CompleteCurrentTreasureSession("Treasure coffer opened successfully.", TreasureSessionState.Completed);
                 ClearTreasurePotContext();
                 BeginRecoveryToBase(
@@ -1151,6 +1235,23 @@ public sealed class PotFarmController : IDisposable
                     completionResult: PotFarmRunResult.Completed);
                 return;
             case CofferInteractionResult.LostCoffer:
+                if (secondChanceInteractionActive)
+                {
+                    secondChanceInteractionActive = false;
+                    if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
+                    {
+                        AbandonSecondChance(treasureSearchController.LastResult == TreasureSearchRunResult.CandidatesExhausted
+                            ? "The Second Chance coffer disappeared and all candidates were exhausted."
+                            : treasureSearchController.LastError.Length == 0
+                                ? treasureSearchController.LastTransition
+                                : treasureSearchController.LastError);
+                        return;
+                    }
+
+                    TransitionTo(PotFarmState.RunningSecondChanceSearch, treasureSearchController.LastTransition);
+                    return;
+                }
+
                 if (!treasureSearchController.StartNextCandidateAfterInteractionLoss(cofferInteractionController.LastTransition))
                 {
                     if (treasureSearchController.LastResult != TreasureSearchRunResult.CandidatesExhausted)
@@ -1172,6 +1273,12 @@ public sealed class PotFarmController : IDisposable
                 TransitionTo(PotFarmState.RunningTreasureSearch, treasureSearchController.LastTransition);
                 return;
             case CofferInteractionResult.TimedOut:
+                if (secondChanceInteractionActive)
+                {
+                    AbandonSecondChance($"The Second Chance coffer remained visible after all interaction attempts. {cofferInteractionController.LastError}".Trim());
+                    return;
+                }
+
                 SetFailure($"The revealed treasure coffer remained visible after all interaction attempts; stopping instead of searching unrelated candidates. {cofferInteractionController.LastError}".Trim());
                 return;
             case CofferInteractionResult.Stopped when pendingStop:
@@ -1183,6 +1290,238 @@ public sealed class PotFarmController : IDisposable
                     : cofferInteractionController.LastError);
                 return;
         }
+    }
+
+    private bool IsNorthHornSecondChanceEnabled()
+        => string.Equals(scanner.Snapshot.TerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase)
+            && configuration.EnableNorthHornSecondChanceCoffers;
+
+    private void BeginSecondChanceDirectionWait()
+    {
+        if (!scanner.Snapshot.HasTreasureBuff)
+        {
+            AbandonSecondChance("Cache Me If You Can expired before the Second Chance KI use.");
+            return;
+        }
+
+        if (!gameActionController.HasMagicalElixir())
+        {
+            AbandonSecondChance("Second Chance requires another Magical Elixir, but none is available.");
+            return;
+        }
+
+        var snapshot = treasureHintTracker.Snapshot;
+        var used = gameActionController.TryUseMagicalElixirViaInventory("North Horn Second Chance area selection");
+        secondChanceDirectionBaselineSessionId = snapshot.SessionId;
+        secondChanceDirectionBaselineRevision = snapshot.Revision;
+        secondChanceDirectionDeadlineAt = DateTimeOffset.UtcNow + SecondChanceDirectionTimeout;
+        logger.Info($"{BuildLogTag()} op=second-chance-elixir-used inventoryUseAccepted={used} baselineSession={secondChanceDirectionBaselineSessionId} baselineRevision={secondChanceDirectionBaselineRevision} deadline={secondChanceDirectionDeadlineAt:O}");
+        TransitionTo(PotFarmState.WaitingForSecondChanceDirection, "Waiting for the Second Chance KI direction.");
+    }
+
+    private void TickWaitingForSecondChanceDirection()
+    {
+        if (treasureHintTracker.TryGetLatestEventSince(secondChanceDirectionBaselineSessionId, secondChanceDirectionBaselineRevision, out var latestEvent)
+            && latestEvent is { Kind: TreasureHintKind.Hint })
+        {
+            var area = scanner.ActiveTerritoryData?.PotTreasure.SecondChanceAreas
+                .FirstOrDefault(candidate => string.Equals(candidate.Direction, latestEvent.Direction.ToString(), StringComparison.OrdinalIgnoreCase));
+            if (area == null)
+            {
+                AbandonSecondChance($"Second Chance KI returned unsupported direction {latestEvent.Direction}.");
+                return;
+            }
+
+            secondChanceArea = area;
+            logger.Info($"{BuildLogTag()} op=second-chance-direction direction={latestEvent.Direction} area={area.DisplayName} aethernet={area.Aethernet} candidates={area.CandidateKeys.Count}");
+            BeginSecondChanceAreaTravel(area);
+            return;
+        }
+
+        if (secondChanceDirectionDeadlineAt != DateTimeOffset.MinValue
+            && DateTimeOffset.UtcNow >= secondChanceDirectionDeadlineAt)
+        {
+            AbandonSecondChance("No supported Second Chance KI direction arrived before the timeout.");
+            return;
+        }
+
+        logger.DebugThrottled(
+            "pot-second-chance-direction",
+            WaitLogInterval,
+            $"Waiting for Second Chance KI direction. baselineSession={secondChanceDirectionBaselineSessionId} baselineRevision={secondChanceDirectionBaselineRevision} deadline={secondChanceDirectionDeadlineAt:O}.");
+    }
+
+    private void BeginSecondChanceAreaTravel(SecondChanceAreaData area)
+    {
+        var aethernet = scanner.ActiveTerritoryData?.Aethernets
+            .FirstOrDefault(entry => string.Equals(entry.Name, area.Aethernet, StringComparison.OrdinalIgnoreCase));
+        if (aethernet == null)
+        {
+            AbandonSecondChance($"Second Chance area {area.DisplayName} has no configured aethernet named {area.Aethernet}.");
+            return;
+        }
+
+        movementController.SetLogOwner(currentRunId);
+        if (!movementController.PlanRouteToLocation(
+            $"Travel to Second Chance area {area.DisplayName}",
+            area.Aethernet,
+            aethernet.Destination.ToVector3(),
+            aethernet.InteractDistanceMax,
+            forceAethernet: true))
+        {
+            AbandonSecondChance(movementController.LastError.Length == 0
+                ? $"Failed to plan travel to Second Chance area {area.DisplayName}."
+                : movementController.LastError);
+            return;
+        }
+
+        if (!movementController.StartPlannedRoute())
+        {
+            AbandonSecondChance(movementController.LastError.Length == 0
+                ? $"Failed to start travel to Second Chance area {area.DisplayName}."
+                : movementController.LastError);
+            return;
+        }
+
+        TransitionTo(PotFarmState.TravelingToSecondChanceArea, $"Traveling by aethernet to Second Chance area {area.DisplayName}.");
+    }
+
+    private void TickTravelingToSecondChanceArea()
+    {
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Reached Second Chance area.");
+                var area = secondChanceArea;
+                if (area == null)
+                {
+                    AbandonSecondChance("Second Chance area context was lost after aethernet travel.");
+                    return;
+                }
+
+                if (area.WindCurrentPosition is { } windCurrent)
+                {
+                    secondChanceWindCurrentPending = false;
+                    secondChanceWindCurrentWaitStartedAt = DateTimeOffset.UtcNow;
+                    if (!movementController.StartDirectMove(
+                        $"Move to Second Chance Wind Current for {area.DisplayName}",
+                        windCurrent.ToVector3(),
+                        area.WindCurrentArrivalDistance,
+                        advanceOnJump: area.WindCurrentAdvanceOnJump))
+                    {
+                        AbandonSecondChance(movementController.LastError.Length == 0
+                            ? $"Failed to move to the Second Chance Wind Current for {area.DisplayName}."
+                            : movementController.LastError);
+                        return;
+                    }
+
+                    TransitionTo(PotFarmState.PreparingSecondChanceWindCurrent, $"Moving to the Wind Current for {area.DisplayName}.");
+                    return;
+                }
+
+                BeginSecondChanceSearch(area);
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                AbandonSecondChance(movementController.LastError.Length == 0
+                    ? "Second Chance area travel failed."
+                    : movementController.LastError);
+                return;
+        }
+    }
+
+    private void TickPreparingSecondChanceWindCurrent()
+    {
+        if (movementController.State == MovementState.Arrived)
+        {
+            movementController.Stop("Completed Second Chance Wind Current transition.");
+            logger.Info($"{BuildLogTag()} op=second-chance-windcurrent-complete action=resume-search");
+            BeginSecondChanceSearch(secondChanceArea!);
+            return;
+        }
+
+        if (movementController.State is MovementState.Failed or MovementState.TimedOut)
+        {
+            AbandonSecondChance(movementController.LastError.Length == 0
+                ? "Second Chance Wind Current transition failed."
+                : movementController.LastError);
+            return;
+        }
+
+        logger.DebugThrottled(
+            "pot-second-chance-windcurrent",
+            WaitLogInterval,
+            $"Waiting for Second Chance Wind Current transition. movementState={movementController.State} pending={secondChanceWindCurrentPending}.");
+    }
+
+    private void BeginSecondChanceSearch(SecondChanceAreaData area)
+    {
+        var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+        if (!treasureSearchController.StartSecondChance(treasurePotId, treasurePotName, playerPosition, area))
+        {
+            AbandonSecondChance(treasureSearchController.LastError.Length == 0
+                ? $"Failed to start the Second Chance search in {area.DisplayName}."
+                : treasureSearchController.LastError);
+            return;
+        }
+
+        TransitionTo(PotFarmState.RunningSecondChanceSearch, $"Searching Second Chance coffers in {area.DisplayName}.");
+    }
+
+    private void TickRunningSecondChanceSearch()
+    {
+        if (treasureSearchController.IsRunning)
+        {
+            logger.DebugThrottled("pot-second-chance-search", WaitLogInterval, $"Second Chance search is active. state={treasureSearchController.State} candidate={treasureSearchController.ActiveCandidateKey?.Label ?? "none"}.");
+            return;
+        }
+
+        switch (treasureSearchController.LastResult)
+        {
+            case TreasureSearchRunResult.ReadyForInteraction:
+                var match = treasureSearchController.ActiveVisibleCofferMatch;
+                if (match == null || !cofferInteractionController.Start(match))
+                {
+                    AbandonSecondChance(cofferInteractionController.LastError.Length == 0
+                        ? "Failed to start Second Chance coffer interaction."
+                        : cofferInteractionController.LastError);
+                    return;
+                }
+
+                secondChanceInteractionActive = true;
+                TransitionTo(PotFarmState.RunningCofferInteraction, cofferInteractionController.LastTransition);
+                return;
+            case TreasureSearchRunResult.CandidatesExhausted:
+                AbandonSecondChance("All Second Chance candidates in the selected area were exhausted.");
+                return;
+            case TreasureSearchRunResult.Failed:
+            case TreasureSearchRunResult.Stopped:
+                AbandonSecondChance(treasureSearchController.LastError.Length == 0
+                    ? treasureSearchController.LastTransition
+                    : treasureSearchController.LastError);
+                return;
+            default:
+                AbandonSecondChance("Second Chance search ended without a coffer interaction result.");
+                return;
+        }
+    }
+
+    private void AbandonSecondChance(string reason)
+    {
+        logger.Warning($"{BuildLogTag()} op=second-chance-abandoned reason={reason}");
+        if (treasureSearchController.State != TreasureSearchState.Idle)
+        {
+            treasureSearchController.Stop(reason);
+        }
+
+        if (cofferInteractionController.IsRunning)
+        {
+            cofferInteractionController.Stop(reason);
+        }
+
+        treasureHintTracker.CompleteCurrentTreasureSession(reason, TreasureSessionState.Abandoned);
+        ClearTreasurePotContext();
+        BeginRecoveryToBase($"{reason} Returning to Base Camp.", resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.Completed);
     }
 
     private bool TryBeginConfiguredBootstrapStaging()
@@ -1388,7 +1727,12 @@ public sealed class PotFarmController : IDisposable
             or PotFarmState.MovingNearTreasureCenter
             or PotFarmState.TreasurePending
             or PotFarmState.RunningTreasureSearch
-            or PotFarmState.RunningCofferInteraction;
+            or PotFarmState.RunningCofferInteraction
+            or PotFarmState.ReturningForSecondChance
+            or PotFarmState.WaitingForSecondChanceDirection
+            or PotFarmState.TravelingToSecondChanceArea
+            or PotFarmState.PreparingSecondChanceWindCurrent
+            or PotFarmState.RunningSecondChanceSearch;
 
     private bool ShouldReleasePotControlForInventory(PotFarmState currentState, out string reason)
     {
@@ -1471,7 +1815,7 @@ public sealed class PotFarmController : IDisposable
                     completionResultAfterRecovery = completionResult;
                 }
 
-                TransitionTo(PotFarmState.RecoveringToBase, reason);
+                TransitionTo(secondChanceReturning ? PotFarmState.ReturningForSecondChance : PotFarmState.RecoveringToBase, reason);
                 return;
             }
 
@@ -1487,7 +1831,7 @@ public sealed class PotFarmController : IDisposable
             completionResultAfterRecovery = completionResult;
         }
 
-        TransitionTo(PotFarmState.RecoveringToBase, reason);
+        TransitionTo(secondChanceReturning ? PotFarmState.ReturningForSecondChance : PotFarmState.RecoveringToBase, reason);
     }
 
     private DateTimeOffset GetDepartureAt(PotCycleSnapshot snapshot)
@@ -1551,6 +1895,14 @@ public sealed class PotFarmController : IDisposable
             treasureElixirAttemptCount = 0;
             treasureAttemptBaselineSessionId = 0;
             treasureAttemptBaselineRevision = 0;
+            secondChanceReturning = false;
+            secondChanceArea = null;
+            secondChanceDirectionBaselineSessionId = 0;
+            secondChanceDirectionBaselineRevision = 0;
+            secondChanceDirectionDeadlineAt = DateTimeOffset.MinValue;
+            secondChanceWindCurrentPending = false;
+            secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
+            secondChanceInteractionActive = false;
         }
     }
 

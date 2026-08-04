@@ -7,6 +7,7 @@ Another Occult Crescent Helper (AOCCH) is a Dalamud plugin for automating and mo
 - Unified farm sessions for Critical Engagements and FATEs.
 - Configurable CE and FATE selection, priorities, gearsets, arrival distances, and fallback timing.
 - Pot FATE scheduling, spawn prediction, treasure hints, treasure-buff tracking, and coffer interaction.
+- Optional North Horn bonus coffer searches with KI-selected area travel and Wind Current handling.
 - Treasure hunting with hint interpretation, candidate search, dangerous-area travel, and optional treasure guide markers.
 - Manual overworld coffer routes with optional starting route indexes.
 - Automatic overworld coffer surveys and route starts based on silver and bronze thresholds.
@@ -54,6 +55,7 @@ The configuration window is divided into these tabs:
 - **Critical Engagements**: enable CE farming, choose CE priority, and enable individual encounters.
 - **FATEs**: enable FATE farming, choose FATE priority, configure dismount distance, and enable individual FATEs.
 - **Pots**: configure pot farming, starting pot FATE, spawn timing, threat handling, dangerous travel, gearsets, and instance-time policy.
+- North Horn bonus coffers are disabled by default because their three destination areas contain high-level aggro. When enabled, the plugin returns to Base Camp after the first coffer, uses another Magical Elixir, follows the KI-selected direction by aethernet, and resumes the geometric search in that area.
 - **Treasure Coffers**: configure manual and automatic overworld coffer routes, guide markers, thresholds, route arrival, threat handling, dangerous travel, South Horn weather, and territory-specific Ashkin policies.
 - **Shopping**: configure currency reserves, purchase thresholds, item priorities, keep amounts, one-off purchases, and keep-buying behavior.
 - **Settings**: configure confirmed coffer observation sharing, autorotation overrides, target ranges, buff rotation, Return usage, mounting distance, and interface scaling.

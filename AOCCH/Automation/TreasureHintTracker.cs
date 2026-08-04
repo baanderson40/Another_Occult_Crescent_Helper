@@ -248,6 +248,7 @@ public sealed class TreasureHintTracker : IDisposable
                 LastHintEvent = snapshot.LastHintEvent,
                 LastEvent = snapshot.LastEvent,
                 RevealLatchedEvent = snapshot.RevealLatchedEvent,
+                BonusOfferLatchedEvent = snapshot.BonusOfferLatchedEvent,
                 LastTransition = reason,
                 LastResetReason = snapshot.LastResetReason,
             };
@@ -387,6 +388,7 @@ public sealed class TreasureHintTracker : IDisposable
             var initialHint = snapshot.InitialHintEvent;
             var lastHint = snapshot.LastHintEvent;
             var revealLatchedEvent = snapshot.RevealLatchedEvent;
+            var bonusOfferLatchedEvent = snapshot.BonusOfferLatchedEvent;
             if (eventWithRevision.Kind == TreasureHintKind.Hint)
             {
                 initialHint ??= eventWithRevision;
@@ -396,6 +398,11 @@ public sealed class TreasureHintTracker : IDisposable
             if (eventWithRevision.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage)
             {
                 revealLatchedEvent = eventWithRevision;
+            }
+
+            if (eventWithRevision.Kind == TreasureHintKind.BonusOffer)
+            {
+                bonusOfferLatchedEvent = eventWithRevision;
             }
 
             updatedSnapshot = new TreasureHintSnapshot
@@ -412,6 +419,7 @@ public sealed class TreasureHintTracker : IDisposable
                 LastHintEvent = lastHint,
                 LastEvent = eventWithRevision,
                 RevealLatchedEvent = revealLatchedEvent,
+                BonusOfferLatchedEvent = bonusOfferLatchedEvent,
                 PostBuffGraceDeadlineAt = eventWithRevision.Kind is TreasureHintKind.CofferReveal or TreasureHintKind.CofferMessage
                     ? DateTimeOffset.MinValue
                     : snapshot.PostBuffGraceDeadlineAt,
@@ -461,6 +469,7 @@ public sealed class TreasureHintTracker : IDisposable
                 LastHintEvent = snapshot.LastHintEvent,
                 LastEvent = snapshot.LastEvent,
                 RevealLatchedEvent = snapshot.RevealLatchedEvent,
+                BonusOfferLatchedEvent = snapshot.BonusOfferLatchedEvent,
                 PostBuffGraceDeadlineAt = DateTimeOffset.UtcNow + PostBuffGraceDuration,
                 LastTransition = snapshot.LastTransition,
                 LastResetReason = snapshot.LastResetReason,
