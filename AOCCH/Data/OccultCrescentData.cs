@@ -222,6 +222,7 @@ public sealed class VisibleCofferFarmSpotData
     public bool AdvanceOnJump { get; init; }
     public bool SkipDuringAshkin { get; init; }
     public bool SkipDuringUnsafeWeather { get; init; }
+    public bool SkipWhenNinja { get; init; }
     public bool RainSensitive { get; init; }
     public string? Note { get; init; }
 }

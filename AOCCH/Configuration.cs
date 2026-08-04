@@ -92,7 +92,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 11;
+    public int Version { get; set; } = 12;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -270,7 +270,9 @@ public class Configuration : IPluginConfiguration
     public bool GetSkipHighLevelCavernsDuringAshkin(string territoryKey)
     {
         NormalizeTerritorySettings();
-        return VisibleCofferSafetySettings.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey))?.SkipHighLevelCavernsDuringAshkin == true;
+        var setting = VisibleCofferSafetySettings.FirstOrDefault(entry => MatchesTerritory(entry.TerritoryKey, territoryKey));
+        return setting?.SkipHighLevelCavernsDuringAshkin
+            ?? string.Equals(territoryKey, "northHorn", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool SetSkipHighLevelCavernsDuringAshkin(string territoryKey, bool enabled)
@@ -389,7 +391,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 11)
+        if (Version >= 12)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -541,10 +543,17 @@ public class Configuration : IPluginConfiguration
             logger?.Info($"[Configuration] op=migration-scope-visible-coffer-safety territoryKey=southHorn skipHighLevelCavernsDuringAshkin={southHornSafety.SkipHighLevelCavernsDuringAshkin} skipUnsafeWeatherRoutes={southHornSafety.SkipUnsafeWeatherRoutes}");
         }
 
+        if (Version < 12)
+        {
+            var northHornSafety = GetOrAddVisibleCofferSafetySetting("northHorn");
+            northHornSafety.SkipHighLevelCavernsDuringAshkin = true;
+            logger?.Info("[Configuration] op=migration-scope-visible-coffer-safety territoryKey=northHorn skipHighLevelCavernsDuringAshkin=true");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 11;
-        logger?.Info("[Configuration] op=migration-complete version=11");
+        Version = 12;
+        logger?.Info("[Configuration] op=migration-complete version=12");
         return true;
     }
 

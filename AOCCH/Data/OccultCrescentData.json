@@ -2742,6 +2742,7 @@
           "arrivalDistance": 2.0,
           "routeOnly": true,
           "advanceOnJump": true,
+          "skipDuringAshkin": true,
           "note": "Wind current transition to floating island; move to position and do not jump"
         },
         {
@@ -2753,6 +2754,7 @@
             "z": 967.944
           },
           "aggroLevel": 41,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12685021, layer 43366"
         },
         {
@@ -2764,6 +2766,7 @@
             "z": 926.379
           },
           "aggroLevel": 41,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686354, layer 43366"
         },
         {
@@ -2775,6 +2778,7 @@
             "z": 767.669
           },
           "aggroLevel": 41,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686353, layer 43366"
         },
         {
@@ -2786,6 +2790,7 @@
             "z": 772.237
           },
           "aggroLevel": 42,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686355, layer 43366"
         },
         {
@@ -2799,6 +2804,7 @@
           "aggroLevel": 42,
           "arrivalDistance": 3.0,
           "routeOnly": true,
+          "skipDuringAshkin": true,
           "note": "Center return after SuspendedMasonry_8 before 9_PreRoute"
         },
         {
@@ -2811,7 +2817,8 @@
           },
           "aggroLevel": 42,
           "arrivalDistance": 3.0,
-          "routeOnly": true
+          "routeOnly": true,
+          "skipDuringAshkin": true
         },
         {
           "area": "SuspendedMasonry",
@@ -2822,6 +2829,7 @@
             "z": 633.387
           },
           "aggroLevel": 42,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686356, layer 43366"
         },
         {
@@ -2836,6 +2844,7 @@
           "arrivalDistance": 1.25,
           "routeOnly": true,
           "advanceOnJump": true,
+          "skipDuringAshkin": true,
           "note": "Wind current transition to floating island; move to position and do not jump"
         },
         {
@@ -3199,7 +3208,8 @@
             "z": -831.787
           },
           "aggroLevel": 43,
-          "note": "LGB instance 12685003, layer 43366"
+          "skipWhenNinja": true,
+          "note": "LGB instance 12685003, layer 43366; Crescent Haunt (DataId 20020) is always present and attacks through Hide"
         },
         {
           "area": "SinkingSanctuary",
@@ -3210,7 +3220,8 @@
             "z": -910.227
           },
           "aggroLevel": 43,
-          "note": "LGB instance 12686349, layer 43366"
+          "skipWhenNinja": true,
+          "note": "LGB instance 12686349, layer 43366; Crescent Haunt (DataId 20020) is always present and attacks through Hide"
         },
         {
           "area": "SinkingSanctuary",
@@ -3287,6 +3298,7 @@
             "z": 98.45
           },
           "aggroLevel": 40,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686348, layer 43366"
         },
         {
@@ -3298,6 +3310,7 @@
             "z": 125.666
           },
           "aggroLevel": 40,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686420, layer 43366"
         },
         {
@@ -3309,6 +3322,7 @@
             "z": 304.938
           },
           "aggroLevel": 47,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686361, layer 43366"
         },
         {
@@ -3320,6 +3334,7 @@
             "z": 168.502
           },
           "aggroLevel": 47,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686362, layer 43366"
         },
         {
@@ -3331,6 +3346,7 @@
             "z": 16
           },
           "aggroLevel": 48,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686363, layer 43366"
         },
         {
@@ -3342,6 +3358,7 @@
             "z": -30.644
           },
           "aggroLevel": 48,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12685147, layer 43366"
         },
         {
@@ -3353,6 +3370,7 @@
             "z": 180.071
           },
           "aggroLevel": 48,
+          "skipDuringAshkin": true,
           "note": "LGB instance 12686364, layer 43366"
         }
       ],
@@ -3651,6 +3669,8 @@
         "objectKinds": ["Treasure"],
         "potRevealObjectKinds": ["EventObj"],
         "localizedNames": ["Treasure Coffer"],
+        "ashkinStartEorzeaMinute": 1350,
+        "ashkinEndEorzeaMinute": 240,
       "areaAethernetMappings": [
         {
           "area": "BaseCamp",

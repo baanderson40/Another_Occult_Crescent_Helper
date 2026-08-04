@@ -600,7 +600,9 @@ public sealed class TreasureCofferFarmController : IDisposable
                     && !spot.RouteOnly)
                 {
                     totalCoffers++;
-                    if (configuration.UseNinjaForDangerousVisibleCoffers || !IsDangerousByAggro(spot))
+                    if (configuration.UseNinjaForDangerousVisibleCoffers
+                        || spot.SkipWhenNinja
+                        || !IsDangerousByAggro(spot))
                     {
                         eligibleCoffers++;
                     }
@@ -1467,6 +1469,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool RequiresDangerousTravel(VisibleCofferFarmSpotData spot)
     {
+        if (spot.SkipWhenNinja && !configuration.UseNinjaForDangerousVisibleCoffers)
+        {
+            return false;
+        }
+
         if (!configuration.UseNinjaForDangerousVisibleCoffers)
         {
             return IsDangerousByAggro(spot);
@@ -1685,6 +1692,12 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
     {
+        if (ShouldSkipWhenNinja(spot, out var hideAtOrAbove))
+        {
+            reason = $"ninja-aggro-skip:{spot.AggroLevel}>={hideAtOrAbove}";
+            return true;
+        }
+
         var weather = GetWeatherCondition();
         if (GetSkipUnsafeWeatherRoutes() && spot.SkipDuringUnsafeWeather && weather.IsUnsafe)
         {
@@ -1727,6 +1740,20 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool GetSkipUnsafeWeatherRoutes()
         => configuration.GetSkipUnsafeWeatherRoutes(scanner.Snapshot.TerritoryKey);
+
+    private bool ShouldSkipWhenNinja(VisibleCofferFarmSpotData spot, out int hideAtOrAbove)
+    {
+        hideAtOrAbove = 0;
+        if (!configuration.UseNinjaForDangerousVisibleCoffers
+            || !spot.SkipWhenNinja
+            || scanner.Snapshot.PlayerForayLevel is not { } playerKnowledgeLevel)
+        {
+            return false;
+        }
+
+        hideAtOrAbove = GetVisibleKnowledgeThreatPolicy().GetHideAtOrAbove(playerKnowledgeLevel);
+        return spot.AggroLevel >= hideAtOrAbove;
+    }
 
     private unsafe WeatherCondition GetWeatherCondition()
     {
