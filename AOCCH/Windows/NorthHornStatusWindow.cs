@@ -7,7 +7,7 @@ namespace AOCCH.Windows;
 
 public sealed class NorthHornStatusWindow : Window, IDisposable
 {
-    public const int CurrentStatusRevision = 5;
+    public const int CurrentStatusRevision = 6;
 
     private readonly Plugin plugin;
     private readonly Configuration configuration;
@@ -64,7 +64,7 @@ public sealed class NorthHornStatusWindow : Window, IDisposable
             DrawStatusRow("FATE Farming", "Supported", "Available");
             DrawStatusRow("Shopping", "Supported", "Available");
             DrawStatusRow("Pot / Reveal Coffers", "Partial", "First coffer");
-            DrawStatusRow("Overworld Coffers", "Partial", "Ninja mode untested");
+            DrawStatusRow("Overworld Coffers", "Supported", "Available");
             DrawStatusRow("Overworld Treasure Guide", "Supported", "Available");
             DrawStatusRow("Coffer Position Reporting", "Supported", "Available");
 

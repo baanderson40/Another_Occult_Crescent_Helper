@@ -54,7 +54,7 @@ The configuration window is divided into these tabs:
 - **Critical Engagements**: enable CE farming, choose CE priority, and enable individual encounters.
 - **FATEs**: enable FATE farming, choose FATE priority, configure dismount distance, and enable individual FATEs.
 - **Pots**: configure pot farming, starting pot FATE, spawn timing, threat handling, dangerous travel, gearsets, and instance-time policy.
-- **Treasure Coffers**: configure manual and automatic overworld coffer routes, guide markers, thresholds, route arrival, threat handling, dangerous travel, weather, and Ashkin policies.
+- **Treasure Coffers**: configure manual and automatic overworld coffer routes, guide markers, thresholds, route arrival, threat handling, dangerous travel, South Horn weather, and territory-specific Ashkin policies.
 - **Shopping**: configure currency reserves, purchase thresholds, item priorities, keep amounts, one-off purchases, and keep-buying behavior.
 - **Settings**: configure confirmed coffer observation sharing, autorotation overrides, target ranges, buff rotation, Return usage, mounting distance, and interface scaling.
 

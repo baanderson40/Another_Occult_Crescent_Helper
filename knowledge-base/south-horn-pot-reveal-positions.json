@@ -1,0 +1,974 @@
+{
+  "schemaVersion": 2,
+  "territoryKey": "southHorn",
+  "territoryId": 1252,
+  "description": "Compiled South Horn pot-reveal positions from the plugin occult data. Reveal Data IDs are interchangeable and are not candidate identity.",
+  "positionClusterTolerance": 1.5,
+  "sourceFiles": [
+    "AOCCH/Data/OccultCrescentData.json",
+    "knowledge-base/candidate-review-20260804-083159.json",
+    "knowledge-base/map-to-world-coordinate-formula.md"
+  ],
+  "candidateGroups": {
+    "persistentPots": {
+      "name": "Persistent Pots",
+      "fateId": 1976,
+      "candidateKeys": [
+        "persistent-pots-N1",
+        "persistent-pots-NE1",
+        "persistent-pots-NE2",
+        "persistent-pots-E1",
+        "persistent-pots-E2",
+        "persistent-pots-E3",
+        "persistent-pots-E4",
+        "persistent-pots-SE1",
+        "persistent-pots-SE2",
+        "persistent-pots-SE3",
+        "persistent-pots-SE4",
+        "persistent-pots-S1",
+        "persistent-pots-S2",
+        "persistent-pots-S3",
+        "persistent-pots-S4",
+        "persistent-pots-SW1",
+        "persistent-pots-SW2",
+        "persistent-pots-SW3",
+        "persistent-pots-SW4",
+        "persistent-pots-W1",
+        "persistent-pots-W2",
+        "persistent-pots-W3",
+        "persistent-pots-W4",
+        "persistent-pots-W5",
+        "persistent-pots-NW1",
+        "persistent-pots-NW2",
+        "persistent-pots-NW3",
+        "persistent-pots-NW4",
+        "persistent-pots-NW5",
+        "persistent-pots-NW6"
+      ],
+      "candidateCount": 30
+    },
+    "pleadingPots": {
+      "name": "Pleading Pots",
+      "fateId": 1977,
+      "candidateKeys": [
+        "pleading-pots-N1",
+        "pleading-pots-N2",
+        "pleading-pots-N3",
+        "pleading-pots-N4",
+        "pleading-pots-N5",
+        "pleading-pots-N6",
+        "pleading-pots-NE1",
+        "pleading-pots-NE2",
+        "pleading-pots-NE3",
+        "pleading-pots-NE4",
+        "pleading-pots-NE5",
+        "pleading-pots-NE6",
+        "pleading-pots-E1",
+        "pleading-pots-E2",
+        "pleading-pots-E3",
+        "pleading-pots-E4",
+        "pleading-pots-E5",
+        "pleading-pots-E6",
+        "pleading-pots-E7",
+        "pleading-pots-E8",
+        "pleading-pots-SE1",
+        "pleading-pots-S1",
+        "pleading-pots-SW1",
+        "pleading-pots-SW2",
+        "pleading-pots-SW3",
+        "pleading-pots-SW4",
+        "pleading-pots-W1",
+        "pleading-pots-NW1",
+        "pleading-pots-NW2",
+        "pleading-pots-NW3"
+      ],
+      "candidateCount": 30
+    },
+    "secondChance": {
+      "name": "Second Chance",
+      "candidateKeys": [
+        "second-chance-01",
+        "second-chance-02",
+        "second-chance-03",
+        "second-chance-04",
+        "second-chance-05",
+        "second-chance-06",
+        "second-chance-07",
+        "second-chance-08",
+        "second-chance-09",
+        "second-chance-10",
+        "second-chance-11",
+        "second-chance-12",
+        "second-chance-13",
+        "second-chance-14",
+        "second-chance-15",
+        "second-chance-16",
+        "second-chance-17",
+        "second-chance-18",
+        "second-chance-19",
+        "second-chance-20"
+      ],
+      "candidateCount": 20,
+      "confirmedCandidateCount": 7,
+      "note": "Map-derived pool. Seven positions have matching South Horn candidate-review centroids, including rejected review record 225 because it was rejected solely as a Second Chance coffer. The remaining thirteen await observations."
+    }
+  },
+  "candidates": [
+    {
+      "key": "persistent-pots-N1",
+      "fateId": 1976,
+      "groupKey": "north",
+      "label": "N1",
+      "position": {
+        "x": 330.866,
+        "y": 6.717,
+        "z": -654.534
+      },
+      "aggroLevel": 6
+    },
+    {
+      "key": "persistent-pots-NE1",
+      "fateId": 1976,
+      "groupKey": "northeast",
+      "label": "NE1",
+      "position": {
+        "x": 587.704,
+        "y": 78.896,
+        "z": -545.817
+      },
+      "aggroLevel": 2
+    },
+    {
+      "key": "persistent-pots-NE2",
+      "fateId": 1976,
+      "groupKey": "northeast",
+      "label": "NE2",
+      "position": {
+        "x": 571.5841,
+        "y": 51.451305,
+        "z": -813.1642
+      },
+      "aggroLevel": 1
+    },
+    {
+      "key": "persistent-pots-E1",
+      "fateId": 1976,
+      "groupKey": "east",
+      "label": "E1",
+      "position": {
+        "x": 803.661,
+        "y": 96,
+        "z": -354.181
+      },
+      "aggroLevel": 4
+    },
+    {
+      "key": "persistent-pots-E2",
+      "fateId": 1976,
+      "groupKey": "east",
+      "label": "E2",
+      "position": {
+        "x": 684.4223,
+        "y": 96.10129,
+        "z": -165.4811
+      },
+      "aggroLevel": 4
+    },
+    {
+      "key": "persistent-pots-E3",
+      "fateId": 1976,
+      "groupKey": "east",
+      "label": "E3",
+      "position": {
+        "x": 878.113,
+        "y": 108.29,
+        "z": -91.106
+      },
+      "aggroLevel": 5
+    },
+    {
+      "key": "persistent-pots-E4",
+      "fateId": 1976,
+      "groupKey": "east",
+      "label": "E4",
+      "position": {
+        "x": 885.93,
+        "y": 120,
+        "z": -23.25
+      },
+      "aggroLevel": 5
+    },
+    {
+      "key": "persistent-pots-SE1",
+      "fateId": 1976,
+      "groupKey": "southeast",
+      "label": "SE1",
+      "position": {
+        "x": 606.4641,
+        "y": 108.07402,
+        "z": 184.8517
+      },
+      "aggroLevel": 4
+    },
+    {
+      "key": "persistent-pots-SE2",
+      "fateId": 1976,
+      "groupKey": "southeast",
+      "label": "SE2",
+      "position": {
+        "x": 662.439,
+        "y": 120,
+        "z": 161.134
+      },
+      "aggroLevel": 21,
+      "notes": "Tracker-corrected plateau location confirmed by Capture 33 after the old SE1/SE2 reversal was repaired."
+    },
+    {
+      "key": "persistent-pots-SE3",
+      "fateId": 1976,
+      "groupKey": "southeast",
+      "label": "SE3",
+      "position": {
+        "x": 570.2421,
+        "y": 64.66202,
+        "z": 272.1734
+      },
+      "aggroLevel": 14
+    },
+    {
+      "key": "persistent-pots-SE4",
+      "fateId": 1976,
+      "groupKey": "southeast",
+      "label": "SE4",
+      "position": {
+        "x": 705.2716,
+        "y": 68.143616,
+        "z": 358.6714
+      },
+      "aggroLevel": 14
+    },
+    {
+      "key": "persistent-pots-S1",
+      "fateId": 1976,
+      "groupKey": "south",
+      "label": "S1",
+      "position": {
+        "x": 341.4413,
+        "y": 95.99999,
+        "z": 194.7507
+      },
+      "aggroLevel": 4
+    },
+    {
+      "key": "persistent-pots-S2",
+      "fateId": 1976,
+      "groupKey": "south",
+      "label": "S2",
+      "position": {
+        "x": 263.256,
+        "y": 100.385,
+        "z": 326.683
+      },
+      "aggroLevel": 10
+    },
+    {
+      "key": "persistent-pots-S3",
+      "fateId": 1976,
+      "groupKey": "south",
+      "label": "S3",
+      "position": {
+        "x": 46.03,
+        "y": 102.4,
+        "z": 373
+      },
+      "aggroLevel": 10
+    },
+    {
+      "key": "persistent-pots-S4",
+      "fateId": 1976,
+      "groupKey": "south",
+      "label": "S4",
+      "position": {
+        "x": 242.52,
+        "y": 58.84,
+        "z": 535.85
+      },
+      "aggroLevel": 15
+    },
+    {
+      "key": "persistent-pots-SW1",
+      "fateId": 1976,
+      "groupKey": "southwest",
+      "label": "SW1",
+      "position": {
+        "x": -54.69518,
+        "y": 99.40573,
+        "z": 405.0261
+      },
+      "aggroLevel": 10
+    },
+    {
+      "key": "persistent-pots-SW2",
+      "fateId": 1976,
+      "groupKey": "southwest",
+      "label": "SW2",
+      "position": {
+        "x": -165.2374,
+        "y": 95.33837,
+        "z": 437.4505
+      },
+      "aggroLevel": 10
+    },
+    {
+      "key": "persistent-pots-SW3",
+      "fateId": 1976,
+      "groupKey": "southwest",
+      "label": "SW3",
+      "position": {
+        "x": -324.2736,
+        "y": 121,
+        "z": 203.2017
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "persistent-pots-SW4",
+      "fateId": 1976,
+      "groupKey": "southwest",
+      "label": "SW4",
+      "position": {
+        "x": -313.2906,
+        "y": 108.10962,
+        "z": 70.76207
+      },
+      "aggroLevel": 12
+    },
+    {
+      "key": "persistent-pots-W1",
+      "fateId": 1976,
+      "groupKey": "west",
+      "label": "W1",
+      "position": {
+        "x": -459.1735,
+        "y": 93.57443,
+        "z": 5.054043
+      },
+      "aggroLevel": 12
+    },
+    {
+      "key": "persistent-pots-W2",
+      "fateId": 1976,
+      "groupKey": "west",
+      "label": "W2",
+      "position": {
+        "x": -312.2778,
+        "y": 103.19944,
+        "z": -35.25348
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "persistent-pots-W3",
+      "fateId": 1976,
+      "groupKey": "west",
+      "label": "W3",
+      "position": {
+        "x": -476.3011,
+        "y": 101.44228,
+        "z": -86.69939
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "persistent-pots-W4",
+      "fateId": 1976,
+      "groupKey": "west",
+      "label": "W4",
+      "position": {
+        "x": -660.5336,
+        "y": 98,
+        "z": -216.7666
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "persistent-pots-W5",
+      "fateId": 1976,
+      "groupKey": "west",
+      "label": "W5",
+      "position": {
+        "x": -382.44,
+        "y": 109.302,
+        "z": -378.348
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "persistent-pots-NW1",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW1",
+      "position": {
+        "x": 19.74,
+        "y": 26.046,
+        "z": -420.977
+      },
+      "aggroLevel": 6
+    },
+    {
+      "key": "persistent-pots-NW2",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW2",
+      "position": {
+        "x": -216.372,
+        "y": 5.4469404,
+        "z": -510.1361
+      },
+      "aggroLevel": 6
+    },
+    {
+      "key": "persistent-pots-NW3",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW3",
+      "position": {
+        "x": -386.5904,
+        "y": -0.13994062,
+        "z": -461.0976
+      },
+      "aggroLevel": 6
+    },
+    {
+      "key": "persistent-pots-NW4",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW4",
+      "position": {
+        "x": -534.6993,
+        "y": 2.999998,
+        "z": -651.6244
+      },
+      "aggroLevel": 8
+    },
+    {
+      "key": "persistent-pots-NW5",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW5",
+      "position": {
+        "x": -333.3444,
+        "y": 2.9999998,
+        "z": -861.1722
+      },
+      "aggroLevel": 8
+    },
+    {
+      "key": "persistent-pots-NW6",
+      "fateId": 1976,
+      "groupKey": "northwest",
+      "label": "NW6",
+      "position": {
+        "x": -188.1745,
+        "y": 2.999999,
+        "z": -717.2005
+      },
+      "aggroLevel": 7
+    },
+    {
+      "key": "pleading-pots-N1",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N1",
+      "position": {
+        "x": -195.442,
+        "y": 110.153,
+        "z": -287.891
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "pleading-pots-N2",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N2",
+      "position": {
+        "x": -386.437,
+        "y": 98.60658,
+        "z": -221.7847
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "pleading-pots-N3",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N3",
+      "position": {
+        "x": -554.615,
+        "y": 99.018,
+        "z": -309.123
+      },
+      "aggroLevel": 11
+    },
+    {
+      "key": "pleading-pots-N4",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N4",
+      "position": {
+        "x": -676.62,
+        "y": 128.574,
+        "z": 1.532
+      },
+      "aggroLevel": 13
+    },
+    {
+      "key": "pleading-pots-N5",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N5",
+      "position": {
+        "x": -645.3027,
+        "y": 135.69208,
+        "z": -73.54771
+      },
+      "aggroLevel": 13,
+      "notes": "Capture 32 attribution was corrected after review; this exact coffer belongs to N5, not the earlier traversal candidate N4."
+    },
+    {
+      "key": "pleading-pots-N6",
+      "fateId": 1977,
+      "groupKey": "north",
+      "label": "N6",
+      "position": {
+        "x": -730.5441,
+        "y": 107.694275,
+        "z": -371.4776
+      },
+      "aggroLevel": 25,
+      "hideThresholdDistance": 450,
+      "notes": "hostile mob aggro"
+    },
+    {
+      "key": "pleading-pots-NE1",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE1",
+      "position": {
+        "x": 74.73397,
+        "y": 110.494316,
+        "z": -394.1289
+      },
+      "aggroLevel": 9
+    },
+    {
+      "key": "pleading-pots-NE2",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE2",
+      "position": {
+        "x": 69.70596,
+        "y": 111.56108,
+        "z": -239.064
+      },
+      "aggroLevel": 9
+    },
+    {
+      "key": "pleading-pots-NE3",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE3",
+      "position": {
+        "x": -38.97946,
+        "y": 102.073296,
+        "z": -175.4589
+      },
+      "aggroLevel": 9
+    },
+    {
+      "key": "pleading-pots-NE4",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE4",
+      "position": {
+        "x": 393.019,
+        "y": 104,
+        "z": -124.165
+      },
+      "aggroLevel": 9
+    },
+    {
+      "key": "pleading-pots-NE5",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE5",
+      "position": {
+        "x": 301.8741,
+        "y": 103.784424,
+        "z": 70.59854
+      },
+      "aggroLevel": 9
+    },
+    {
+      "key": "pleading-pots-NE6",
+      "fateId": 1977,
+      "groupKey": "northeast",
+      "label": "NE6",
+      "position": {
+        "x": 107.0611,
+        "y": 105.699875,
+        "z": 146.7059
+      },
+      "aggroLevel": 10
+    },
+    {
+      "key": "pleading-pots-E1",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E1",
+      "position": {
+        "x": 8.9,
+        "y": 65.44,
+        "z": 664.74
+      },
+      "aggroLevel": 15
+    },
+    {
+      "key": "pleading-pots-E2",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E2",
+      "position": {
+        "x": 67.45271,
+        "y": 69.477974,
+        "z": 745.8658
+      },
+      "aggroLevel": 15
+    },
+    {
+      "key": "pleading-pots-E3",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E3",
+      "position": {
+        "x": 200.1241,
+        "y": 56,
+        "z": 624.2285
+      },
+      "aggroLevel": 15
+    },
+    {
+      "key": "pleading-pots-E4",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E4",
+      "position": {
+        "x": 393.2685,
+        "y": 57.545956,
+        "z": 844.6924
+      },
+      "aggroLevel": 17
+    },
+    {
+      "key": "pleading-pots-E5",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E5",
+      "position": {
+        "x": 440.836,
+        "y": 70.3,
+        "z": 876.41
+      },
+      "aggroLevel": 17
+    },
+    {
+      "key": "pleading-pots-E6",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E6",
+      "position": {
+        "x": 825.9521,
+        "y": 70,
+        "z": 772.4054
+      },
+      "aggroLevel": 17
+    },
+    {
+      "key": "pleading-pots-E7",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E7",
+      "position": {
+        "x": 781.251,
+        "y": 70,
+        "z": 560.07
+      },
+      "aggroLevel": 17
+    },
+    {
+      "key": "pleading-pots-E8",
+      "fateId": 1977,
+      "groupKey": "east",
+      "label": "E8",
+      "position": {
+        "x": 423.3505,
+        "y": 70.3,
+        "z": 578.9013
+      },
+      "aggroLevel": 17
+    },
+    {
+      "key": "pleading-pots-SE1",
+      "fateId": 1977,
+      "groupKey": "southeast",
+      "label": "SE1",
+      "position": {
+        "x": -60.72729,
+        "y": 69.687035,
+        "z": 828.4997
+      },
+      "aggroLevel": 14
+    },
+    {
+      "key": "pleading-pots-S1",
+      "fateId": 1977,
+      "groupKey": "south",
+      "label": "S1",
+      "position": {
+        "x": -603.3457,
+        "y": 139,
+        "z": 858.6771
+      },
+      "aggroLevel": 27,
+      "hideThresholdDistance": 350,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-SW1",
+      "fateId": 1977,
+      "groupKey": "southwest",
+      "label": "SW1",
+      "position": {
+        "x": -746.132,
+        "y": 172,
+        "z": 828.881
+      },
+      "aggroLevel": 27,
+      "hideThresholdDistance": 400,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-SW2",
+      "fateId": 1977,
+      "groupKey": "southwest",
+      "label": "SW2",
+      "position": {
+        "x": -734.1434,
+        "y": 170.99998,
+        "z": 683.7238
+      },
+      "aggroLevel": 28,
+      "hideThresholdDistance": 310,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-SW3",
+      "fateId": 1977,
+      "groupKey": "southwest",
+      "label": "SW3",
+      "position": {
+        "x": -707.7,
+        "y": 203,
+        "z": 702.15
+      },
+      "aggroLevel": 28,
+      "hideThresholdDistance": 290,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-SW4",
+      "fateId": 1977,
+      "groupKey": "southwest",
+      "label": "SW4",
+      "position": {
+        "x": -848.56,
+        "y": 107,
+        "z": 751.23
+      },
+      "aggroLevel": 26,
+      "hideThresholdDistance": 435,
+      "notes": "aggro; approach via upper ramp corner",
+      "approachWaypoints": [
+        {
+          "position": {
+            "x": -735.104,
+            "y": 203,
+            "z": 723.384
+          },
+          "arrivalDistance": 3
+        }
+      ]
+    },
+    {
+      "key": "pleading-pots-W1",
+      "fateId": 1977,
+      "groupKey": "west",
+      "label": "W1",
+      "position": {
+        "x": -837.49,
+        "y": 107,
+        "z": 599.9
+      },
+      "aggroLevel": 26,
+      "hideThresholdDistance": 370,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-NW1",
+      "fateId": 1977,
+      "groupKey": "northwest",
+      "label": "NW1",
+      "position": {
+        "x": -811.84,
+        "y": 114.07,
+        "z": -225.39
+      },
+      "aggroLevel": 25,
+      "hideThresholdDistance": 300,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-NW2",
+      "fateId": 1977,
+      "groupKey": "northwest",
+      "label": "NW2",
+      "position": {
+        "x": -798.7886,
+        "y": 84.22545,
+        "z": -4.822005
+      },
+      "aggroLevel": 24,
+      "hideThresholdDistance": 75,
+      "notes": "aggro"
+    },
+    {
+      "key": "pleading-pots-NW3",
+      "fateId": 1977,
+      "groupKey": "northwest",
+      "label": "NW3",
+      "position": {
+        "x": -829.598,
+        "y": 62.66814,
+        "z": 66.82948
+      },
+      "aggroLevel": 13
+    },
+    {
+      "key": "second-chance-02",
+      "groupKey": "second-chance",
+      "label": "second-chance-02",
+      "position": {
+        "x": -793.0552,
+        "y": 5,
+        "z": -777.3126
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 5.6, "y": 6.0 },
+      "reviewRecordId": 290,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-05",
+      "groupKey": "second-chance",
+      "label": "second-chance-05",
+      "position": {
+        "x": -803.5182,
+        "y": 3,
+        "z": -602.7497
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 5.4, "y": 9.4 },
+      "reviewRecordId": 389,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-11",
+      "groupKey": "second-chance",
+      "label": "second-chance-11",
+      "position": {
+        "x": -708.687,
+        "y": 141.16982,
+        "z": -139.3283
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 7.3, "y": 18.7 },
+      "reviewRecordId": 359,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-12",
+      "groupKey": "second-chance",
+      "label": "second-chance-12",
+      "position": {
+        "x": -842.8967,
+        "y": 75.76903,
+        "z": -125.0559
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 4.6, "y": 19.0 },
+      "reviewRecordId": 358,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-13",
+      "groupKey": "second-chance",
+      "label": "second-chance-13",
+      "position": {
+        "x": -868.8489,
+        "y": 67.5054,
+        "z": -59.44909
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 4.1, "y": 20.3 },
+      "reviewRecordId": 225,
+      "reviewStatus": "rejected",
+      "reviewNote": "second-chance coffer",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-14",
+      "groupKey": "second-chance",
+      "label": "second-chance-14",
+      "position": {
+        "x": -886.4718,
+        "y": 107,
+        "z": 712.4964
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 3.8, "y": 35.7 },
+      "reviewRecordId": 362,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    },
+    {
+      "key": "second-chance-15",
+      "groupKey": "second-chance",
+      "label": "second-chance-15",
+      "position": {
+        "x": -823.9183,
+        "y": 140.00032,
+        "z": 677.6934
+      },
+      "positionConfidence": "confirmed-review",
+      "mapPosition": { "x": 5.0, "y": 35.1 },
+      "reviewRecordId": 349,
+      "reviewStatus": "pending",
+      "observationCount": 1
+    }
+  ]
+}

@@ -1,0 +1,2215 @@
+{
+  "schemaVersion": 2,
+  "territoryKey": "northHorn",
+  "territoryId": 1346,
+  "description": "Compiled North Horn pot-reveal positions. Reveal Data IDs are interchangeable and are not candidate identity.",
+  "positionClusterTolerance": 1.5,
+  "sourceFiles": [
+    "candidate-review-20260802-072906.json",
+    "candidate-review-20260802-072922.json",
+    "candidate-review-20260802-072946.json"
+  ],
+  "regionTravelRequirements": {
+    "Suspended Masonry": {
+      "areaKey": "SuspendedMasonry",
+      "requiresWindCurrent": true,
+      "routeAfter": "SuspendedMasonry_4",
+      "transitionRouteLabel": "SuspendedMasonry_WindCurrent",
+      "routeBefore": "SuspendedMasonry_5",
+      "transitionPosition": {
+        "x": -473.905,
+        "y": 96.862,
+        "z": 885.407
+      },
+      "arrivalDistance": 2,
+      "advanceOnJump": true,
+      "note": "Reveal candidates in this region require the wind current to reach the floating island unless the player is already there."
+    }
+  },
+  "candidateGroups": {
+    "daylightPottery": {
+      "name": "Daylight Pottery",
+      "fateId": 2072,
+      "candidateKeys": [
+        "daylight-pottery-01",
+        "daylight-pottery-02",
+        "daylight-pottery-03",
+        "daylight-pottery-04",
+        "daylight-pottery-05",
+        "daylight-pottery-06",
+        "daylight-pottery-07",
+        "daylight-pottery-08",
+        "daylight-pottery-09",
+        "daylight-pottery-10",
+        "daylight-pottery-11",
+        "daylight-pottery-12",
+        "daylight-pottery-13",
+        "daylight-pottery-14",
+        "daylight-pottery-15",
+        "daylight-pottery-16",
+        "daylight-pottery-17",
+        "daylight-pottery-18",
+        "daylight-pottery-19",
+        "daylight-pottery-20",
+        "daylight-pottery-21",
+        "daylight-pottery-22",
+        "daylight-pottery-23",
+        "daylight-pottery-24",
+        "daylight-pottery-25",
+        "daylight-pottery-26",
+        "daylight-pottery-27",
+        "daylight-pottery-28",
+        "daylight-pottery-29",
+        "daylight-pottery-30"
+      ],
+      "candidateCount": 30
+    },
+    "inAPotOfBother": {
+      "name": "In a Pot of Bother",
+      "fateId": 2073,
+      "candidateKeys": [
+        "in-a-pot-of-bother-01",
+        "in-a-pot-of-bother-02",
+        "in-a-pot-of-bother-03",
+        "in-a-pot-of-bother-04",
+        "in-a-pot-of-bother-05",
+        "in-a-pot-of-bother-06",
+        "in-a-pot-of-bother-07",
+        "in-a-pot-of-bother-08",
+        "in-a-pot-of-bother-09",
+        "in-a-pot-of-bother-10",
+        "in-a-pot-of-bother-11",
+        "in-a-pot-of-bother-12",
+        "in-a-pot-of-bother-13",
+        "in-a-pot-of-bother-14",
+        "in-a-pot-of-bother-15",
+        "in-a-pot-of-bother-16",
+        "in-a-pot-of-bother-17",
+        "in-a-pot-of-bother-18",
+        "in-a-pot-of-bother-19",
+        "in-a-pot-of-bother-20",
+        "in-a-pot-of-bother-21",
+        "in-a-pot-of-bother-22",
+        "in-a-pot-of-bother-23",
+        "in-a-pot-of-bother-24",
+        "in-a-pot-of-bother-25",
+        "in-a-pot-of-bother-26",
+        "in-a-pot-of-bother-27",
+        "in-a-pot-of-bother-28",
+        "in-a-pot-of-bother-29",
+        "in-a-pot-of-bother-30"
+      ],
+      "candidateCount": 30
+    },
+    "secondChance": {
+      "name": "Second Chance",
+      "candidateKeys": [
+        "second-chance-01",
+        "second-chance-02",
+        "second-chance-03",
+        "second-chance-04",
+        "second-chance-05",
+        "second-chance-06",
+        "second-chance-07",
+        "second-chance-08",
+        "second-chance-09",
+        "second-chance-10",
+        "second-chance-11",
+        "second-chance-12",
+        "second-chance-13",
+        "second-chance-14",
+        "second-chance-15",
+        "second-chance-16",
+        "second-chance-17",
+        "second-chance-18",
+        "second-chance-19",
+        "second-chance-20"
+      ],
+      "candidateCount": 20,
+      "documentationOnly": true,
+      "note": "These coffers are additional offers after finding the first coffer and are not part of the initial North Horn search yet."
+    }
+  },
+  "candidates": [
+    {
+      "key": "daylight-pottery-01",
+      "position": {
+        "x": -536.877,
+        "y": 87,
+        "z": 148.845
+      },
+      "positionConfidence": "provisional",
+      "region": "Shrine of Spheres",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": -536.877,
+          "y": 87,
+          "z": 148.845
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 34,
+          "name": "Crescent Woolback",
+          "distance": 26.227,
+          "dataId": 20005,
+          "gameObjectId": 1073808612
+        },
+        "capturedAt": "2026-08-02T19:56:00.1494666+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-02",
+      "position": {
+        "x": -498.7,
+        "y": 11.051006,
+        "z": 128.9
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P08",
+        "playerPosition": {
+          "x": -494.661,
+          "y": 9.997,
+          "z": 131.085
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 33,
+          "name": "Crescent Harpeia",
+          "distance": 43.769,
+          "dataId": 20003,
+          "gameObjectId": 1073808573
+        },
+        "capturedAt": "2026-08-02T19:56:54.3652467+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-03",
+      "position": {
+        "x": -530,
+        "y": 67.77658,
+        "z": -58
+      },
+      "positionConfidence": "confirmed",
+      "region": "Shrine of Spheres",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": -530.104,
+          "y": 67.872,
+          "z": -55.405
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 35,
+          "name": "Crescent Adamantoise",
+          "distance": 23.931,
+          "dataId": 20008,
+          "gameObjectId": 1073808599
+        },
+        "capturedAt": "2026-08-02T19:55:21.8557390+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-04",
+      "position": {
+        "x": -596,
+        "y": 41.869873,
+        "z": -285
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P07",
+        "playerPosition": {
+          "x": -595.58,
+          "y": 41.845,
+          "z": -282.353
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 36,
+          "name": "Crescent Regolith",
+          "distance": 43.111,
+          "dataId": 20009,
+          "gameObjectId": 1073808706
+        },
+        "capturedAt": "2026-08-02T19:53:24.6163253+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-05",
+      "position": {
+        "x": -455.989,
+        "y": 39.688915,
+        "z": -365.5418
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -453.767,
+          "y": 39.482,
+          "z": -365.544
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 36,
+          "name": "Crescent Regolith",
+          "distance": 42.026,
+          "dataId": 20009,
+          "gameObjectId": 1073815547
+        },
+        "capturedAt": "2026-08-02T19:52:44.9992342+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-06",
+      "position": {
+        "x": -223.8233,
+        "y": 10.891144,
+        "z": -353.9438
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": -223.956,
+          "y": 10.065,
+          "z": -348.777
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 36,
+          "name": "Crescent Craklaw",
+          "distance": 45.934,
+          "dataId": 20019,
+          "gameObjectId": 1073808772
+        },
+        "capturedAt": "2026-08-02T19:49:02.2163260+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-07",
+      "position": {
+        "x": -190,
+        "y": 61.75258,
+        "z": -763
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": -189.626,
+          "y": 62.008,
+          "z": -764.639
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Dhruva",
+          "distance": 15.67,
+          "dataId": 20110,
+          "gameObjectId": 1073821413
+        },
+        "capturedAt": "2026-08-02T19:45:34.2959941+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-08",
+      "position": {
+        "x": -251.781,
+        "y": 65.949005,
+        "z": -864.3828
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": -249.418,
+          "y": 65.965,
+          "z": -864.091
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Wraith",
+          "distance": 32.461,
+          "dataId": 19992,
+          "gameObjectId": 1073812044
+        },
+        "capturedAt": "2026-08-02T19:46:08.4470013+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-09",
+      "position": {
+        "x": -252.1626,
+        "y": 66.55432,
+        "z": -879.5855
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -253.331,
+          "y": 66.561,
+          "z": -880.329
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Wraith",
+          "distance": 49.164,
+          "dataId": 19992,
+          "gameObjectId": 1073812044
+        },
+        "capturedAt": "2026-08-02T19:46:17.6919527+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-10",
+      "position": {
+        "x": -86,
+        "y": 60.596237,
+        "z": -737
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": -87.605,
+          "y": 60.564,
+          "z": -736.488
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Wraith",
+          "distance": 43.454,
+          "dataId": 19992,
+          "gameObjectId": 1073812572
+        },
+        "capturedAt": "2026-08-02T19:44:46.6275431+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-11",
+      "position": {
+        "x": 32.4,
+        "y": 56.835186,
+        "z": -777.3
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 31.543,
+          "y": 57.263,
+          "z": -778.672
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Belladonna",
+          "distance": 44.736,
+          "dataId": 19988,
+          "gameObjectId": 1073808388
+        },
+        "capturedAt": "2026-08-02T19:44:12.9559595+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-12",
+      "position": {
+        "x": 1.768392,
+        "y": 71.555756,
+        "z": -872.2798
+      },
+      "positionConfidence": "confirmed",
+      "region": "The Marrowood",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": 2.189,
+          "y": 71.421,
+          "z": -871.164
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Wraith",
+          "distance": 51.609,
+          "dataId": 19992,
+          "gameObjectId": 1073812503
+        },
+        "capturedAt": "2026-08-02T19:43:31.6732006+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-13",
+      "position": {
+        "x": 151.9998,
+        "y": 61.106945,
+        "z": -842.0175
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P13",
+        "playerPosition": {
+          "x": 151.765,
+          "y": 61.489,
+          "z": -846.558
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 27,
+          "name": "Crescent Wraith",
+          "distance": 8.69,
+          "dataId": 19992,
+          "gameObjectId": 1073811841
+        },
+        "capturedAt": "2026-08-02T19:39:00.9764836+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-14",
+      "position": {
+        "x": 321.198,
+        "y": 59.85,
+        "z": -889.8872
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P12",
+        "playerPosition": {
+          "x": 326.477,
+          "y": 59.85,
+          "z": -886.355
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 29,
+          "name": "Crescent Stoneshell",
+          "distance": 46.82,
+          "dataId": 20042,
+          "gameObjectId": 1073808473
+        },
+        "capturedAt": "2026-08-02T19:38:21.9487182+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-15",
+      "position": {
+        "x": 440.298,
+        "y": 60.615795,
+        "z": -926.5872
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P11",
+        "playerPosition": {
+          "x": 430.944,
+          "y": 60.415,
+          "z": -923.628
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 29,
+          "name": "Crescent Stoneshell",
+          "distance": 37.245,
+          "dataId": 20042,
+          "gameObjectId": 1073808476
+        },
+        "capturedAt": "2026-08-02T19:37:50.7708537+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-16",
+      "position": {
+        "x": 948.5978,
+        "y": 63.594563,
+        "z": -567.0099
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": 947.058,
+          "y": 62.635,
+          "z": -569.461
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 29,
+          "name": "Crescent Huwasi",
+          "distance": 19.6,
+          "dataId": 19995,
+          "gameObjectId": 1073808450
+        },
+        "capturedAt": "2026-08-02T19:26:05.5971569+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-17",
+      "position": {
+        "x": 912.2978,
+        "y": 61.18964,
+        "z": -461.5099
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 915.343,
+          "y": 61.844,
+          "z": -457.859
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Lorelei",
+          "distance": 64.24,
+          "dataId": 19991,
+          "gameObjectId": 1073808434
+        },
+        "capturedAt": "2026-08-02T19:25:17.3339653+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-18",
+      "position": {
+        "x": 452.6,
+        "y": 57.10005,
+        "z": -310.3
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 452.845,
+          "y": 57.1,
+          "z": -309.55
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 25,
+          "name": "Crescent Opken",
+          "distance": 89.992,
+          "dataId": 19987,
+          "gameObjectId": 1073808368
+        },
+        "capturedAt": "2026-08-02T19:17:36.7368242+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-19",
+      "position": {
+        "x": 385,
+        "y": 33,
+        "z": -177
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": 391.07,
+          "y": 33,
+          "z": -178.339
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 25,
+          "name": "Crescent Opken",
+          "distance": 28.671,
+          "dataId": 19987,
+          "gameObjectId": 1073808366
+        },
+        "capturedAt": "2026-08-02T19:16:45.3744580+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-20",
+      "position": {
+        "x": 928.8978,
+        "y": 74.0003,
+        "z": -332.8099
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": 925.291,
+          "y": 74,
+          "z": -339.891
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Lorelei",
+          "distance": 32.36,
+          "dataId": 19991,
+          "gameObjectId": 1073808433
+        },
+        "capturedAt": "2026-08-02T19:24:09.9928634+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-21",
+      "position": {
+        "x": 939.2178,
+        "y": 80.269966,
+        "z": -273.1175
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": 924.058,
+          "y": 80.27,
+          "z": -276.932
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Lorelei",
+          "distance": 21.717,
+          "dataId": 19991,
+          "gameObjectId": 1073808430
+        },
+        "capturedAt": "2026-08-02T19:20:20.8661292+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-22",
+      "position": {
+        "x": 810.8979,
+        "y": 78.39757,
+        "z": -278.8099
+      },
+      "positionConfidence": "confirmed",
+      "region": "North Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": 806.83,
+          "y": 78.195,
+          "z": -276.578
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Salt Swallow",
+          "distance": 57.862,
+          "dataId": 19993,
+          "gameObjectId": 1073808494
+        },
+        "capturedAt": "2026-08-02T19:19:07.5747506+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-23",
+      "position": {
+        "x": 927.0178,
+        "y": 54,
+        "z": -155.2175
+      },
+      "positionConfidence": "confirmed",
+      "region": "Labyrinth of the Damned",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": 924.125,
+          "y": 54,
+          "z": -155.084
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Salt Swallow",
+          "distance": 78.307,
+          "dataId": 19993,
+          "gameObjectId": 1073808442
+        },
+        "capturedAt": "2026-08-02T19:21:30.0438898+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-24",
+      "position": {
+        "x": 830.0979,
+        "y": 77.75924,
+        "z": -148.9099
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P16",
+        "playerPosition": {
+          "x": 830.854,
+          "y": 77.759,
+          "z": -149.279
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 24,
+          "name": "Crescent Onion",
+          "distance": 56.901,
+          "dataId": 19985,
+          "gameObjectId": 1073808331
+        },
+        "capturedAt": "2026-08-02T19:09:05.1430088+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-25",
+      "position": {
+        "x": 782.4979,
+        "y": 70.34123,
+        "z": -56.4099
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P15",
+        "playerPosition": {
+          "x": 780.687,
+          "y": 70.267,
+          "z": -55.297
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 24,
+          "name": "Crescent Onion",
+          "distance": 29.677,
+          "dataId": 19985,
+          "gameObjectId": 1073808333
+        },
+        "capturedAt": "2026-08-02T19:08:40.3520077+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-26",
+      "position": {
+        "x": 929.4178,
+        "y": 54,
+        "z": -1.817501
+      },
+      "positionConfidence": "confirmed",
+      "region": "Labyrinth of the Damned",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 931.338,
+          "y": 54,
+          "z": -1.566
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Lorelei",
+          "distance": 16.446,
+          "dataId": 19991,
+          "gameObjectId": 1073808423
+        },
+        "capturedAt": "2026-08-02T19:22:03.3510988+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-27",
+      "position": {
+        "x": 593,
+        "y": 39.622505,
+        "z": 34
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P14",
+        "playerPosition": {
+          "x": 595.386,
+          "y": 39.706,
+          "z": 35.075
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 24,
+          "name": "Crescent Vinegaroon",
+          "distance": 34.95,
+          "dataId": 19986,
+          "gameObjectId": 1073808319
+        },
+        "capturedAt": "2026-08-02T19:07:38.5853710+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-28",
+      "position": {
+        "x": 546.56,
+        "y": 36.120197,
+        "z": 143.3104
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P13",
+        "playerPosition": {
+          "x": 547.006,
+          "y": 33.235,
+          "z": 150.52
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 24,
+          "name": "Crescent Vinegaroon",
+          "distance": 36.054,
+          "dataId": 19986,
+          "gameObjectId": 1073808320
+        },
+        "capturedAt": "2026-08-02T19:06:28.3421407+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-29",
+      "position": {
+        "x": 889.2178,
+        "y": 53.999996,
+        "z": 155.9825
+      },
+      "positionConfidence": "confirmed",
+      "region": "Labyrinth of the Damned",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": 889.374,
+          "y": 54,
+          "z": 154.957
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 28,
+          "name": "Crescent Lorelei",
+          "distance": 27.844,
+          "dataId": 19991,
+          "gameObjectId": 1073808427
+        },
+        "capturedAt": "2026-08-02T19:22:41.5526702+00:00"
+      }
+    },
+    {
+      "key": "daylight-pottery-30",
+      "position": {
+        "x": 714.698,
+        "y": 69.24771,
+        "z": 262.6901
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P12",
+        "playerPosition": {
+          "x": 712.742,
+          "y": 69.077,
+          "z": 274.265
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 23,
+          "name": "Crescent Ankou",
+          "distance": 29.653,
+          "dataId": 20040,
+          "gameObjectId": 1073818784
+        },
+        "capturedAt": "2026-08-02T19:05:15.6806282+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-01",
+      "position": {
+        "x": -586.3,
+        "y": 47.81013,
+        "z": -715.2
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P09",
+        "playerPosition": {
+          "x": -582.562,
+          "y": 47.81,
+          "z": -715.87
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 45,
+          "name": "Crescent Arioch",
+          "distance": 46.721,
+          "dataId": 20027,
+          "gameObjectId": 1073824768
+        },
+        "capturedAt": "2026-08-03T01:43:36.6383280+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-02",
+      "position": {
+        "x": -330,
+        "y": 42,
+        "z": -628
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": -332.755,
+          "y": 42,
+          "z": -628.905
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 38,
+          "name": "Crescent Moss Fungus",
+          "distance": 43.138,
+          "dataId": 20013,
+          "gameObjectId": 1073824742
+        },
+        "capturedAt": "2026-08-03T01:29:53.4234829+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-03",
+      "position": {
+        "x": -834,
+        "y": 18.913685,
+        "z": -587.4
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P10",
+        "playerPosition": {
+          "x": -844.138,
+          "y": 20,
+          "z": -587.432
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 45,
+          "name": "Crescent Oiseau Rare",
+          "distance": 20.477,
+          "dataId": 20030,
+          "gameObjectId": 1073824776
+        },
+        "capturedAt": "2026-08-03T02:11:50.7774598+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-04",
+      "position": {
+        "x": -975.4507,
+        "y": 17.57744,
+        "z": -526.2878
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P11",
+        "playerPosition": {
+          "x": -970.675,
+          "y": 17.577,
+          "z": -526.507
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Rot-eyes",
+          "distance": 26.668,
+          "dataId": 20012,
+          "gameObjectId": 1073824694
+        },
+        "capturedAt": "2026-08-03T02:14:41.2172495+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-05",
+      "position": {
+        "x": -747.4032,
+        "y": 28.970308,
+        "z": -492.1095
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P14",
+        "playerPosition": {
+          "x": -746.145,
+          "y": 28.984,
+          "z": -492.896
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Rot-eyes",
+          "distance": 36.287,
+          "dataId": 20012,
+          "gameObjectId": 1073824824
+        },
+        "capturedAt": "2026-08-03T02:20:36.6547912+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-06",
+      "position": {
+        "x": -628.4385,
+        "y": 49.07533,
+        "z": -449.5009
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P15",
+        "playerPosition": {
+          "x": -625.145,
+          "y": 49.075,
+          "z": -451.302
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Gremlin",
+          "distance": 27.765,
+          "dataId": 20011,
+          "gameObjectId": 1073824702
+        },
+        "capturedAt": "2026-08-03T02:22:02.1033421+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-07",
+      "position": {
+        "x": -512,
+        "y": 41.999996,
+        "z": -389
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P16",
+        "playerPosition": {
+          "x": -516.792,
+          "y": 42,
+          "z": -389.442
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Gremlin",
+          "distance": 30.85,
+          "dataId": 20011,
+          "gameObjectId": 1073824836
+        },
+        "capturedAt": "2026-08-03T02:23:45.9151938+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-08",
+      "position": {
+        "x": -960,
+        "y": 48,
+        "z": -425.8
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P12",
+        "playerPosition": {
+          "x": -959.488,
+          "y": 48,
+          "z": -425.836
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Rot-eyes",
+          "distance": 40.418,
+          "dataId": 20012,
+          "gameObjectId": 1073824829
+        },
+        "capturedAt": "2026-08-03T02:16:50.9628493+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-09",
+      "position": {
+        "x": -853.493,
+        "y": 58,
+        "z": -323.8983
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P13",
+        "playerPosition": {
+          "x": -853.319,
+          "y": 58,
+          "z": -326.045
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 37,
+          "name": "Crescent Gremlin",
+          "distance": 20.054,
+          "dataId": 20011,
+          "gameObjectId": 1073824828
+        },
+        "capturedAt": "2026-08-03T02:18:58.9348999+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-10",
+      "position": {
+        "x": -109.5452,
+        "y": 8.047999,
+        "z": -210.1855
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -110.14,
+          "y": 8.048,
+          "z": -208.12
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Blackguard",
+          "distance": 74.933,
+          "dataId": 20015,
+          "gameObjectId": 1073844590
+        },
+        "capturedAt": "2026-08-03T01:23:03.4476956+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-11",
+      "position": {
+        "x": 47.6,
+        "y": 3.8843424,
+        "z": -218.3
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": 40.554,
+          "y": 3.567,
+          "z": -221.933
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Hellhound",
+          "distance": 42.01,
+          "dataId": 20016,
+          "gameObjectId": 1073824865
+        },
+        "capturedAt": "2026-08-03T01:22:21.9522605+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-12",
+      "position": {
+        "x": 190.3622,
+        "y": 3.880325,
+        "z": -204.7095
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": 189.477,
+          "y": 3.893,
+          "z": -203.955
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Hellhound",
+          "distance": 24.943,
+          "dataId": 20016,
+          "gameObjectId": 1073824871
+        },
+        "capturedAt": "2026-08-03T01:21:43.8760828+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-13",
+      "position": {
+        "x": 97.593,
+        "y": 3.536,
+        "z": -116.579
+      },
+      "positionConfidence": "provisional",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": 97.593,
+          "y": 3.536,
+          "z": -116.579
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Hellhound",
+          "distance": 25.544,
+          "dataId": 20016,
+          "gameObjectId": 1073824870
+        },
+        "capturedAt": "2026-08-03T01:21:17.6842046+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-14",
+      "position": {
+        "x": -113.4943,
+        "y": 5.0879984,
+        "z": -74.15943
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P07",
+        "playerPosition": {
+          "x": -114.057,
+          "y": 5.088,
+          "z": -73.666
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Blackguard",
+          "distance": 27.156,
+          "dataId": 20015,
+          "gameObjectId": 1073844191
+        },
+        "capturedAt": "2026-08-03T01:23:56.4721076+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-15",
+      "position": {
+        "x": 28.10088,
+        "y": 3.9999995,
+        "z": -16.69861
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 28.733,
+          "y": 4,
+          "z": -17.026
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Blackguard",
+          "distance": 61.328,
+          "dataId": 20015,
+          "gameObjectId": 1073844387
+        },
+        "capturedAt": "2026-08-03T01:20:14.1894832+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-16",
+      "position": {
+        "x": -15.89468,
+        "y": 4.0000005,
+        "z": -20.29277
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": -16.195,
+          "y": 4,
+          "z": -20.531
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 39,
+          "name": "Crescent Blackguard",
+          "distance": 37.309,
+          "dataId": 20015,
+          "gameObjectId": 1073844387
+        },
+        "capturedAt": "2026-08-03T01:19:52.7497087+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-17",
+      "position": {
+        "x": -88.43135,
+        "y": 2.400001,
+        "z": 4.891054
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P08",
+        "playerPosition": {
+          "x": -89.921,
+          "y": 2.4,
+          "z": 4.589
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 40,
+          "name": "Crescent Parthenope",
+          "distance": 24.075,
+          "dataId": 20017,
+          "gameObjectId": 1073824855
+        },
+        "capturedAt": "2026-08-03T01:24:53.4759677+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-18",
+      "position": {
+        "x": -259.6,
+        "y": 3.6823246,
+        "z": 56.9
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P10",
+        "playerPosition": {
+          "x": -260.033,
+          "y": 3.649,
+          "z": 56.229
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 40,
+          "name": "Crescent Gargoyle",
+          "distance": 23.716,
+          "dataId": 20018,
+          "gameObjectId": 1073824847
+        },
+        "capturedAt": "2026-08-03T01:27:28.1961951+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-19",
+      "position": {
+        "x": -172.6,
+        "y": 6.0019975,
+        "z": 103.2
+      },
+      "positionConfidence": "confirmed",
+      "region": "Unhallowed Hamlet",
+      "mapCapture": {
+        "label": "P09",
+        "playerPosition": {
+          "x": -171.395,
+          "y": 6.002,
+          "z": 103.943
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 40,
+          "name": "Crescent Gargoyle",
+          "distance": 24.431,
+          "dataId": 20018,
+          "gameObjectId": 1073838606
+        },
+        "capturedAt": "2026-08-03T01:26:04.5501276+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-20",
+      "position": {
+        "x": 237.9156,
+        "y": -0.29999995,
+        "z": 309.4334
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P10",
+        "playerPosition": {
+          "x": 237.298,
+          "y": -0.3,
+          "z": 304.325
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 47,
+          "name": "Crescent Gusion",
+          "distance": 96.306,
+          "dataId": 20033,
+          "gameObjectId": 1073808905
+        },
+        "capturedAt": "2026-08-02T18:48:26.1343303+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-21",
+      "position": {
+        "x": 192.875,
+        "y": -0.3,
+        "z": 351.914
+      },
+      "positionConfidence": "provisional",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P11",
+        "playerPosition": {
+          "x": 192.875,
+          "y": -0.3,
+          "z": 351.914
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Medusa",
+          "distance": 63.83,
+          "dataId": 19997,
+          "gameObjectId": 1073808523
+        },
+        "capturedAt": "2026-08-02T18:49:12.8794396+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-22",
+      "position": {
+        "x": 52,
+        "y": 25.316154,
+        "z": 552
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": 52.705,
+          "y": 25.745,
+          "z": 554.769
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Elftoad",
+          "distance": 59.293,
+          "dataId": 19998,
+          "gameObjectId": 1073808517
+        },
+        "capturedAt": "2026-08-02T18:00:30.1795489+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-23",
+      "position": {
+        "x": 0.9425046,
+        "y": 41.80327,
+        "z": 623.2599
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": -3.428,
+          "y": 41.562,
+          "z": 619.87
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Bicephalus",
+          "distance": 27.164,
+          "dataId": 20093,
+          "gameObjectId": 1073812786
+        },
+        "capturedAt": "2026-08-02T17:57:03.8203744+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-24",
+      "position": {
+        "x": -184.5137,
+        "y": 71.1816,
+        "z": 667.8036
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -178.912,
+          "y": 71.563,
+          "z": 680.599
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 31,
+          "name": "Crescent Bicephalus",
+          "distance": 31.094,
+          "dataId": 20094,
+          "gameObjectId": 1073812641
+        },
+        "capturedAt": "2026-08-02T18:01:35.8885465+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-25",
+      "position": {
+        "x": 11.98766,
+        "y": 68.15505,
+        "z": 795.707
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": 8.477,
+          "y": 67.23,
+          "z": 791.792
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Elftoad",
+          "distance": 37.475,
+          "dataId": 19998,
+          "gameObjectId": 1073808512
+        },
+        "capturedAt": "2026-08-02T17:53:37.4876954+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-26",
+      "position": {
+        "x": -127,
+        "y": 71.47446,
+        "z": 808.4
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P07",
+        "playerPosition": {
+          "x": -126.875,
+          "y": 71.545,
+          "z": 805.9
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 32,
+          "name": "Crescent Anila",
+          "distance": 81.69,
+          "dataId": 20024,
+          "gameObjectId": 1073808670
+        },
+        "capturedAt": "2026-08-02T18:02:26.8445788+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-27",
+      "position": {
+        "x": 71.10001,
+        "y": 81.074875,
+        "z": 942.3
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": 68.114,
+          "y": 81.603,
+          "z": 940.842
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 30,
+          "name": "Crescent Elftoad",
+          "distance": 39.348,
+          "dataId": 19998,
+          "gameObjectId": 1073808510
+        },
+        "capturedAt": "2026-08-02T17:52:14.1415568+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-28",
+      "position": {
+        "x": 210,
+        "y": 98.400055,
+        "z": 916
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": 211.404,
+          "y": 98.4,
+          "z": 914.434
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 25,
+          "name": "Crescent Mimic",
+          "distance": 75.627,
+          "dataId": 20123,
+          "gameObjectId": 1073809570
+        },
+        "capturedAt": "2026-08-02T17:25:11.4506353+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-29",
+      "position": {
+        "x": -269.6122,
+        "y": 107.93719,
+        "z": 875.6997
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P08",
+        "playerPosition": {
+          "x": -271.515,
+          "y": 107.888,
+          "z": 876.027
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 32,
+          "name": "Crescent Coeurl",
+          "distance": 36.873,
+          "dataId": 20001,
+          "gameObjectId": 1073808541
+        },
+        "capturedAt": "2026-08-02T18:03:19.0207550+00:00"
+      }
+    },
+    {
+      "key": "in-a-pot-of-bother-30",
+      "position": {
+        "x": -339.8588,
+        "y": 85.47024,
+        "z": 861.5197
+      },
+      "positionConfidence": "confirmed",
+      "region": "South Shadowdeep Shore",
+      "mapCapture": {
+        "label": "P09",
+        "playerPosition": {
+          "x": -349.276,
+          "y": 86.05,
+          "z": 867.808
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 32,
+          "name": "Crescent Coeurl",
+          "distance": 36.246,
+          "dataId": 20001,
+          "gameObjectId": 1073808539
+        },
+        "capturedAt": "2026-08-02T18:04:01.0216228+00:00"
+      }
+    },
+    {
+      "key": "second-chance-01",
+      "position": {
+        "x": -840.089,
+        "y": 160,
+        "z": 740.063
+      },
+      "positionConfidence": "provisional",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -840.089,
+          "y": 160,
+          "z": 740.063
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 42,
+          "name": "Crescent Flame",
+          "distance": 18.293,
+          "dataId": 20043,
+          "gameObjectId": 1073808625
+        },
+        "capturedAt": "2026-08-02T18:38:26.5244594+00:00"
+      }
+    },
+    {
+      "key": "second-chance-02",
+      "position": {
+        "x": -631.9453,
+        "y": 160,
+        "z": 808.8979
+      },
+      "positionConfidence": "confirmed",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": -627.773,
+          "y": 160,
+          "z": 810.019
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 41,
+          "name": "Bird of the Crescent",
+          "distance": 22.526,
+          "dataId": 20023,
+          "gameObjectId": 1073808643
+        },
+        "capturedAt": "2026-08-02T18:34:34.6012549+00:00"
+      }
+    },
+    {
+      "key": "second-chance-03",
+      "position": {
+        "x": -529.985,
+        "y": 160.101,
+        "z": 832.642
+      },
+      "positionConfidence": "provisional",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P01",
+        "playerPosition": {
+          "x": -529.985,
+          "y": 160.101,
+          "z": 832.642
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 41,
+          "name": "Crescent Gazellehawk",
+          "distance": 19.365,
+          "dataId": 20002,
+          "gameObjectId": 1073808664
+        },
+        "capturedAt": "2026-08-02T18:24:50.7656972+00:00"
+      }
+    },
+    {
+      "key": "second-chance-04",
+      "position": {
+        "x": -585,
+        "y": 160,
+        "z": 842
+      },
+      "positionConfidence": "confirmed",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": -586.373,
+          "y": 160,
+          "z": 840.261
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 41,
+          "name": "Crescent Gazellehawk",
+          "distance": 22.262,
+          "dataId": 20002,
+          "gameObjectId": 1073808663
+        },
+        "capturedAt": "2026-08-02T18:32:58.1025514+00:00"
+      }
+    },
+    {
+      "key": "second-chance-05",
+      "position": {
+        "x": -623,
+        "y": 160,
+        "z": 883
+      },
+      "positionConfidence": "confirmed",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": -623.404,
+          "y": 160,
+          "z": 882.182
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 41,
+          "name": "Crescent Gazellehawk",
+          "distance": 3.879,
+          "dataId": 20002,
+          "gameObjectId": 1073808665
+        },
+        "capturedAt": "2026-08-02T18:35:17.6842786+00:00"
+      }
+    },
+    {
+      "key": "second-chance-06",
+      "position": {
+        "x": -661,
+        "y": 160,
+        "z": 937
+      },
+      "positionConfidence": "confirmed",
+      "region": "Suspended Masonry",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": -661.875,
+          "y": 160,
+          "z": 930.593
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 41,
+          "name": "Crescent Gazellehawk",
+          "distance": 18.094,
+          "dataId": 20002,
+          "gameObjectId": 1073808667
+        },
+        "capturedAt": "2026-08-02T18:36:38.1138863+00:00"
+      }
+    },
+    {
+      "key": "second-chance-07",
+      "position": {
+        "x": -866,
+        "y": -41.01304,
+        "z": -775
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P08",
+        "playerPosition": {
+          "x": -868.054,
+          "y": -40.92,
+          "z": -775.925
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 45,
+          "name": "Crescent Arioch",
+          "distance": 48.2,
+          "dataId": 20027,
+          "gameObjectId": 1073824767
+        },
+        "capturedAt": "2026-08-03T01:40:31.0675573+00:00"
+      }
+    },
+    {
+      "key": "second-chance-08",
+      "position": {
+        "x": -812.044,
+        "y": 5.506,
+        "z": -880.194
+      },
+      "positionConfidence": "provisional",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": -812.044,
+          "y": 5.506,
+          "z": -880.194
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Wamoura",
+          "distance": 13.221,
+          "dataId": 20028,
+          "gameObjectId": 1073846729
+        },
+        "capturedAt": "2026-08-03T01:37:11.9742883+00:00"
+      }
+    },
+    {
+      "key": "second-chance-09",
+      "position": {
+        "x": -655.126,
+        "y": 22.908,
+        "z": -793.766
+      },
+      "positionConfidence": "provisional",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P07",
+        "playerPosition": {
+          "x": -655.126,
+          "y": 22.908,
+          "z": -793.766
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Carrier",
+          "distance": 30.077,
+          "dataId": 20029,
+          "gameObjectId": 1073824797
+        },
+        "capturedAt": "2026-08-03T01:38:29.0723907+00:00"
+      }
+    },
+    {
+      "key": "second-chance-10",
+      "position": {
+        "x": -644.623,
+        "y": 32,
+        "z": -870.516
+      },
+      "positionConfidence": "provisional",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": -644.623,
+          "y": 32,
+          "z": -870.516
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Carrier",
+          "distance": 32.707,
+          "dataId": 20029,
+          "gameObjectId": 1073824801
+        },
+        "capturedAt": "2026-08-03T01:35:42.6747321+00:00"
+      }
+    },
+    {
+      "key": "second-chance-11",
+      "position": {
+        "x": -637.2283,
+        "y": 32,
+        "z": -950.4841
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": -633.396,
+          "y": 32,
+          "z": -950.876
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Carrier",
+          "distance": 39.363,
+          "dataId": 20029,
+          "gameObjectId": 1073824800
+        },
+        "capturedAt": "2026-08-03T01:35:00.5600603+00:00"
+      }
+    },
+    {
+      "key": "second-chance-12",
+      "position": {
+        "x": -487.8,
+        "y": 48.000015,
+        "z": -953.2
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P03",
+        "playerPosition": {
+          "x": -487.634,
+          "y": 48,
+          "z": -951.51
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Carrier",
+          "distance": 51.296,
+          "dataId": 20029,
+          "gameObjectId": 1073824803
+        },
+        "capturedAt": "2026-08-03T01:33:45.1929728+00:00"
+      }
+    },
+    {
+      "key": "second-chance-13",
+      "position": {
+        "x": -449.6,
+        "y": 45.6567,
+        "z": -967.0001
+      },
+      "positionConfidence": "confirmed",
+      "region": "Moldering Streets",
+      "mapCapture": {
+        "label": "P02",
+        "playerPosition": {
+          "x": -444.619,
+          "y": 45.837,
+          "z": -970.684
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 46,
+          "name": "Crescent Carrier",
+          "distance": 53.604,
+          "dataId": 20029,
+          "gameObjectId": 1073824804
+        },
+        "capturedAt": "2026-08-03T01:32:40.2797841+00:00"
+      }
+    },
+    {
+      "key": "second-chance-14",
+      "position": {
+        "x": 701,
+        "y": 59.999992,
+        "z": -945
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P10",
+        "playerPosition": {
+          "x": 705.608,
+          "y": 60,
+          "z": -946.611
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 43,
+          "name": "Crescent Haunt",
+          "distance": 4.904,
+          "dataId": 20020,
+          "gameObjectId": 1073808414
+        },
+        "capturedAt": "2026-08-02T19:36:10.6699649+00:00"
+      }
+    },
+    {
+      "key": "second-chance-15",
+      "position": {
+        "x": 909,
+        "y": 97.05797,
+        "z": -961.8
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P08",
+        "playerPosition": {
+          "x": 909.117,
+          "y": 97.058,
+          "z": -961.813
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 44,
+          "name": "Crescent Accursed",
+          "distance": 38.554,
+          "dataId": 20022,
+          "gameObjectId": 1073808461
+        },
+        "capturedAt": "2026-08-02T19:34:07.8860643+00:00"
+      }
+    },
+    {
+      "key": "second-chance-16",
+      "position": {
+        "x": 925.6533,
+        "y": 70.21527,
+        "z": -906.2195
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P07",
+        "playerPosition": {
+          "x": 924.729,
+          "y": 70.215,
+          "z": -908.319
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 44,
+          "name": "Crescent Accursed",
+          "distance": 16.386,
+          "dataId": 20022,
+          "gameObjectId": 1073808461
+        },
+        "capturedAt": "2026-08-02T19:32:25.2551806+00:00"
+      }
+    },
+    {
+      "key": "second-chance-17",
+      "position": {
+        "x": 944.619,
+        "y": 70.215,
+        "z": -879.197
+      },
+      "positionConfidence": "provisional",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P06",
+        "playerPosition": {
+          "x": 944.619,
+          "y": 70.215,
+          "z": -879.197
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 44,
+          "name": "Crescent Accursed",
+          "distance": 20.75,
+          "dataId": 20022,
+          "gameObjectId": 1073808462
+        },
+        "capturedAt": "2026-08-02T19:30:42.5181575+00:00"
+      }
+    },
+    {
+      "key": "second-chance-18",
+      "position": {
+        "x": 626.3,
+        "y": 61.119125,
+        "z": -844.9
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P09",
+        "playerPosition": {
+          "x": 619.135,
+          "y": 60.069,
+          "z": -847.624
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 43,
+          "name": "Crescent Haunt",
+          "distance": 16.184,
+          "dataId": 20020,
+          "gameObjectId": 1073808414
+        },
+        "capturedAt": "2026-08-02T19:35:44.3779835+00:00"
+      }
+    },
+    {
+      "key": "second-chance-19",
+      "position": {
+        "x": 782.8808,
+        "y": 60.390976,
+        "z": -611.7695
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P04",
+        "playerPosition": {
+          "x": 779.252,
+          "y": 60.426,
+          "z": -611.264
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 44,
+          "name": "Crescent Nanka",
+          "distance": 46.752,
+          "dataId": 20021,
+          "gameObjectId": 1073808464
+        },
+        "capturedAt": "2026-08-02T19:26:48.1181859+00:00"
+      }
+    },
+    {
+      "key": "second-chance-20",
+      "position": {
+        "x": 671.2,
+        "y": 60.99496,
+        "z": -550.1
+      },
+      "positionConfidence": "confirmed",
+      "region": "Sinking Sanctuary",
+      "mapCapture": {
+        "label": "P05",
+        "playerPosition": {
+          "x": 667.796,
+          "y": 60.597,
+          "z": -553.431
+        },
+        "nearestThreat": {
+          "knowledgeLevel": 43,
+          "name": "Crescent Bile",
+          "distance": 11.495,
+          "dataId": 19996,
+          "gameObjectId": 1073808482
+        },
+        "capturedAt": "2026-08-02T19:27:37.1322069+00:00"
+      }
+    }
+  ]
+}

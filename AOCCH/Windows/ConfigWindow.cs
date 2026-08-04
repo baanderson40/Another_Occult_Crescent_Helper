@@ -445,6 +445,12 @@ public class ConfigWindow : Window, IDisposable
             return;
         }
 
+        var territory = plugin.Scanner.ActiveTerritoryData;
+        if (territory == null)
+        {
+            return;
+        }
+
         var enableAutomaticTreasureCofferRoute = configuration.EnableAutomaticTreasureCofferRoute;
         if (ImGui.Checkbox("Enable Automatic Coffer Route", ref enableAutomaticTreasureCofferRoute))
         {
@@ -485,25 +491,39 @@ public class ConfigWindow : Window, IDisposable
             nameof(configuration.ArrivalDistance));
         DrawSettingTooltip("How close to get to a coffer spot before performing a final search and moving on.");
 
-        var skipHighLevelCavernsDuringAshkin = configuration.SkipHighLevelCavernsDuringAshkin;
-        if (ImGui.Checkbox("Skip High-Level Caverns During Ashkin", ref skipHighLevelCavernsDuringAshkin))
+        if (string.Equals(territory.Key, "southHorn", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
         {
-            logger.Info($"[Config] op=setting-change key=SkipHighLevelCavernsDuringAshkin old={configuration.SkipHighLevelCavernsDuringAshkin} new={skipHighLevelCavernsDuringAshkin}");
-            configuration.SkipHighLevelCavernsDuringAshkin = skipHighLevelCavernsDuringAshkin;
-            configuration.Save();
+            var skipHighLevelCavernsDuringAshkin = configuration.GetSkipHighLevelCavernsDuringAshkin(territory.Key);
+            var ashkinSettingLabel = string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase)
+                ? "Skip Ashkin-Time Coffer Positions"
+                : "Skip High-Level Caverns During Ashkin";
+            if (ImGui.Checkbox(ashkinSettingLabel, ref skipHighLevelCavernsDuringAshkin))
+            {
+                var oldValue = configuration.GetSkipHighLevelCavernsDuringAshkin(territory.Key);
+                logger.Info($"[Config] op=setting-change key=SkipHighLevelCavernsDuringAshkin territoryKey={territory.Key} old={oldValue} new={skipHighLevelCavernsDuringAshkin}");
+                configuration.SetSkipHighLevelCavernsDuringAshkin(territory.Key, skipHighLevelCavernsDuringAshkin);
+                configuration.Save();
+            }
+
+            DrawSettingTooltip(string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase)
+                ? "Skips coffer positions marked as unsafe during the North Horn Ashkin window."
+                : "Bypasses high-level cavern coffers when aggressive Ashkin mobs are active at night.");
+
+            if (string.Equals(territory.Key, "southHorn", StringComparison.OrdinalIgnoreCase))
+            {
+                var skipUnsafeWeatherRoutes = configuration.GetSkipUnsafeWeatherRoutes(territory.Key);
+                if (ImGui.Checkbox("Skip Unsafe-Weather Routes", ref skipUnsafeWeatherRoutes))
+                {
+                    var oldValue = configuration.GetSkipUnsafeWeatherRoutes(territory.Key);
+                    logger.Info($"[Config] op=setting-change key=SkipUnsafeWeatherRoutes territoryKey={territory.Key} old={oldValue} new={skipUnsafeWeatherRoutes}");
+                    configuration.SetSkipUnsafeWeatherRoutes(territory.Key, skipUnsafeWeatherRoutes);
+                    configuration.Save();
+                }
+
+                DrawSettingTooltip("Avoids dangerous route paths when unsafe weather spawns aggressive mobs.");
+            }
         }
-
-        DrawSettingTooltip("Bypasses high-level cavern coffers when aggressive Ashkin mobs are active at night.");
-
-        var skipUnsafeWeatherRoutes = configuration.SkipUnsafeWeatherRoutes;
-        if (ImGui.Checkbox("Skip Unsafe-Weather Routes", ref skipUnsafeWeatherRoutes))
-        {
-            logger.Info($"[Config] op=setting-change key=SkipUnsafeWeatherRoutes old={configuration.SkipUnsafeWeatherRoutes} new={skipUnsafeWeatherRoutes}");
-            configuration.SkipUnsafeWeatherRoutes = skipUnsafeWeatherRoutes;
-            configuration.Save();
-        }
-
-        DrawSettingTooltip("Avoids dangerous route paths when unsafe weather spawns aggressive mobs.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Dangerous Travel");

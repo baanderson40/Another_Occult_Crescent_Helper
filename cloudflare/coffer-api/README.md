@@ -31,6 +31,7 @@ Attach the production custom domain through Workers > Settings > Domains & Route
 The endpoint is intentionally public. It stores only validated observations, does not expose read or delete routes, and treats installation hashes as duplicate-grouping values rather than identity proof.
 
 The API accepts UTC timestamps ending in either `Z` or `+00:00`, including the seven fractional digits emitted by .NET `DateTimeOffset` serialization. New plugin observations also include the recognized game `dataId`.
+Only pot-reveal data IDs `2014741`, `2014742`, and `2014743` are accepted; observations with other or missing data IDs are rejected.
 
 Observation submissions are limited to 60 requests per IP per 60 seconds by the Worker Rate Limiting API. Requests over the limit receive HTTP `429` with a `Retry-After: 60` header. Health checks and scheduled processing are not rate-limited.
 
