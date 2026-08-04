@@ -1459,11 +1459,10 @@
               "candidateKey": "daylight-pottery-02",
               "label": "daylight-pottery-02",
               "position": {
-                "x": -494.661,
-                "y": 9.997,
-                "z": 131.085
+                "x": -498.7,
+                "y": 11.051006,
+                "z": 128.9
               },
-              "confirmedCofferPosition": { "x": -498.7, "y": 11.051006, "z": 128.9 },
               "closeAlternateCandidateKeys": ["daylight-pottery-01"],
               "aggroLevel": 33,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1474,9 +1473,9 @@
               "candidateKey": "daylight-pottery-03",
               "label": "daylight-pottery-03",
               "position": {
-                "x": -530.104,
-                "y": 67.872,
-                "z": -55.405
+                "x": -530,
+                "y": 67.77658,
+                "z": -58
               },
               "aggroLevel": 35,
               "notes": "Shrine of Spheres; confirmed captured approach position."
@@ -1487,9 +1486,9 @@
               "candidateKey": "daylight-pottery-04",
               "label": "daylight-pottery-04",
               "position": {
-                "x": -595.58,
-                "y": 41.845,
-                "z": -282.353
+                "x": -596,
+                "y": 41.869873,
+                "z": -285
               },
               "aggroLevel": 36,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1500,9 +1499,9 @@
               "candidateKey": "daylight-pottery-05",
               "label": "daylight-pottery-05",
               "position": {
-                "x": -453.767,
-                "y": 39.482,
-                "z": -365.544
+                "x": -455.989,
+                "y": 39.688915,
+                "z": -365.5418
               },
               "aggroLevel": 36,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1513,9 +1512,9 @@
               "candidateKey": "daylight-pottery-06",
               "label": "daylight-pottery-06",
               "position": {
-                "x": -223.956,
-                "y": 10.065,
-                "z": -348.777
+                "x": -223.8233,
+                "y": 10.891144,
+                "z": -353.9438
               },
               "aggroLevel": 36,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1526,9 +1525,9 @@
               "candidateKey": "daylight-pottery-07",
               "label": "daylight-pottery-07",
               "position": {
-                "x": -189.626,
-                "y": 62.008,
-                "z": -764.639
+                "x": -190,
+                "y": 61.75258,
+                "z": -763
               },
               "aggroLevel": 30,
               "notes": "The Marrowood; confirmed captured approach position."
@@ -1539,11 +1538,10 @@
               "candidateKey": "daylight-pottery-08",
               "label": "daylight-pottery-08",
               "position": {
-                "x": -249.418,
-                "y": 65.965,
-                "z": -864.091
+                "x": -251.781,
+                "y": 65.949005,
+                "z": -864.3828
               },
-              "confirmedCofferPosition": { "x": -251.781, "y": 65.949005, "z": -864.3828 },
               "closeAlternateCandidateKeys": ["daylight-pottery-09"],
               "immediateAlternateCandidateKeys": ["daylight-pottery-09"],
               "aggroLevel": 27,
@@ -1555,11 +1553,10 @@
               "candidateKey": "daylight-pottery-09",
               "label": "daylight-pottery-09",
               "position": {
-                "x": -253.331,
-                "y": 66.561,
-                "z": -880.329
+                "x": -252.1626,
+                "y": 66.55432,
+                "z": -879.5855
               },
-              "confirmedCofferPosition": { "x": -252.1626, "y": 66.55432, "z": -879.5855 },
               "closeAlternateCandidateKeys": ["daylight-pottery-08"],
               "immediateAlternateCandidateKeys": ["daylight-pottery-08"],
               "aggroLevel": 27,
@@ -1571,9 +1568,9 @@
               "candidateKey": "daylight-pottery-10",
               "label": "daylight-pottery-10",
               "position": {
-                "x": -87.605,
-                "y": 60.564,
-                "z": -736.488
+                "x": -86,
+                "y": 60.596237,
+                "z": -737
               },
               "aggroLevel": 27,
               "notes": "The Marrowood; confirmed captured approach position."
@@ -1584,11 +1581,10 @@
               "candidateKey": "daylight-pottery-11",
               "label": "daylight-pottery-11",
               "position": {
-                "x": 31.543,
-                "y": 57.263,
-                "z": -778.672
+                "x": 32.4,
+                "y": 56.835186,
+                "z": -777.3
               },
-              "confirmedCofferPosition": { "x": 32.4, "y": 56.835186, "z": -777.3 },
               "closeAlternateCandidateKeys": ["daylight-pottery-12"],
               "aggroLevel": 27,
               "notes": "The Marrowood; confirmed captured approach position."
@@ -1599,11 +1595,10 @@
               "candidateKey": "daylight-pottery-12",
               "label": "daylight-pottery-12",
               "position": {
-                "x": 2.189,
-                "y": 71.421,
-                "z": -871.164
+                "x": 1.768392,
+                "y": 71.555756,
+                "z": -872.2798
               },
-              "confirmedCofferPosition": { "x": 1.768392, "y": 71.555756, "z": -872.2798 },
               "closeAlternateCandidateKeys": ["daylight-pottery-11"],
               "aggroLevel": 27,
               "notes": "The Marrowood; confirmed captured approach position."
@@ -1614,9 +1609,9 @@
               "candidateKey": "daylight-pottery-13",
               "label": "daylight-pottery-13",
               "position": {
-                "x": 151.765,
-                "y": 61.489,
-                "z": -846.558
+                "x": 151.9998,
+                "y": 61.106945,
+                "z": -842.0175
               },
               "aggroLevel": 27,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1627,9 +1622,9 @@
               "candidateKey": "daylight-pottery-14",
               "label": "daylight-pottery-14",
               "position": {
-                "x": 326.477,
+                "x": 321.198,
                 "y": 59.85,
-                "z": -886.355
+                "z": -889.8872
               },
               "aggroLevel": 29,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1640,9 +1635,9 @@
               "candidateKey": "daylight-pottery-15",
               "label": "daylight-pottery-15",
               "position": {
-                "x": 430.944,
-                "y": 60.415,
-                "z": -923.628
+                "x": 440.298,
+                "y": 60.615795,
+                "z": -926.5872
               },
               "aggroLevel": 29,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1653,9 +1648,9 @@
               "candidateKey": "daylight-pottery-16",
               "label": "daylight-pottery-16",
               "position": {
-                "x": 947.058,
-                "y": 62.635,
-                "z": -569.461
+                "x": 948.5978,
+                "y": 63.594563,
+                "z": -567.0099
               },
               "aggroLevel": 29,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1666,9 +1661,9 @@
               "candidateKey": "daylight-pottery-17",
               "label": "daylight-pottery-17",
               "position": {
-                "x": 915.343,
-                "y": 61.844,
-                "z": -457.859
+                "x": 912.2978,
+                "y": 61.18964,
+                "z": -461.5099
               },
               "aggroLevel": 28,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1679,9 +1674,9 @@
               "candidateKey": "daylight-pottery-18",
               "label": "daylight-pottery-18",
               "position": {
-                "x": 452.845,
-                "y": 57.1,
-                "z": -309.55
+                "x": 452.6,
+                "y": 57.10005,
+                "z": -310.3
               },
               "aggroLevel": 25,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1692,9 +1687,9 @@
               "candidateKey": "daylight-pottery-19",
               "label": "daylight-pottery-19",
               "position": {
-                "x": 391.07,
+                "x": 385,
                 "y": 33,
-                "z": -178.339
+                "z": -177
               },
               "aggroLevel": 25,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1705,11 +1700,10 @@
               "candidateKey": "daylight-pottery-20",
               "label": "daylight-pottery-20",
               "position": {
-                "x": 925.291,
-                "y": 74,
-                "z": -339.891
+                "x": 928.8978,
+                "y": 74.0003,
+                "z": -332.8099
               },
-              "confirmedCofferPosition": { "x": 928.8978, "y": 74.0003, "z": -332.8099 },
               "closeAlternateCandidateKeys": ["daylight-pottery-21"],
               "aggroLevel": 28,
               "notes": "Sinking Sanctuary; confirmed captured approach position."
@@ -1720,11 +1714,10 @@
               "candidateKey": "daylight-pottery-21",
               "label": "daylight-pottery-21",
               "position": {
-                "x": 924.058,
-                "y": 80.27,
-                "z": -276.932
+                "x": 939.2178,
+                "y": 80.269966,
+                "z": -273.1175
               },
-              "confirmedCofferPosition": { "x": 939.2178, "y": 80.269966, "z": -273.1175 },
               "closeAlternateCandidateKeys": ["daylight-pottery-20"],
               "aggroLevel": 28,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1735,9 +1728,9 @@
               "candidateKey": "daylight-pottery-22",
               "label": "daylight-pottery-22",
               "position": {
-                "x": 806.83,
-                "y": 78.195,
-                "z": -276.578
+                "x": 810.8979,
+                "y": 78.39757,
+                "z": -278.8099
               },
               "aggroLevel": 28,
               "notes": "North Shadowdeep Shore; confirmed captured approach position."
@@ -1748,11 +1741,10 @@
               "candidateKey": "daylight-pottery-23",
               "label": "daylight-pottery-23",
               "position": {
-                "x": 924.125,
+                "x": 927.0178,
                 "y": 54,
-                "z": -155.084
+                "z": -155.2175
               },
-              "confirmedCofferPosition": { "x": 927.0178, "y": 54, "z": -155.2175 },
               "closeAlternateCandidateKeys": ["daylight-pottery-24"],
               "aggroLevel": 28,
               "notes": "Labyrinth of the Damned; confirmed captured approach position."
@@ -1763,11 +1755,10 @@
               "candidateKey": "daylight-pottery-24",
               "label": "daylight-pottery-24",
               "position": {
-                "x": 830.854,
-                "y": 77.759,
-                "z": -149.279
+                "x": 830.0979,
+                "y": 77.75924,
+                "z": -148.9099
               },
-              "confirmedCofferPosition": { "x": 830.0979, "y": 77.75924, "z": -148.9099 },
               "closeAlternateCandidateKeys": ["daylight-pottery-23"],
               "aggroLevel": 24,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -1778,9 +1769,9 @@
               "candidateKey": "daylight-pottery-25",
               "label": "daylight-pottery-25",
               "position": {
-                "x": 780.687,
-                "y": 70.267,
-                "z": -55.297
+                "x": 782.4979,
+                "y": 70.34123,
+                "z": -56.4099
               },
               "aggroLevel": 24,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -1791,9 +1782,9 @@
               "candidateKey": "daylight-pottery-26",
               "label": "daylight-pottery-26",
               "position": {
-                "x": 931.338,
+                "x": 929.4178,
                 "y": 54,
-                "z": -1.566
+                "z": -1.817501
               },
               "aggroLevel": 28,
               "notes": "Labyrinth of the Damned; confirmed captured approach position."
@@ -1804,11 +1795,10 @@
               "candidateKey": "daylight-pottery-27",
               "label": "daylight-pottery-27",
               "position": {
-                "x": 595.386,
-                "y": 39.706,
-                "z": 35.075
+                "x": 593,
+                "y": 39.622505,
+                "z": 34
               },
-              "confirmedCofferPosition": { "x": 593, "y": 39.622505, "z": 34 },
               "aggroLevel": 24,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
             },
@@ -1818,9 +1808,9 @@
               "candidateKey": "daylight-pottery-28",
               "label": "daylight-pottery-28",
               "position": {
-                "x": 547.006,
-                "y": 33.235,
-                "z": 150.52
+                "x": 546.56,
+                "y": 36.120197,
+                "z": 143.3104
               },
               "aggroLevel": 24,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -1831,9 +1821,9 @@
               "candidateKey": "daylight-pottery-29",
               "label": "daylight-pottery-29",
               "position": {
-                "x": 889.374,
-                "y": 54,
-                "z": 154.957
+                "x": 889.2178,
+                "y": 53.999996,
+                "z": 155.9825
               },
               "aggroLevel": 28,
               "notes": "Labyrinth of the Damned; confirmed captured approach position."
@@ -1844,9 +1834,9 @@
               "candidateKey": "daylight-pottery-30",
               "label": "daylight-pottery-30",
               "position": {
-                "x": 712.742,
-                "y": 69.077,
-                "z": 274.265
+                "x": 714.698,
+                "y": 69.24771,
+                "z": 262.6901
               },
               "aggroLevel": 23,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -1859,25 +1849,25 @@
           "displayName": "Second Chance candidate pool",
           "candidates": [
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -840.089, "y": 160, "z": 740.063 }, "aggroLevel": 42, "notes": "Suspended Masonry; provisional shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -627.773, "y": 160, "z": 810.019 }, "confirmedCofferPosition": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-03", "label": "second-chance-03", "position": { "x": -529.985, "y": 160.101, "z": 832.642 }, "aggroLevel": 41, "notes": "Suspended Masonry; provisional shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -586.373, "y": 160, "z": 840.261 }, "confirmedCofferPosition": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-05", "label": "second-chance-05", "position": { "x": -623.404, "y": 160, "z": 882.182 }, "confirmedCofferPosition": { "x": -623, "y": 160, "z": 883 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-06", "label": "second-chance-06", "position": { "x": -661.875, "y": 160, "z": 930.593 }, "confirmedCofferPosition": { "x": -661, "y": 160, "z": 937 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-07", "label": "second-chance-07", "position": { "x": -868.054, "y": -40.92, "z": -775.925 }, "aggroLevel": 45, "notes": "Moldering Streets; provisional shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-05", "label": "second-chance-05", "position": { "x": -623, "y": 160, "z": 883 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-06", "label": "second-chance-06", "position": { "x": -661, "y": 160, "z": 937 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-07", "label": "second-chance-07", "position": { "x": -866, "y": -41.01304, "z": -775 }, "aggroLevel": 45, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-08", "label": "second-chance-08", "position": { "x": -812.044, "y": 5.506, "z": -880.194 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-09", "label": "second-chance-09", "position": { "x": -655.126, "y": 22.908, "z": -793.766 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-10", "label": "second-chance-10", "position": { "x": -644.623, "y": 32, "z": -870.516 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-11", "label": "second-chance-11", "position": { "x": -633.396, "y": 32, "z": -950.876 }, "confirmedCofferPosition": { "x": -637.2283, "y": 32, "z": -950.4841 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-12", "label": "second-chance-12", "position": { "x": -487.634, "y": 48, "z": -951.51 }, "confirmedCofferPosition": { "x": -487.8, "y": 48.000015, "z": -953.2 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-13", "label": "second-chance-13", "position": { "x": -444.619, "y": 45.837, "z": -970.684 }, "confirmedCofferPosition": { "x": -449.6, "y": 45.6567, "z": -967.0001 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-14", "label": "second-chance-14", "position": { "x": 705.608, "y": 60, "z": -946.611 }, "confirmedCofferPosition": { "x": 701, "y": 59.999992, "z": -945 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-15", "label": "second-chance-15", "position": { "x": 909.117, "y": 97.058, "z": -961.813 }, "confirmedCofferPosition": { "x": 909, "y": 97.05797, "z": -961.8 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-16", "label": "second-chance-16", "position": { "x": 924.729, "y": 70.215, "z": -908.319 }, "confirmedCofferPosition": { "x": 925.6533, "y": 70.21527, "z": -906.2195 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-11", "label": "second-chance-11", "position": { "x": -637.2283, "y": 32, "z": -950.4841 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-12", "label": "second-chance-12", "position": { "x": -487.8, "y": 48.000015, "z": -953.2 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-13", "label": "second-chance-13", "position": { "x": -449.6, "y": 45.6567, "z": -967.0001 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-14", "label": "second-chance-14", "position": { "x": 701, "y": 59.999992, "z": -945 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-15", "label": "second-chance-15", "position": { "x": 909, "y": 97.05797, "z": -961.8 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-16", "label": "second-chance-16", "position": { "x": 925.6533, "y": 70.21527, "z": -906.2195 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-17", "label": "second-chance-17", "position": { "x": 944.619, "y": 70.215, "z": -879.197 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; provisional shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-18", "label": "second-chance-18", "position": { "x": 619.135, "y": 60.069, "z": -847.624 }, "confirmedCofferPosition": { "x": 626.3, "y": 61.119125, "z": -844.9 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-19", "label": "second-chance-19", "position": { "x": 779.252, "y": 60.426, "z": -611.264 }, "confirmedCofferPosition": { "x": 782.8808, "y": 60.390976, "z": -611.7695 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-20", "label": "second-chance-20", "position": { "x": 667.796, "y": 60.597, "z": -553.431 }, "confirmedCofferPosition": { "x": 671.2, "y": 60.99496, "z": -550.1 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." }
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-18", "label": "second-chance-18", "position": { "x": 626.3, "y": 61.119125, "z": -844.9 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-19", "label": "second-chance-19", "position": { "x": 782.8808, "y": 60.390976, "z": -611.7695 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-20", "label": "second-chance-20", "position": { "x": 671.2, "y": 60.99496, "z": -550.1 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." }
           ]
         },
         {
@@ -1891,11 +1881,10 @@
               "candidateKey": "in-a-pot-of-bother-01",
               "label": "in-a-pot-of-bother-01",
               "position": {
-                "x": -582.562,
-                "y": 47.81,
-                "z": -715.87
+                "x": -586.3,
+                "y": 47.81013,
+                "z": -715.2
               },
-              "confirmedCofferPosition": { "x": -586.3, "y": 47.81013, "z": -715.2 },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
             },
@@ -1905,9 +1894,9 @@
               "candidateKey": "in-a-pot-of-bother-02",
               "label": "in-a-pot-of-bother-02",
               "position": {
-                "x": -332.755,
+                "x": -330,
                 "y": 42,
-                "z": -628.905
+                "z": -628
               },
               "aggroLevel": 38,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1918,9 +1907,9 @@
               "candidateKey": "in-a-pot-of-bother-03",
               "label": "in-a-pot-of-bother-03",
               "position": {
-                "x": -844.138,
-                "y": 20,
-                "z": -587.432
+                "x": -834,
+                "y": 18.913685,
+                "z": -587.4
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1931,9 +1920,9 @@
               "candidateKey": "in-a-pot-of-bother-04",
               "label": "in-a-pot-of-bother-04",
               "position": {
-                "x": -970.675,
-                "y": 17.577,
-                "z": -526.507
+                "x": -975.4507,
+                "y": 17.57744,
+                "z": -526.2878
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1944,9 +1933,9 @@
               "candidateKey": "in-a-pot-of-bother-05",
               "label": "in-a-pot-of-bother-05",
               "position": {
-                "x": -746.145,
-                "y": 28.984,
-                "z": -492.896
+                "x": -747.4032,
+                "y": 28.970308,
+                "z": -492.1095
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1957,9 +1946,9 @@
               "candidateKey": "in-a-pot-of-bother-06",
               "label": "in-a-pot-of-bother-06",
               "position": {
-                "x": -625.145,
-                "y": 49.075,
-                "z": -451.302
+                "x": -628.4385,
+                "y": 49.07533,
+                "z": -449.5009
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1970,9 +1959,9 @@
               "candidateKey": "in-a-pot-of-bother-07",
               "label": "in-a-pot-of-bother-07",
               "position": {
-                "x": -516.792,
-                "y": 42,
-                "z": -389.442
+                "x": -512,
+                "y": 41.999996,
+                "z": -389
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1983,9 +1972,9 @@
               "candidateKey": "in-a-pot-of-bother-08",
               "label": "in-a-pot-of-bother-08",
               "position": {
-                "x": -959.488,
+                "x": -960,
                 "y": 48,
-                "z": -425.836
+                "z": -425.8
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -1996,9 +1985,9 @@
               "candidateKey": "in-a-pot-of-bother-09",
               "label": "in-a-pot-of-bother-09",
               "position": {
-                "x": -853.319,
+                "x": -853.493,
                 "y": 58,
-                "z": -326.045
+                "z": -323.8983
               },
               "aggroLevel": 37,
               "notes": "Moldering Streets; confirmed captured approach position."
@@ -2009,9 +1998,9 @@
               "candidateKey": "in-a-pot-of-bother-10",
               "label": "in-a-pot-of-bother-10",
               "position": {
-                "x": -110.14,
-                "y": 8.048,
-                "z": -208.12
+                "x": -109.5452,
+                "y": 8.047999,
+                "z": -210.1855
               },
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2022,9 +2011,9 @@
               "candidateKey": "in-a-pot-of-bother-11",
               "label": "in-a-pot-of-bother-11",
               "position": {
-                "x": 40.554,
-                "y": 3.567,
-                "z": -221.933
+                "x": 47.6,
+                "y": 3.8843424,
+                "z": -218.3
               },
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2035,9 +2024,9 @@
               "candidateKey": "in-a-pot-of-bother-12",
               "label": "in-a-pot-of-bother-12",
               "position": {
-                "x": 189.477,
-                "y": 3.893,
-                "z": -203.955
+                "x": 190.3622,
+                "y": 3.880325,
+                "z": -204.7095
               },
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2061,11 +2050,10 @@
               "candidateKey": "in-a-pot-of-bother-14",
               "label": "in-a-pot-of-bother-14",
               "position": {
-                "x": -114.057,
-                "y": 5.088,
-                "z": -73.666
+                "x": -113.4943,
+                "y": 5.0879984,
+                "z": -74.15943
               },
-              "confirmedCofferPosition": { "x": -113.4943, "y": 5.0879984, "z": -74.15943 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-17"],
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2076,11 +2064,10 @@
               "candidateKey": "in-a-pot-of-bother-15",
               "label": "in-a-pot-of-bother-15",
               "position": {
-                "x": 28.733,
-                "y": 4,
-                "z": -17.026
+                "x": 28.10088,
+                "y": 3.9999995,
+                "z": -16.69861
               },
-              "confirmedCofferPosition": { "x": 28.10088, "y": 3.9999995, "z": -16.69861 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-16"],
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2091,11 +2078,10 @@
               "candidateKey": "in-a-pot-of-bother-16",
               "label": "in-a-pot-of-bother-16",
               "position": {
-                "x": -16.195,
-                "y": 4,
-                "z": -20.531
+                "x": -15.89468,
+                "y": 4.0000005,
+                "z": -20.29277
               },
-              "confirmedCofferPosition": { "x": -15.89468, "y": 4.0000005, "z": -20.29277 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-15", "in-a-pot-of-bother-17"],
               "aggroLevel": 39,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2106,11 +2092,10 @@
               "candidateKey": "in-a-pot-of-bother-17",
               "label": "in-a-pot-of-bother-17",
               "position": {
-                "x": -89.921,
-                "y": 2.4,
-                "z": 4.589
+                "x": -88.43135,
+                "y": 2.400001,
+                "z": 4.891054
               },
-              "confirmedCofferPosition": { "x": -88.43135, "y": 2.400001, "z": 4.891054 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-14", "in-a-pot-of-bother-16"],
               "aggroLevel": 40,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2121,11 +2106,10 @@
               "candidateKey": "in-a-pot-of-bother-18",
               "label": "in-a-pot-of-bother-18",
               "position": {
-                "x": -260.033,
-                "y": 3.649,
-                "z": 56.229
+                "x": -259.6,
+                "y": 3.6823246,
+                "z": 56.9
               },
-              "confirmedCofferPosition": { "x": -259.6, "y": 3.6823246, "z": 56.9 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-19"],
               "aggroLevel": 40,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2136,11 +2120,10 @@
               "candidateKey": "in-a-pot-of-bother-19",
               "label": "in-a-pot-of-bother-19",
               "position": {
-                "x": -171.395,
-                "y": 6.002,
-                "z": 103.943
+                "x": -172.6,
+                "y": 6.0019975,
+                "z": 103.2
               },
-              "confirmedCofferPosition": { "x": -172.6, "y": 6.0019975, "z": 103.2 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-18"],
               "aggroLevel": 40,
               "notes": "Unhallowed Hamlet; confirmed captured approach position."
@@ -2151,11 +2134,10 @@
               "candidateKey": "in-a-pot-of-bother-20",
               "label": "in-a-pot-of-bother-20",
               "position": {
-                "x": 237.298,
-                "y": -0.3,
-                "z": 304.325
+                "x": 237.9156,
+                "y": -0.29999995,
+                "z": 309.4334
               },
-              "confirmedCofferPosition": { "x": 237.9156, "y": -0.29999995, "z": 309.4334 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-21"],
               "aggroLevel": 47,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2180,11 +2162,10 @@
               "candidateKey": "in-a-pot-of-bother-22",
               "label": "in-a-pot-of-bother-22",
               "position": {
-                "x": 52.705,
-                "y": 25.745,
-                "z": 554.769
+                "x": 52,
+                "y": 25.316154,
+                "z": 552
               },
-              "confirmedCofferPosition": { "x": 52, "y": 25.316154, "z": 552 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-23"],
               "aggroLevel": 30,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2195,11 +2176,10 @@
               "candidateKey": "in-a-pot-of-bother-23",
               "label": "in-a-pot-of-bother-23",
               "position": {
-                "x": -3.428,
-                "y": 41.562,
-                "z": 619.87
+                "x": 0.9425046,
+                "y": 41.80327,
+                "z": 623.2599
               },
-              "confirmedCofferPosition": { "x": 0.9425046, "y": 41.80327, "z": 623.2599 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-22"],
               "aggroLevel": 30,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2210,9 +2190,9 @@
               "candidateKey": "in-a-pot-of-bother-24",
               "label": "in-a-pot-of-bother-24",
               "position": {
-                "x": -178.912,
-                "y": 71.563,
-                "z": 680.599
+                "x": -184.5137,
+                "y": 71.1816,
+                "z": 667.8036
               },
               "aggroLevel": 31,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2223,9 +2203,9 @@
               "candidateKey": "in-a-pot-of-bother-25",
               "label": "in-a-pot-of-bother-25",
               "position": {
-                "x": 8.477,
-                "y": 67.23,
-                "z": 791.792
+                "x": 11.98766,
+                "y": 68.15505,
+                "z": 795.707
               },
               "aggroLevel": 30,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2236,9 +2216,9 @@
               "candidateKey": "in-a-pot-of-bother-26",
               "label": "in-a-pot-of-bother-26",
               "position": {
-                "x": -126.875,
-                "y": 71.545,
-                "z": 805.9
+                "x": -127,
+                "y": 71.47446,
+                "z": 808.4
               },
               "aggroLevel": 32,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2249,9 +2229,9 @@
               "candidateKey": "in-a-pot-of-bother-27",
               "label": "in-a-pot-of-bother-27",
               "position": {
-                "x": 68.114,
-                "y": 81.603,
-                "z": 940.842
+                "x": 71.10001,
+                "y": 81.074875,
+                "z": 942.3
               },
               "aggroLevel": 30,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2262,9 +2242,9 @@
               "candidateKey": "in-a-pot-of-bother-28",
               "label": "in-a-pot-of-bother-28",
               "position": {
-                "x": 211.404,
-                "y": 98.4,
-                "z": 914.434
+                "x": 210,
+                "y": 98.400055,
+                "z": 916
               },
               "aggroLevel": 25,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2275,11 +2255,10 @@
               "candidateKey": "in-a-pot-of-bother-29",
               "label": "in-a-pot-of-bother-29",
               "position": {
-                "x": -271.515,
-                "y": 107.888,
-                "z": 876.027
+                "x": -269.6122,
+                "y": 107.93719,
+                "z": 875.6997
               },
-              "confirmedCofferPosition": { "x": -269.6122, "y": 107.93719, "z": 875.6997 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-30"],
               "aggroLevel": 32,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2290,11 +2269,10 @@
               "candidateKey": "in-a-pot-of-bother-30",
               "label": "in-a-pot-of-bother-30",
               "position": {
-                "x": -349.276,
-                "y": 86.05,
-                "z": 867.808
+                "x": -339.8588,
+                "y": 85.47024,
+                "z": 861.5197
               },
-              "confirmedCofferPosition": { "x": -339.8588, "y": 85.47024, "z": 861.5197 },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-29"],
               "aggroLevel": 32,
               "notes": "South Shadowdeep Shore; confirmed captured approach position."
@@ -2307,25 +2285,25 @@
           "displayName": "Second Chance candidate pool",
           "candidates": [
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -840.089, "y": 160, "z": 740.063 }, "aggroLevel": 42, "notes": "Suspended Masonry; provisional shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -627.773, "y": 160, "z": 810.019 }, "confirmedCofferPosition": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-03", "label": "second-chance-03", "position": { "x": -529.985, "y": 160.101, "z": 832.642 }, "aggroLevel": 41, "notes": "Suspended Masonry; provisional shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -586.373, "y": 160, "z": 840.261 }, "confirmedCofferPosition": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-05", "label": "second-chance-05", "position": { "x": -623.404, "y": 160, "z": 882.182 }, "confirmedCofferPosition": { "x": -623, "y": 160, "z": 883 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-06", "label": "second-chance-06", "position": { "x": -661.875, "y": 160, "z": 930.593 }, "confirmedCofferPosition": { "x": -661, "y": 160, "z": 937 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-07", "label": "second-chance-07", "position": { "x": -868.054, "y": -40.92, "z": -775.925 }, "aggroLevel": 45, "notes": "Moldering Streets; provisional shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-05", "label": "second-chance-05", "position": { "x": -623, "y": 160, "z": 883 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-06", "label": "second-chance-06", "position": { "x": -661, "y": 160, "z": 937 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-07", "label": "second-chance-07", "position": { "x": -866, "y": -41.01304, "z": -775 }, "aggroLevel": 45, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-08", "label": "second-chance-08", "position": { "x": -812.044, "y": 5.506, "z": -880.194 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-09", "label": "second-chance-09", "position": { "x": -655.126, "y": 22.908, "z": -793.766 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-10", "label": "second-chance-10", "position": { "x": -644.623, "y": 32, "z": -870.516 }, "aggroLevel": 46, "notes": "Moldering Streets; provisional shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-11", "label": "second-chance-11", "position": { "x": -633.396, "y": 32, "z": -950.876 }, "confirmedCofferPosition": { "x": -637.2283, "y": 32, "z": -950.4841 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-12", "label": "second-chance-12", "position": { "x": -487.634, "y": 48, "z": -951.51 }, "confirmedCofferPosition": { "x": -487.8, "y": 48.000015, "z": -953.2 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-13", "label": "second-chance-13", "position": { "x": -444.619, "y": 45.837, "z": -970.684 }, "confirmedCofferPosition": { "x": -449.6, "y": 45.6567, "z": -967.0001 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-14", "label": "second-chance-14", "position": { "x": 705.608, "y": 60, "z": -946.611 }, "confirmedCofferPosition": { "x": 701, "y": 59.999992, "z": -945 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-15", "label": "second-chance-15", "position": { "x": 909.117, "y": 97.058, "z": -961.813 }, "confirmedCofferPosition": { "x": 909, "y": 97.05797, "z": -961.8 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-16", "label": "second-chance-16", "position": { "x": 924.729, "y": 70.215, "z": -908.319 }, "confirmedCofferPosition": { "x": 925.6533, "y": 70.21527, "z": -906.2195 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-11", "label": "second-chance-11", "position": { "x": -637.2283, "y": 32, "z": -950.4841 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-12", "label": "second-chance-12", "position": { "x": -487.8, "y": 48.000015, "z": -953.2 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-13", "label": "second-chance-13", "position": { "x": -449.6, "y": 45.6567, "z": -967.0001 }, "aggroLevel": 46, "notes": "Moldering Streets; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-14", "label": "second-chance-14", "position": { "x": 701, "y": 59.999992, "z": -945 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-15", "label": "second-chance-15", "position": { "x": 909, "y": 97.05797, "z": -961.8 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-16", "label": "second-chance-16", "position": { "x": 925.6533, "y": 70.21527, "z": -906.2195 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-17", "label": "second-chance-17", "position": { "x": 944.619, "y": 70.215, "z": -879.197 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; provisional shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-18", "label": "second-chance-18", "position": { "x": 619.135, "y": 60.069, "z": -847.624 }, "confirmedCofferPosition": { "x": 626.3, "y": 61.119125, "z": -844.9 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-19", "label": "second-chance-19", "position": { "x": 779.252, "y": 60.426, "z": -611.264 }, "confirmedCofferPosition": { "x": 782.8808, "y": 60.390976, "z": -611.7695 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-20", "label": "second-chance-20", "position": { "x": 667.796, "y": 60.597, "z": -553.431 }, "confirmedCofferPosition": { "x": 671.2, "y": 60.99496, "z": -550.1 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." }
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-18", "label": "second-chance-18", "position": { "x": 626.3, "y": 61.119125, "z": -844.9 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-19", "label": "second-chance-19", "position": { "x": 782.8808, "y": 60.390976, "z": -611.7695 }, "aggroLevel": 44, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-20", "label": "second-chance-20", "position": { "x": 671.2, "y": 60.99496, "z": -550.1 }, "aggroLevel": 43, "notes": "Sinking Sanctuary; confirmed shared Second Chance position." }
           ]
         }
       ],
