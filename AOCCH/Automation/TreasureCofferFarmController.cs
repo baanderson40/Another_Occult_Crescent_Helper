@@ -1686,13 +1686,13 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
     {
         var weather = GetWeatherCondition();
-        if (configuration.SkipUnsafeWeatherRoutes && spot.SkipDuringUnsafeWeather && weather.IsUnsafe)
+        if (GetSkipUnsafeWeatherRoutes() && spot.SkipDuringUnsafeWeather && weather.IsUnsafe)
         {
             reason = $"unsafe-weather-skip:{FormatWeatherId(weather.Id)}";
             return true;
         }
 
-        if (configuration.SkipUnsafeWeatherRoutes
+        if (GetSkipUnsafeWeatherRoutes()
             && spot.RainSensitive
             && weather.IsUnsafe
             && !configuration.UseNinjaForDangerousVisibleCoffers)
@@ -1701,7 +1701,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             return true;
         }
 
-        if (configuration.SkipHighLevelCavernsDuringAshkin
+        if (GetSkipHighLevelCavernsDuringAshkin()
             && spot.SkipDuringAshkin
             && IsAshkinTime())
         {
@@ -1716,11 +1716,17 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool ShouldForceHiddenForWeather(VisibleCofferFarmSpotData spot)
     {
         var weather = GetWeatherCondition();
-        return configuration.SkipUnsafeWeatherRoutes
+        return GetSkipUnsafeWeatherRoutes()
             && spot.RainSensitive
             && weather.IsUnsafe
             && configuration.UseNinjaForDangerousVisibleCoffers;
     }
+
+    private bool GetSkipHighLevelCavernsDuringAshkin()
+        => configuration.GetSkipHighLevelCavernsDuringAshkin(scanner.Snapshot.TerritoryKey);
+
+    private bool GetSkipUnsafeWeatherRoutes()
+        => configuration.GetSkipUnsafeWeatherRoutes(scanner.Snapshot.TerritoryKey);
 
     private unsafe WeatherCondition GetWeatherCondition()
     {

@@ -73,6 +73,14 @@ public sealed class TerritoryPotFarmingSetting
 }
 
 [Serializable]
+public sealed class TerritoryVisibleCofferSafetySetting
+{
+    public string TerritoryKey { get; set; } = string.Empty;
+    public bool SkipHighLevelCavernsDuringAshkin { get; set; }
+    public bool SkipUnsafeWeatherRoutes { get; set; }
+}
+
+[Serializable]
 public class Configuration : IPluginConfiguration
 {
     [JsonIgnore]
@@ -84,7 +92,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 10;
+    public int Version { get; set; } = 11;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -147,8 +155,7 @@ public class Configuration : IPluginConfiguration
     public int FateGearsetNumber { get; set; }
     public int FateDismountDistance { get; set; } = 10;
     public int ArrivalDistance { get; set; } = 5;
-    public bool SkipHighLevelCavernsDuringAshkin { get; set; }
-    public bool SkipUnsafeWeatherRoutes { get; set; }
+    public List<TerritoryVisibleCofferSafetySetting> VisibleCofferSafetySettings { get; set; } = [];
     public int CeFallbackCutoffMinutes { get; set; } = 10;
     public int FateFallbackCutoffMinutes { get; set; } = 5;
     public int MainWindowStatusTextScalePercent { get; set; } = 100;
@@ -163,6 +170,14 @@ public class Configuration : IPluginConfiguration
     [JsonPropertyName("VisibleTreasureCofferMaximumAggroLevel")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? LegacyVisibleTreasureCofferMaximumAggroLevel { get; set; }
+
+    [JsonPropertyName("SkipHighLevelCavernsDuringAshkin")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacySkipHighLevelCavernsDuringAshkin { get; set; }
+
+    [JsonPropertyName("SkipUnsafeWeatherRoutes")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacySkipUnsafeWeatherRoutes { get; set; }
 
     public bool IsCriticalEncounterEnabled(string territoryKey, uint id)
     {
@@ -252,6 +267,57 @@ public class Configuration : IPluginConfiguration
         return true;
     }
 
+    public bool GetSkipHighLevelCavernsDuringAshkin(string territoryKey)
+    {
+        NormalizeTerritorySettings();
+        return VisibleCofferSafetySettings.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey))?.SkipHighLevelCavernsDuringAshkin == true;
+    }
+
+    public bool SetSkipHighLevelCavernsDuringAshkin(string territoryKey, bool enabled)
+    {
+        NormalizeTerritorySettings();
+        var setting = GetOrAddVisibleCofferSafetySetting(territoryKey);
+        if (setting.SkipHighLevelCavernsDuringAshkin == enabled)
+        {
+            return false;
+        }
+
+        setting.SkipHighLevelCavernsDuringAshkin = enabled;
+        return true;
+    }
+
+    public bool GetSkipUnsafeWeatherRoutes(string territoryKey)
+    {
+        NormalizeTerritorySettings();
+        return VisibleCofferSafetySettings.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey))?.SkipUnsafeWeatherRoutes == true;
+    }
+
+    public bool SetSkipUnsafeWeatherRoutes(string territoryKey, bool enabled)
+    {
+        NormalizeTerritorySettings();
+        var setting = GetOrAddVisibleCofferSafetySetting(territoryKey);
+        if (setting.SkipUnsafeWeatherRoutes == enabled)
+        {
+            return false;
+        }
+
+        setting.SkipUnsafeWeatherRoutes = enabled;
+        return true;
+    }
+
+    private TerritoryVisibleCofferSafetySetting GetOrAddVisibleCofferSafetySetting(string territoryKey)
+    {
+        var setting = VisibleCofferSafetySettings.FirstOrDefault(entry => MatchesTerritory(entry.TerritoryKey, territoryKey));
+        if (setting != null)
+        {
+            return setting;
+        }
+
+        setting = new TerritoryVisibleCofferSafetySetting { TerritoryKey = territoryKey };
+        VisibleCofferSafetySettings.Add(setting);
+        return setting;
+    }
+
     public int GetCurrencyShopReserve(string territoryKey, uint currencyItemId)
         => CurrencyShopReserves.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey) && setting.CurrencyItemId == currencyItemId)?.ReserveAmount ?? 0;
 
@@ -323,7 +389,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 10)
+        if (Version >= 11)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -465,10 +531,20 @@ public class Configuration : IPluginConfiguration
             logger?.Info($"[Configuration] op=migration-copy source=MaximumAggroLevel value={MaximumAggroLevel} target=PotTreasureFallbackMaximumAggroLevel value={PotTreasureFallbackMaximumAggroLevel}");
         }
 
+        if (Version < 11)
+        {
+            var southHornSafety = GetOrAddVisibleCofferSafetySetting("southHorn");
+            southHornSafety.SkipHighLevelCavernsDuringAshkin = LegacySkipHighLevelCavernsDuringAshkin ?? false;
+            southHornSafety.SkipUnsafeWeatherRoutes = LegacySkipUnsafeWeatherRoutes ?? false;
+            LegacySkipHighLevelCavernsDuringAshkin = null;
+            LegacySkipUnsafeWeatherRoutes = null;
+            logger?.Info($"[Configuration] op=migration-scope-visible-coffer-safety territoryKey=southHorn skipHighLevelCavernsDuringAshkin={southHornSafety.SkipHighLevelCavernsDuringAshkin} skipUnsafeWeatherRoutes={southHornSafety.SkipUnsafeWeatherRoutes}");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 10;
-        logger?.Info("[Configuration] op=migration-complete version=10");
+        Version = 11;
+        logger?.Info("[Configuration] op=migration-complete version=11");
         return true;
     }
 
@@ -541,6 +617,7 @@ public class Configuration : IPluginConfiguration
         DisabledTerritoryFateIds ??= [];
         StartingPotFates ??= [];
         PotFarmingTerritories ??= [];
+        VisibleCofferSafetySettings ??= [];
 
         foreach (var setting in DisabledTerritoryCriticalEncounterIds)
         {
@@ -558,6 +635,11 @@ public class Configuration : IPluginConfiguration
         }
 
         foreach (var setting in PotFarmingTerritories)
+        {
+            setting.TerritoryKey ??= string.Empty;
+        }
+
+        foreach (var setting in VisibleCofferSafetySettings)
         {
             setting.TerritoryKey ??= string.Empty;
         }
