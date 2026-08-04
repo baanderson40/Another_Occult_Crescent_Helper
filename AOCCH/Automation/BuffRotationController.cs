@@ -31,7 +31,7 @@ public sealed class BuffRotationController : IDisposable
         new(1, "Knight", 41589u, 2, "Enduring Fortitude", 4233u, false, []),
         new(3, "Monk", 41597u, 3, "Fleetfooted", 4239u, false, []),
         new(6, "Bard", 41609u, 2, "Romeo's Ballad", 4244u, false, []),
-        new(15, "Dancer", 41603u, 2, "Quick Step", 4799u, false, []),
+        new(15, "Dancer", 46603u, 2, "Quicker Step", 4799u, false, []),
     ];
 
     private readonly IFramework framework;
@@ -1067,6 +1067,32 @@ public sealed class BuffRotationController : IDisposable
         else
         {
             logger.Warning($"{BuildLogTag()} op=failure state={BuffRotationState.Failed} context=\"{LastContext}\" action=\"{CurrentAction}\" reason={error}");
+        }
+
+        RestoreSupportJobOnFailure(critical);
+    }
+
+    private void RestoreSupportJobOnFailure(bool critical)
+    {
+        var targetJob = PendingSupportJobRestore;
+        if (targetJob == null)
+        {
+            return;
+        }
+
+        if (RequestPendingSupportJobRestore("failure cleanup", out var restoreError))
+        {
+            logger.Info($"{BuildLogTag()} op=failure-cleanup restoreRequested=true targetSupportJob={targetJob.Value}");
+            return;
+        }
+
+        if (critical)
+        {
+            logger.Error($"{BuildLogTag()} op=failure-cleanup restoreRequested=false error={restoreError}");
+        }
+        else
+        {
+            logger.Warning($"{BuildLogTag()} op=failure-cleanup restoreRequested=false error={restoreError}");
         }
     }
 
