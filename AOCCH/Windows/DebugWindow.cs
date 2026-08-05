@@ -6,7 +6,9 @@ using AOCCH.Automation;
 using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Windowing;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 
 namespace AOCCH.Windows;
 
@@ -497,6 +499,12 @@ public sealed class DebugWindow : Window, IDisposable
             return;
         }
 
+        if (ImGui.Button("Dump CE Boss Candidates"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-ce-boss-candidates");
+            DumpCeBossCandidates(snapshot);
+        }
+
         if (snapshot.CriticalEncounters.Count == 0)
         {
             ImGui.TextUnformatted("No active Critical Engagements detected.");
@@ -545,6 +553,108 @@ public sealed class DebugWindow : Window, IDisposable
                 ImGui.TextWrapped($"  {details}");
             }
         }
+    }
+
+    private unsafe void DumpCeBossCandidates(ScannerSnapshot snapshot)
+    {
+        var currentCe = snapshot.CurrentCriticalEncounter;
+        var selectedCe = snapshot.SelectedCriticalEncounter;
+        var player = Plugin.ObjectTable.LocalPlayer;
+        var playerPosition = player?.Position;
+        var currentTarget = Plugin.TargetManager.Target;
+
+        plugin.Logger.Info(
+            $"[DebugWindow] op=ce-boss-dump territory={snapshot.TerritoryTypeId} " +
+            $"currentCeId={snapshot.CurrentCriticalEncounterId} currentCe=\"{currentCe?.Name ?? "none"}\" " +
+            $"currentCeState=\"{currentCe?.State ?? "none"}\" selectedCe=\"{selectedCe?.Name ?? "none"}\"");
+
+        if (currentTarget == null)
+        {
+            plugin.Logger.Info("[DebugWindow] op=ce-boss-dump-current-target available=false reason=no-target");
+        }
+        else
+        {
+            plugin.Logger.Info($"[DebugWindow] op=ce-boss-dump-current-target {FormatCeCandidate(currentTarget, playerPosition)}");
+        }
+
+        var candidates = Plugin.ObjectTable
+            .Where(gameObject => gameObject is IBattleNpc battleNpc
+                && battleNpc is ICharacter character
+                && character.IsValid()
+                && character.IsTargetable
+                && IsHostile(character)
+                && playerPosition.HasValue
+                && CalculateFlatDistance(playerPosition.Value, character.Position) <= 100f)
+            .OrderBy(gameObject => playerPosition.HasValue
+                ? CalculateFlatDistance(playerPosition.Value, gameObject.Position)
+                : float.MaxValue)
+            .ToArray();
+
+        plugin.Logger.Info($"[DebugWindow] op=ce-boss-dump-candidates count={candidates.Length} radius=100");
+        foreach (var candidate in candidates)
+        {
+            plugin.Logger.Info($"[DebugWindow] op=ce-boss-dump-candidate {FormatCeCandidate(candidate, playerPosition)}");
+        }
+
+        Plugin.ChatGui.Print($"CE boss candidate dump logged ({candidates.Length} nearby candidates).");
+    }
+
+    private static unsafe string FormatCeCandidate(IGameObject gameObject, Vector3? playerPosition)
+    {
+        var character = gameObject as ICharacter;
+        var characterPointer = character != null ? (Character*)character.Address : null;
+        var isCharacter = characterPointer != null && characterPointer->VirtualTable != null;
+        var battleCharaPointer = gameObject is IBattleNpc && isCharacter ? (BattleChara*)characterPointer : null;
+        var fateId = isCharacter ? characterPointer->FateId : (ushort)0;
+        var normalLevel = isCharacter ? characterPointer->Level : -1;
+        var forayInfoAvailable = false;
+        var forayLevel = -1;
+        var forayElement = -1;
+
+        if (isCharacter)
+        {
+            var forayInfo = characterPointer->GetForayInfo();
+            if (forayInfo != null)
+            {
+                forayInfoAvailable = true;
+                forayLevel = forayInfo->Level;
+                forayElement = forayInfo->Element;
+            }
+            else if (battleCharaPointer != null)
+            {
+                forayInfoAvailable = true;
+                forayLevel = battleCharaPointer->ForayInfo.Level;
+                forayElement = battleCharaPointer->ForayInfo.Element;
+            }
+        }
+
+        var distance = playerPosition.HasValue
+            ? CalculateFlatDistance(playerPosition.Value, gameObject.Position)
+            : float.NaN;
+        var hp = character?.CurrentHp ?? 0;
+        var maxHp = character?.MaxHp ?? 0;
+        var hostile = character != null && IsHostile(character);
+
+        return $"name=\"{gameObject.Name}\" kind={gameObject.ObjectKind} objectId={gameObject.GameObjectId:X} " +
+            $"dataId={gameObject.BaseId} objectIndex={gameObject.ObjectIndex} hp={hp}/{maxHp} " +
+            $"pos=<{gameObject.Position.X:0.00},{gameObject.Position.Y:0.00},{gameObject.Position.Z:0.00}> " +
+            $"distance={(float.IsNaN(distance) ? "n/a" : distance.ToString("0.00", CultureInfo.InvariantCulture))} " +
+            $"valid={gameObject.IsValid()} targetable={gameObject.IsTargetable} hostile={hostile} " +
+            $"isCharacter={isCharacter} isBattleNpc={gameObject is IBattleNpc} normalLevel={normalLevel} fateId={fateId} " +
+            $"forayInfo={forayInfoAvailable} forayLevel={forayLevel} forayElement={forayElement}";
+    }
+
+    private static unsafe bool IsHostile(ICharacter character)
+    {
+        var nativeCharacter = (Character*)character.Address;
+        return nativeCharacter != null && nativeCharacter->IsHostile;
+    }
+
+    private static float CalculateFlatDistance(Vector3 left, Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
     }
 
     private void DrawFates(ScannerSnapshot snapshot)

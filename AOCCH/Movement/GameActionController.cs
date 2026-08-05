@@ -96,6 +96,18 @@ public sealed class GameActionController
             && gameObject.IsValid()
             && targetManager.Target?.GameObjectId == gameObject.GameObjectId;
 
+    public bool TryClearTarget(ulong expectedObjectId, string reason)
+    {
+        if (targetManager.Target?.GameObjectId != expectedObjectId)
+        {
+            return false;
+        }
+
+        targetManager.Target = null;
+        logger.Info($"[GameAction] op=clear-target objectId={expectedObjectId:X} reason=\"{reason}\"");
+        return true;
+    }
+
     public unsafe bool TryInteractWithObject(IGameObject gameObject, string description, bool checkLineOfSight = true)
     {
         if (gameObject == null || !gameObject.IsValid())

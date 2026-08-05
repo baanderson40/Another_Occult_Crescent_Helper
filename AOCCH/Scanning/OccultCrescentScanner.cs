@@ -1266,6 +1266,8 @@ public sealed class OccultCrescentScanner : IDisposable
             || gameObject.GameObjectId == 0
             || gameObject.BaseId == 0
             || gameObject is not IBattleNpc
+            || gameObject is not ICharacter character
+            || character.CurrentHp <= 0
             || !gameObject.IsTargetable)
         {
             return false;

@@ -27,6 +27,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly AutorotationController autorotationController;
+    private readonly CombatTargetController combatTargetController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -54,6 +55,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         AutorotationController autorotationController,
+        CombatTargetController combatTargetController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -63,6 +65,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         this.scanner = scanner;
         this.movementController = movementController;
         this.autorotationController = autorotationController;
+        this.combatTargetController = combatTargetController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -228,6 +231,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         {
             movementController.Stop("Resuming active CE after raise; combat is already in progress.");
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            combatTargetController.MaintainCeTarget(target);
             autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) resumed after raise");
             TransitionTo(CriticalEngagementAutomationState.InBattle, $"Resuming active CE {target.Name} ({target.Id}) after raise.");
             logger.Info($"{BuildLogTag()} op=resume-in-combat target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) reason=active-after-raise");
@@ -242,6 +246,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         var targetId = TargetCeId;
         var targetName = TargetCeName;
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         movementController.Stop(reason);
         TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason, result: AutomationRunResult.Stopped);
         logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) reason={reason}");
@@ -275,6 +280,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         autorotationController.ReleaseOwnership("CE automation disposal");
+        combatTargetController.ReleaseOwnedTarget("CE automation disposal");
         if (State != CriticalEngagementAutomationState.Idle)
         {
             movementController.Stop("CE automation disposal");
@@ -430,6 +436,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         {
             logger.ResetThrottle("ce-waiting-engage");
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            combatTargetController.MaintainCeTarget(target);
             autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) combat");
             TransitionTo(CriticalEngagementAutomationState.InBattle, $"Entered CE battle for {target.Name} ({target.Id}).");
             return;
@@ -460,6 +467,10 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         if (snapshot.CurrentCriticalEncounterId == TargetCeId)
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            if (target != null)
+            {
+                combatTargetController.MaintainCeTarget(target);
+            }
             logger.DebugThrottled("ce-in-battle", WaitLogInterval, $"CE automation is still in battle for {TargetCeName} ({TargetCeId}). inCombat={condition[ConditionFlag.InCombat]} currentCe={snapshot.CurrentCriticalEncounterId}.");
             return;
         }
@@ -512,6 +523,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private void CompleteBattle(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         if (configuration.UseReturn)
         {
             StartRecovery(reason);

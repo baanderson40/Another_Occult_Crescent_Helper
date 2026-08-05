@@ -27,6 +27,7 @@ public sealed class FateAutomationController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly AutorotationController autorotationController;
+    private readonly CombatTargetController combatTargetController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -71,6 +72,7 @@ public sealed class FateAutomationController : IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         AutorotationController autorotationController,
+        CombatTargetController combatTargetController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -80,6 +82,7 @@ public sealed class FateAutomationController : IDisposable
         this.scanner = scanner;
         this.movementController = movementController;
         this.autorotationController = autorotationController;
+        this.combatTargetController = combatTargetController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -308,6 +311,7 @@ public sealed class FateAutomationController : IDisposable
             movementController.Stop("Resuming active FATE after raise; participation is already in progress.");
             monitorStartedAt = DateTimeOffset.UtcNow;
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            combatTargetController.MaintainFateTarget(target);
             EnsureAutorotationApplied(target);
             TransitionTo(FateAutomationState.Participating, $"Resuming active FATE {target.Name} ({target.Id}) after raise.");
             logger.Info($"{BuildLogTag()} op=resume-in-combat target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) inFate={target.IsInFate} inCombat={condition[ConditionFlag.InCombat]} reason=active-after-raise");
@@ -323,6 +327,7 @@ public sealed class FateAutomationController : IDisposable
         var targetName = TargetFateName;
         var isPot = TargetIsPot;
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         movementController.Stop(reason);
         TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Stopped);
         logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) pot={isPot} reason={reason}");
@@ -373,6 +378,7 @@ public sealed class FateAutomationController : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         autorotationController.ReleaseOwnership("FATE automation disposal");
+        combatTargetController.ReleaseOwnedTarget("FATE automation disposal");
         if (State != FateAutomationState.Idle)
         {
             movementController.Stop("FATE automation disposal");
@@ -510,6 +516,7 @@ public sealed class FateAutomationController : IDisposable
         if (IsAutorotationParticipationActive(target))
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            combatTargetController.MaintainFateTarget(target);
             EnsureAutorotationApplied(target);
             return;
         }
@@ -617,6 +624,7 @@ public sealed class FateAutomationController : IDisposable
     private void CompleteFate(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         if (completionBehavior == FateRunCompletionBehavior.CompleteInPlace)
         {
             TransitionTo(FateAutomationState.Completed, reason, clearTarget: true, clearAutorotationState: true, result: AutomationRunResult.Completed);
@@ -654,6 +662,7 @@ public sealed class FateAutomationController : IDisposable
             : $"CE {criticalEncounter.Name} ({criticalEncounter.Id}) preempted the active FATE target.";
 
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         movementController.Stop(reason);
         TransitionTo(FateAutomationState.Stopped, reason, clearTarget: true, error: reason, clearAutorotationState: true, result: AutomationRunResult.Preempted);
     }

@@ -28,9 +28,6 @@ public sealed class AutorotationController : IDisposable
     private string lastError = string.Empty;
     private string lastStatus = "Idle";
     private bool managedPresetCreated;
-    private bool overridePresetCreated;
-    private string overridePreset = string.Empty;
-    private string overrideSourcePreset = string.Empty;
     private string selectedSource = "None";
     private string selectedRole = "Unknown";
     private decimal selectedRange;
@@ -173,29 +170,10 @@ public sealed class AutorotationController : IDisposable
         var serializedPreset = preset.Length == 0 ? string.Empty : bossMod.GetPreset(preset);
         if (serializedPreset.Length != 0)
         {
-            var presetToApply = preset;
-            if (!HasFateAutoTarget(serializedPreset))
+            SetStatus($"Using autorotation override '{preset}' for {context}.");
+            if (ApplyPreset(preset, context, "Override"))
             {
-                var reused = TryGetExistingOverridePreset(preset, out var derivedPreset);
-                if (reused || TryCreateOverridePreset(preset, serializedPreset, out derivedPreset))
-                {
-                    presetToApply = derivedPreset;
-                    logger.Info($"{BuildLogTag()} op=override-derived source=\"{preset}\" preset=\"{derivedPreset}\" reason={(reused ? "reuse" : "auto-target-required")}");
-                }
-                else
-                {
-                    logger.Warning($"{BuildLogTag()} op=override-derived source=\"{preset}\" reason=create-failed");
-                    presetToApply = string.Empty;
-                }
-            }
-
-            if (presetToApply.Length != 0)
-            {
-                SetStatus($"Using autorotation override '{presetToApply}' for {context}.");
-                if (ApplyPreset(presetToApply, context, "Override"))
-                {
-                    return true;
-                }
+                return true;
             }
 
             logger.Warning($"{BuildLogTag()} op=override-fallback preset=\"{preset}\" reason=activation-failed");
@@ -228,8 +206,6 @@ public sealed class AutorotationController : IDisposable
             return;
         }
 
-        DeleteOverridePreset(reason);
-
         if (!shouldDelete)
         {
             return;
@@ -252,42 +228,6 @@ public sealed class AutorotationController : IDisposable
         else
         {
             logger.Warning($"{BuildLogTag()} op=managed-delete reason=\"{reason}\" result=failed");
-        }
-    }
-
-    private void DeleteOverridePreset(string reason)
-    {
-        string preset;
-        lock (gate)
-        {
-            if (!overridePresetCreated)
-            {
-                return;
-            }
-
-            preset = overridePreset;
-        }
-
-        if (string.Equals(bossMod.GetActivePreset(), preset, StringComparison.Ordinal) && !bossMod.ClearActivePreset())
-        {
-            logger.Warning($"{BuildLogTag()} op=override-derived-delete reason=\"{reason}\" result=active-clear-failed preset=\"{preset}\"");
-            return;
-        }
-
-        if (bossMod.DeletePreset(preset))
-        {
-            lock (gate)
-            {
-                overridePresetCreated = false;
-                overridePreset = string.Empty;
-                overrideSourcePreset = string.Empty;
-            }
-
-            logger.Info($"{BuildLogTag()} op=override-derived-delete reason=\"{reason}\" result=success preset=\"{preset}\"");
-        }
-        else
-        {
-            logger.Warning($"{BuildLogTag()} op=override-derived-delete reason=\"{reason}\" result=failed preset=\"{preset}\"");
         }
     }
 
@@ -393,121 +333,6 @@ public sealed class AutorotationController : IDisposable
         catch (Exception ex)
         {
             SetError($"Failed to prepare managed autorotation: {ex.Message}", warning: true);
-            return false;
-        }
-    }
-
-    private static bool HasFateAutoTarget(string serializedPreset)
-    {
-        try
-        {
-            var root = JsonNode.Parse(serializedPreset)?.AsObject();
-            var autoTarget = root?["Modules"]?.AsObject()?["BossMod.Autorotation.MiscAI.AutoTarget"]?.AsArray();
-            return autoTarget?.Any(node =>
-            {
-                var setting = node?.AsObject();
-                return string.Equals(setting?["Track"]?.GetValue<string>(), "FATE", StringComparison.Ordinal)
-                    && string.Equals(setting?["Option"]?.GetValue<string>(), "Enabled", StringComparison.Ordinal);
-            }) == true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private bool TryGetExistingOverridePreset(string sourcePreset, out string derivedPreset)
-    {
-        lock (gate)
-        {
-            derivedPreset = string.Equals(overrideSourcePreset, sourcePreset, StringComparison.Ordinal)
-                && overridePresetCreated
-                ? overridePreset
-                : string.Empty;
-        }
-
-        if (derivedPreset.Length == 0)
-        {
-            return false;
-        }
-
-        if (bossMod.GetPreset(derivedPreset).Length != 0)
-        {
-            return true;
-        }
-
-        lock (gate)
-        {
-            if (string.Equals(overridePreset, derivedPreset, StringComparison.Ordinal))
-            {
-                overridePresetCreated = false;
-                overridePreset = string.Empty;
-                overrideSourcePreset = string.Empty;
-            }
-        }
-
-        derivedPreset = string.Empty;
-        return false;
-    }
-
-    private bool TryCreateOverridePreset(string sourcePreset, string serializedPreset, out string derivedPreset)
-    {
-        derivedPreset = string.Empty;
-        try
-        {
-            var root = JsonNode.Parse(serializedPreset)?.AsObject()
-                ?? throw new JsonException("Override preset root is not an object.");
-            var modules = root["Modules"]?.AsObject()
-                ?? throw new JsonException("Override preset has no Modules object.");
-            var autoTarget = modules["BossMod.Autorotation.MiscAI.AutoTarget"]?.AsArray();
-            if (autoTarget == null)
-            {
-                autoTarget = new JsonArray();
-                modules["BossMod.Autorotation.MiscAI.AutoTarget"] = autoTarget;
-            }
-
-            var fateSetting = autoTarget
-                .Select(node => node?.AsObject())
-                .FirstOrDefault(setting => string.Equals(setting?["Track"]?.GetValue<string>(), "FATE", StringComparison.Ordinal));
-            if (fateSetting == null)
-            {
-                autoTarget.Add(new JsonObject
-                {
-                    ["Track"] = "FATE",
-                    ["Option"] = "Enabled"
-                });
-            }
-            else
-            {
-                fateSetting["Option"] = "Enabled";
-            }
-
-            var baseName = $"{sourcePreset}-AOCCH";
-            for (var suffix = 0; suffix < 100; suffix++)
-            {
-                var candidate = suffix == 0 ? baseName : $"{baseName}-{suffix + 1}";
-                root["Name"] = candidate;
-                var serialized = root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
-                if (!bossMod.CreatePreset(serialized, overwrite: false))
-                {
-                    continue;
-                }
-
-                lock (gate)
-                {
-                    overridePresetCreated = true;
-                    overridePreset = candidate;
-                    overrideSourcePreset = sourcePreset;
-                }
-                derivedPreset = candidate;
-                return true;
-            }
-
-            return false;
-        }
-        catch (Exception ex)
-        {
-            SetError($"Failed to prepare derived autorotation override: {ex.Message}", warning: true);
             return false;
         }
     }

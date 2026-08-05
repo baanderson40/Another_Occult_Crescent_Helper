@@ -68,6 +68,7 @@ public sealed class Plugin : IDalamudPlugin
     public NormalAutomationDependencyChecker DependencyChecker { get; init; }
     public RoutePlanner RoutePlanner { get; init; }
     public GameActionController GameActionController { get; init; }
+    public CombatTargetController CombatTargetController { get; init; }
     public MovementController MovementController { get; init; }
     public DangerousTreasureTravelController DangerousTreasureTravelController { get; init; }
     public AutorotationController AutorotationController { get; init; }
@@ -127,12 +128,13 @@ public sealed class Plugin : IDalamudPlugin
         DependencyChecker = new NormalAutomationDependencyChecker(VNavmesh, BossMod);
         RoutePlanner = new RoutePlanner(Configuration, Logger);
         GameActionController = new GameActionController(CommandManager, Condition, ObjectTable, PlayerState, TargetManager, Logger);
+        CombatTargetController = new CombatTargetController(ObjectTable, GameActionController, Logger);
         MovementController = new MovementController(Framework, Condition, ObjectTable, GameGui, DataManager, Scanner, VNavmesh, RoutePlanner, GameActionController, Configuration, Logger);
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(BossMod, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
-        CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
-        FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, Configuration, Logger);
+        CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
+        FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
