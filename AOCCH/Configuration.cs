@@ -92,7 +92,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 12;
+    public int Version { get; set; } = 13;
 
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
@@ -129,6 +129,7 @@ public class Configuration : IPluginConfiguration
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public bool EnableOverworldTreasureGuide { get; set; }
     public bool EnableCofferObservationSubmission { get; set; }
+    public bool EnableNorthHornSecondChanceCoffers { get; set; }
     public int NorthHornStatusDismissedRevision { get; set; }
     public int AutomaticTreasureCofferSilverThreshold { get; set; }
     public int AutomaticTreasureCofferBronzeThreshold { get; set; }
@@ -391,7 +392,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 12)
+        if (Version >= 13)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -552,8 +553,8 @@ public class Configuration : IPluginConfiguration
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 12;
-        logger?.Info("[Configuration] op=migration-complete version=12");
+        Version = 13;
+        logger?.Info("[Configuration] op=migration-complete version=13");
         return true;
     }
 

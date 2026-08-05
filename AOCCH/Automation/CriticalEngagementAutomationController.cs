@@ -27,6 +27,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
     private readonly AutorotationController autorotationController;
+    private readonly CombatTargetController combatTargetController;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -44,6 +45,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private DateTimeOffset awaitingCombatExitAt = DateTimeOffset.MinValue;
     private bool returnTravelFallbackAttempted;
     private bool returnRecoveryFallbackAttempted;
+    private bool preemptionRecoveryPending;
     private Vector3 ceWaitPoint;
     private float ceWaitPointArrivalTolerance;
 
@@ -54,6 +56,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         OccultCrescentScanner scanner,
         MovementController movementController,
         AutorotationController autorotationController,
+        CombatTargetController combatTargetController,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -63,6 +66,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         this.scanner = scanner;
         this.movementController = movementController;
         this.autorotationController = autorotationController;
+        this.combatTargetController = combatTargetController;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -216,6 +220,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             awaitingCombatExitAt = DateTimeOffset.MinValue;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
+            preemptionRecoveryPending = false;
             ceWaitPoint = default;
             ceWaitPointArrivalTolerance = 0f;
         }
@@ -224,10 +229,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
 
-        if (resumeAfterRaise && (snapshot.CurrentCriticalEncounterId == target.Id || IsInBattleState(target)))
+        if (resumeAfterRaise && snapshot.CurrentCriticalEncounterId == target.Id && target.IsBattle)
         {
             movementController.Stop("Resuming active CE after raise; combat is already in progress.");
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            combatTargetController.MaintainCeTarget(target);
             autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) resumed after raise");
             TransitionTo(CriticalEngagementAutomationState.InBattle, $"Resuming active CE {target.Name} ({target.Id}) after raise.");
             logger.Info($"{BuildLogTag()} op=resume-in-combat target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}) reason=active-after-raise");
@@ -242,6 +248,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         var targetId = TargetCeId;
         var targetName = TargetCeName;
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         movementController.Stop(reason);
         TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason, result: AutomationRunResult.Stopped);
         logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) reason={reason}");
@@ -264,6 +271,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             awaitingCombatExitAt = DateTimeOffset.MinValue;
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
+            preemptionRecoveryPending = false;
             ceWaitPoint = default;
             ceWaitPointArrivalTolerance = 0f;
         }
@@ -275,6 +283,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         autorotationController.ReleaseOwnership("CE automation disposal");
+        combatTargetController.ReleaseOwnedTarget("CE automation disposal");
         if (State != CriticalEngagementAutomationState.Idle)
         {
             movementController.Stop("CE automation disposal");
@@ -388,10 +397,33 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return;
         }
 
-        if (snapshot.CurrentCriticalEncounterId == target.Id || IsInBattleState(target))
+        if (target.IsWarmup)
         {
-            movementController.Stop("CE entered battle before arrival.");
-            StartRecovery($"CE {target.Name} entered battle before arrival.");
+            if (snapshot.CurrentCriticalEncounterId == target.Id)
+            {
+                movementController.Stop("Entered CE warmup gate.");
+                TransitionTo(CriticalEngagementAutomationState.WaitingForEngage, $"Waiting for CE {target.Name} ({target.Id}) to enter battle from warmup.");
+            }
+            else
+            {
+                PreemptForUnavailableEntry(target, "CE entered warmup and can no longer be joined.");
+            }
+
+            return;
+        }
+
+        if (target.IsBattle)
+        {
+            if (snapshot.CurrentCriticalEncounterId == target.Id)
+            {
+                movementController.Stop("CE entered battle before arrival.");
+                EnterBattle(target, $"Entered CE battle for {target.Name} ({target.Id}) while traveling.");
+            }
+            else
+            {
+                PreemptForUnavailableEntry(target, "CE entered battle before the player joined.");
+            }
+
             return;
         }
 
@@ -426,19 +458,27 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             return;
         }
 
-        if (snapshot.CurrentCriticalEncounterId == target.Id)
+        if (target.IsBattle && snapshot.CurrentCriticalEncounterId == target.Id)
         {
-            logger.ResetThrottle("ce-waiting-engage");
-            lastCombatSeenAt = DateTimeOffset.UtcNow;
-            autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) combat");
-            TransitionTo(CriticalEngagementAutomationState.InBattle, $"Entered CE battle for {target.Name} ({target.Id}).");
+            EnterBattle(target, $"Entered CE battle for {target.Name} ({target.Id}).");
             return;
         }
 
-        if (IsInBattleState(target))
+        if (target.IsWarmup)
         {
-            logger.ResetThrottle("ce-waiting-engage");
-            StartRecovery($"CE {target.Name} entered battle before engagement.");
+            if (snapshot.CurrentCriticalEncounterId != target.Id)
+            {
+                PreemptForUnavailableEntry(target, "CE entered warmup and can no longer be joined.");
+                return;
+            }
+
+            logger.DebugThrottled("ce-waiting-warmup", WaitLogInterval, $"CE automation is waiting in the warmup gate for {target.Name} ({target.Id}).");
+            return;
+        }
+
+        if (target.IsBattle)
+        {
+            PreemptForUnavailableEntry(target, "CE entered battle before the player joined.");
             return;
         }
 
@@ -460,6 +500,10 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         if (snapshot.CurrentCriticalEncounterId == TargetCeId)
         {
             lastCombatSeenAt = DateTimeOffset.UtcNow;
+            if (target != null)
+            {
+                combatTargetController.MaintainCeTarget(target);
+            }
             logger.DebugThrottled("ce-in-battle", WaitLogInterval, $"CE automation is still in battle for {TargetCeName} ({TargetCeId}). inCombat={condition[ConditionFlag.InCombat]} currentCe={snapshot.CurrentCriticalEncounterId}.");
             return;
         }
@@ -512,6 +556,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private void CompleteBattle(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
         if (configuration.UseReturn)
         {
             StartRecovery(reason);
@@ -532,6 +577,17 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         {
             case MovementState.Arrived:
                 logger.ResetThrottle("ce-recovering");
+                if (preemptionRecoveryPending)
+                {
+                    var targetId = TargetCeId;
+                    var targetName = TargetCeName;
+                    preemptionRecoveryPending = false;
+                    var preemptionReason = $"Returned to Base Camp after CE {targetName} ({targetId}) became unavailable.";
+                    TransitionTo(CriticalEngagementAutomationState.Stopped, preemptionReason, clearTarget: true, error: preemptionReason, result: AutomationRunResult.Preempted);
+                    logger.Info($"{BuildLogTag()} op=preempt-complete target=\"{targetName}\" ({targetId}) reason={preemptionReason}");
+                    break;
+                }
+
                 TransitionTo(CriticalEngagementAutomationState.Completed, "CE recovery completed.", clearTarget: true, result: AutomationRunResult.Completed);
                 break;
             case MovementState.Failed:
@@ -596,8 +652,25 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         TransitionTo(CriticalEngagementAutomationState.Recovering, "Recovering to Base Camp after CE.");
     }
 
-    private bool IsInBattleState(ActiveCriticalEncounter target)
-        => target.StateCode >= 3;
+    private void EnterBattle(ActiveCriticalEncounter target, string reason)
+    {
+        logger.ResetThrottle("ce-waiting-engage");
+        lastCombatSeenAt = DateTimeOffset.UtcNow;
+        combatTargetController.MaintainCeTarget(target);
+        autorotationController.ApplyForCombat($"CE {target.Name} ({target.Id}) combat");
+        TransitionTo(CriticalEngagementAutomationState.InBattle, reason);
+    }
+
+    private void PreemptForUnavailableEntry(ActiveCriticalEncounter target, string reason)
+    {
+        var fullReason = $"{reason} target=\"{target.Name}\" ({target.Id}) state={target.State}({target.StateCode}).";
+        autorotationController.ReleaseOwnership(fullReason);
+        combatTargetController.ReleaseOwnedTarget(fullReason);
+        movementController.Stop(fullReason);
+        preemptionRecoveryPending = true;
+        logger.Info($"{BuildLogTag()} op=preempt state={target.State}({target.StateCode}) target=\"{target.Name}\" ({target.Id}) reason={reason} recovery=base-camp");
+        StartRecovery(fullReason);
+    }
 
     private bool TryHandleReturnTravelFallback(ActiveCriticalEncounter target)
     {

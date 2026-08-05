@@ -172,6 +172,19 @@ public sealed class PotTreasureBehaviorData
     public uint HintBeyondFarLogMessageId { get; init; }
     public uint ElixirPromptLogMessageId { get; init; }
     public uint BonusOfferLogMessageId { get; init; }
+    public List<SecondChanceAreaData> SecondChanceAreas { get; init; } = [];
+}
+
+public sealed class SecondChanceAreaData
+{
+    public string Direction { get; init; } = string.Empty;
+    public string AreaKey { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string Aethernet { get; init; } = string.Empty;
+    public List<string> CandidateKeys { get; init; } = [];
+    public Vector3Data? WindCurrentPosition { get; init; }
+    public float WindCurrentArrivalDistance { get; init; } = 2f;
+    public bool WindCurrentAdvanceOnJump { get; init; }
 }
 
 public enum TreasureSearchStrategy

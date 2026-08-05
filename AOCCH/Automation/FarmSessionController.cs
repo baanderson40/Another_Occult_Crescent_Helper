@@ -256,7 +256,7 @@ public sealed class FarmSessionController : IDisposable
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
-            requiredFreshCofferSurveyRevision = 0;
+            requiredFreshCofferSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision + 1;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
             automaticTreasureCofferStatus = "Starting automatic coffer tracking.";
         }
@@ -840,6 +840,9 @@ public sealed class FarmSessionController : IDisposable
                 }
 
                 StartPostCeFlow();
+                break;
+            case AutomationRunResult.Preempted:
+                TransitionTo(FarmSessionState.SelectingTarget, criticalEngagementAutomationController.LastTransition, "Selecting target");
                 break;
             case AutomationRunResult.Stopped when pendingStop:
                 TransitionTo(FarmSessionState.Stopped, "Farm session stop completed.", "Stopped", clearError: false);

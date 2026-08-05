@@ -16,6 +16,7 @@ public sealed class TreasureHintSnapshot
     public TreasureHintEvent? LastHintEvent { get; init; }
     public TreasureHintEvent? LastEvent { get; init; }
     public TreasureHintEvent? RevealLatchedEvent { get; init; }
+    public TreasureHintEvent? BonusOfferLatchedEvent { get; init; }
     public DateTimeOffset PostBuffGraceDeadlineAt { get; init; }
     public string LastTransition { get; init; } = "Idle";
     public string LastResetReason { get; init; } = string.Empty;
@@ -28,6 +29,9 @@ public sealed class TreasureHintSnapshot
 
     public bool HasRevealLatched
         => RevealLatchedEvent != null;
+
+    public bool HasBonusOfferLatched
+        => BonusOfferLatchedEvent != null;
 
     public bool IsPostBuffGraceActive
         => PostBuffGraceDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow < PostBuffGraceDeadlineAt;

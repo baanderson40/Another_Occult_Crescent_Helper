@@ -359,7 +359,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 && canFarmCriticalEncounters
                 && configuration.EnableCriticalEngagementFarming
                 && configuration.IsCriticalEncounterEnabled(territory.Key, dynamicEvent.DynamicEventId)
-                && IsPreBattleCeState(stateCode);
+                && ActiveCriticalEncounter.IsJoinableState(stateCode);
             var activeEncounter = new ActiveCriticalEncounter
             {
                 Id = dynamicEvent.DynamicEventId,
@@ -1234,9 +1234,6 @@ public sealed class OccultCrescentScanner : IDisposable
         return $"reason=selection-resolved-none ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority}.";
     }
 
-    private static bool IsPreBattleCeState(int stateCode)
-        => stateCode > 0 && stateCode < 3;
-
     private LiveFateTargetCandidate? TrySelectLiveFateTarget(uint fateId, Vector3 fatePosition, Vector3? playerPosition)
         => GetLiveFateTargetCandidates(fateId, fatePosition, playerPosition).FirstOrDefault();
 
@@ -1266,6 +1263,8 @@ public sealed class OccultCrescentScanner : IDisposable
             || gameObject.GameObjectId == 0
             || gameObject.BaseId == 0
             || gameObject is not IBattleNpc
+            || gameObject is not ICharacter character
+            || character.CurrentHp <= 0
             || !gameObject.IsTargetable)
         {
             return false;

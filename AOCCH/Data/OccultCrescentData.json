@@ -1431,7 +1431,33 @@
         "hintFarLogMessageId": 10988,
         "hintBeyondFarLogMessageId": 10989,
         "elixirPromptLogMessageId": 10990,
-        "bonusOfferLogMessageId": 10994
+        "bonusOfferLogMessageId": 10994,
+        "secondChanceAreas": [
+          {
+            "direction": "West",
+            "areaKey": "SuspendedMasonry",
+            "displayName": "Suspended Masonry",
+            "aethernet": "SuspendedMasonry",
+            "candidateKeys": ["second-chance-01", "second-chance-02", "second-chance-03", "second-chance-04", "second-chance-05", "second-chance-06"],
+            "windCurrentPosition": { "x": -473.905, "y": 96.862, "z": 885.407 },
+            "windCurrentArrivalDistance": 2,
+            "windCurrentAdvanceOnJump": true
+          },
+          {
+            "direction": "Northwest",
+            "areaKey": "MolderingStreets",
+            "displayName": "Moldering Streets",
+            "aethernet": "MolderingOutskirts",
+            "candidateKeys": ["second-chance-07", "second-chance-08", "second-chance-09", "second-chance-10", "second-chance-11", "second-chance-12", "second-chance-13"]
+          },
+          {
+            "direction": "North",
+            "areaKey": "SinkingSanctuary",
+            "displayName": "Sinking Sanctuary",
+            "aethernet": "SinkingSanctuary",
+            "candidateKeys": ["second-chance-14", "second-chance-15", "second-chance-16", "second-chance-17", "second-chance-18", "second-chance-19", "second-chance-20"]
+          }
+        ]
       },
       "treasureCofferGroups": [
         {

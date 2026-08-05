@@ -307,6 +307,17 @@ public sealed class TreasureSearchController : IDisposable
         => Start(fateId, fateName, Vector3.Zero);
 
     public bool Start(uint fateId, string fateName, Vector3 originCenter)
+        => StartInternal(fateId, fateName, originCenter, null, null);
+
+    public bool StartSecondChance(uint fateId, string fateName, Vector3 originCenter, SecondChanceAreaData area)
+        => StartInternal(fateId, fateName, originCenter, "second-chance", area.CandidateKeys);
+
+    private bool StartInternal(
+        uint fateId,
+        string fateName,
+        Vector3 originCenter,
+        string? groupKeyOverride,
+        IReadOnlyCollection<string>? candidateKeyFilter)
     {
         if (IsRunning)
         {
@@ -339,9 +350,10 @@ public sealed class TreasureSearchController : IDisposable
 
         var searchStrategy = scanner.ActiveTerritoryData?.PotTreasure.SearchStrategy ?? TreasureSearchStrategy.DirectionGroups;
         var initialHint = hintSnapshot.InitialHintEvent;
-        var groupKey = searchStrategy == TreasureSearchStrategy.GeometricCandidates
+        var groupKey = groupKeyOverride
+            ?? (searchStrategy == TreasureSearchStrategy.GeometricCandidates
             ? "geometry"
-            : GetGroupKey(initialHint?.Direction ?? TreasureDirection.Unknown);
+            : GetGroupKey(initialHint?.Direction ?? TreasureDirection.Unknown));
         if (groupKey.Length == 0)
         {
             SetFailure("Treasure search could not map the current treasure hint to a coffer group.");
@@ -379,6 +391,19 @@ public sealed class TreasureSearchController : IDisposable
         }
 
         var rankingOrigin = initialObservations.Count > 0 ? initialObservations[^1].Position : initialObservationPosition;
+        if (candidateKeyFilter is { Count: > 0 })
+        {
+            group = new TreasureCofferGroupData
+            {
+                FateId = group.FateId,
+                GroupKey = group.GroupKey,
+                DisplayName = group.DisplayName,
+                Candidates = group.Candidates
+                    .Where(candidate => candidateKeyFilter.Contains(candidate.CandidateKey, StringComparer.OrdinalIgnoreCase))
+                    .ToList(),
+            };
+        }
+
         var runOrderedCandidates = searchStrategy == TreasureSearchStrategy.GeometricCandidates
             ? BuildGeometricCandidates(group, initialObservations, rankingOrigin)
             : BuildOrderedCandidates(group, originCenter);
@@ -979,7 +1004,10 @@ public sealed class TreasureSearchController : IDisposable
 
         if (refinementEvent.Kind == TreasureHintKind.BonusOffer)
         {
-            TransitionTo(TreasureSearchState.ReadyForInteraction, $"Treasure candidate {activeCandidateKey?.Label} produced a bonus-offer event during refinement.", result: TreasureSearchRunResult.ReadyForInteraction);
+            var bonusOfferRevision = refinementEvent.Revision;
+            logger.Info($"{BuildLogTag()} op=bonus-offer-latched candidate={activeCandidateKey?.Label ?? "none"} action=continue-search");
+            refinementEvent = null;
+            ContinueProbingAfterEvent(bonusOfferRevision);
             return;
         }
 
