@@ -841,6 +841,9 @@ public sealed class FarmSessionController : IDisposable
 
                 StartPostCeFlow();
                 break;
+            case AutomationRunResult.Preempted:
+                TransitionTo(FarmSessionState.SelectingTarget, criticalEngagementAutomationController.LastTransition, "Selecting target");
+                break;
             case AutomationRunResult.Stopped when pendingStop:
                 TransitionTo(FarmSessionState.Stopped, "Farm session stop completed.", "Stopped", clearError: false);
                 break;

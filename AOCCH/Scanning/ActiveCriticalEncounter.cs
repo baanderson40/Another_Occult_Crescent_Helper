@@ -16,4 +16,17 @@ public sealed class ActiveCriticalEncounter
     public float EngageRadius { get; init; }
     public Vector3 StagingPoint { get; init; }
     public bool IsCandidate { get; init; }
+
+    public bool IsJoinable => IsJoinableState(StateCode);
+    public bool IsWarmup => IsWarmupState(StateCode);
+    public bool IsBattle => IsBattleState(StateCode);
+
+    public static bool IsJoinableState(int stateCode)
+        => stateCode == 1;
+
+    public static bool IsWarmupState(int stateCode)
+        => stateCode == 2;
+
+    public static bool IsBattleState(int stateCode)
+        => stateCode >= 3;
 }

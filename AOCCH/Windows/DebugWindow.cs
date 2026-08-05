@@ -505,6 +505,12 @@ public sealed class DebugWindow : Window, IDisposable
             DumpCeBossCandidates(snapshot);
         }
 
+        if (ImGui.Button("Dump Live CE States"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-live-ce-states");
+            DumpLiveCeStates(snapshot);
+        }
+
         if (snapshot.CriticalEncounters.Count == 0)
         {
             ImGui.TextUnformatted("No active Critical Engagements detected.");
@@ -597,6 +603,38 @@ public sealed class DebugWindow : Window, IDisposable
         }
 
         Plugin.ChatGui.Print($"CE boss candidate dump logged ({candidates.Length} nearby candidates).");
+    }
+
+    private void DumpLiveCeStates(ScannerSnapshot snapshot)
+    {
+        var selectedCeId = snapshot.SelectedCriticalEncounter?.Id ?? 0;
+        var encounters = snapshot.CriticalEncounters
+            .Concat(snapshot.UnknownCriticalEncounters)
+            .OrderBy(encounter => encounter.Id)
+            .ThenBy(encounter => encounter.Name, StringComparer.Ordinal);
+
+        plugin.Logger.Info(
+            $"[DebugWindow] op=live-ce-state-dump territory={snapshot.TerritoryTypeId} " +
+            $"snapshotAt={snapshot.LastUpdated:O} currentCeId={snapshot.CurrentCriticalEncounterId} " +
+            $"automationState={criticalEngagementAutomationController.State} " +
+            $"lockedCeId={criticalEngagementAutomationController.TargetCeId}");
+
+        var count = 0;
+        foreach (var encounter in encounters)
+        {
+            count++;
+            plugin.Logger.Info(
+                $"[DebugWindow] op=live-ce-state-dump-entry id={encounter.Id} " +
+                $"name=\"{encounter.Name}\" state=\"{encounter.State}\" stateCode={encounter.StateCode} " +
+                $"progress={encounter.Progress} candidate={encounter.IsCandidate} " +
+                $"knownMetadata={encounter.HasKnownMetadata} current={encounter.Id == snapshot.CurrentCriticalEncounterId} " +
+                $"selected={encounter.Id == selectedCeId}");
+        }
+
+        if (count == 0)
+        {
+            plugin.Logger.Info("[DebugWindow] op=live-ce-state-dump-entry count=0");
+        }
     }
 
     private static unsafe string FormatCeCandidate(IGameObject gameObject, Vector3? playerPosition)
