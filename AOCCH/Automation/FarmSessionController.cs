@@ -256,7 +256,7 @@ public sealed class FarmSessionController : IDisposable
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
-            requiredFreshCofferSurveyRevision = 0;
+            requiredFreshCofferSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision + 1;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
             automaticTreasureCofferStatus = "Starting automatic coffer tracking.";
         }
