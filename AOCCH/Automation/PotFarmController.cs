@@ -33,6 +33,7 @@ public sealed class PotFarmController : IDisposable
     private const float TreasureCenterArrivalTolerance = 5f;
     private const float TreasureSearchStartDistanceLimit = 60f;
     private static readonly TimeSpan SecondChanceDirectionTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BonusOfferWaitTimeout = TimeSpan.FromSeconds(15);
     private const int WindCurrentJumpCondition = 61;
 
     private readonly IFramework framework;
@@ -94,6 +95,7 @@ public sealed class PotFarmController : IDisposable
     private bool secondChanceWindCurrentPending;
     private DateTimeOffset secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
     private bool secondChanceInteractionActive;
+    private DateTimeOffset bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
 
     public PotFarmController(
         IFramework framework,
@@ -412,6 +414,7 @@ public sealed class PotFarmController : IDisposable
             secondChanceWindCurrentPending = false;
             secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
             secondChanceInteractionActive = false;
+            bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
         }
 
         logger.Info($"{BuildLogTag()} op=start controlReason={PotControlReason.ActiveRun}");
@@ -498,6 +501,7 @@ public sealed class PotFarmController : IDisposable
             secondChanceWindCurrentPending = false;
             secondChanceWindCurrentWaitStartedAt = DateTimeOffset.MinValue;
             secondChanceInteractionActive = false;
+            bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
         }
 
         logger.Info($"[Pot] op=reset reason={reason}");
@@ -620,6 +624,7 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.TravelingToSecondChanceArea
             and not PotFarmState.PreparingSecondChanceWindCurrent
             and not PotFarmState.RunningSecondChanceSearch
+            and not PotFarmState.AwaitingBonusOffer
             && scannerSnapshot.ActivePotFate != null)
         {
             if (StartActivePotFate(scannerSnapshot.ActivePotFate))
@@ -640,6 +645,7 @@ public sealed class PotFarmController : IDisposable
             and not PotFarmState.PreparingSecondChanceWindCurrent
             and not PotFarmState.RunningSecondChanceSearch
             and not PotFarmState.RunningCofferInteraction
+            and not PotFarmState.AwaitingBonusOffer
             && scannerSnapshot.HasTreasureBuff
             && hasTreasurePotContext)
         {
@@ -679,6 +685,9 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.RunningCofferInteraction:
                 TickRunningCofferInteraction();
+                break;
+            case PotFarmState.AwaitingBonusOffer:
+                TickAwaitingBonusOffer();
                 break;
             case PotFarmState.RecoveringToBase:
             case PotFarmState.ReturningForSecondChance:
@@ -1214,25 +1223,25 @@ public sealed class PotFarmController : IDisposable
         switch (cofferInteractionController.LastResult)
         {
             case CofferInteractionResult.Opened:
-                if (!secondChanceInteractionActive
-                    && IsNorthHornSecondChanceEnabled()
-                    && treasureHintTracker.Snapshot.HasBonusOfferLatched)
+                if (!secondChanceInteractionActive && IsNorthHornSecondChanceEnabled())
                 {
-                    secondChanceReturning = true;
-                    logger.Info($"{BuildLogTag()} op=first-coffer-confirmed bonusOffer=true action=return-for-second-chance");
-                    BeginRecoveryToBase(
-                        "First treasure coffer confirmed; returning to Base Camp before the enabled Second Chance search.",
-                        resumeBootstrapAfterRecovery: false,
-                        completionResult: PotFarmRunResult.None);
+                    if (treasureHintTracker.Snapshot.HasBonusOfferLatched)
+                    {
+                        BeginSecondChanceReturn("Bonus Coffer offer was already received before first-coffer confirmation.");
+                    }
+                    else if (scanner.Snapshot.HasTreasureBuff)
+                    {
+                        BeginAwaitingBonusOffer();
+                    }
+                    else
+                    {
+                        CompleteFirstCofferAndRecover("Treasure cache ended with no Bonus Coffer offer.");
+                    }
+
                     return;
                 }
 
-                treasureHintTracker.CompleteCurrentTreasureSession("Treasure coffer opened successfully.", TreasureSessionState.Completed);
-                ClearTreasurePotContext();
-                BeginRecoveryToBase(
-                    $"Opened treasure coffer for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"}; returning to Base Camp.",
-                    resumeBootstrapAfterRecovery: false,
-                    completionResult: PotFarmRunResult.Completed);
+                CompleteFirstCofferAndRecover($"Opened treasure coffer for candidate {treasureSearchController.ActiveCandidateKey?.Label ?? "unknown"}; returning to Base Camp.");
                 return;
             case CofferInteractionResult.LostCoffer:
                 if (secondChanceInteractionActive)
@@ -1295,6 +1304,57 @@ public sealed class PotFarmController : IDisposable
     private bool IsNorthHornSecondChanceEnabled()
         => string.Equals(scanner.Snapshot.TerritoryKey, "northHorn", StringComparison.OrdinalIgnoreCase)
             && configuration.EnableNorthHornSecondChanceCoffers;
+
+    private void BeginAwaitingBonusOffer()
+    {
+        bonusOfferWaitDeadlineAt = DateTimeOffset.UtcNow + BonusOfferWaitTimeout;
+        logger.Info($"{BuildLogTag()} op=first-coffer-confirmed cacheActive=true bonusOffer=false action=await-bonus-offer deadline={bonusOfferWaitDeadlineAt:O}");
+        TransitionTo(PotFarmState.AwaitingBonusOffer, "First coffer confirmed while the treasure cache remains active; waiting for the Bonus Coffer offer.");
+    }
+
+    private void TickAwaitingBonusOffer()
+    {
+        var hintSnapshot = treasureHintTracker.Snapshot;
+        if (hintSnapshot.HasBonusOfferLatched)
+        {
+            bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
+            BeginSecondChanceReturn("Bonus Coffer offer received after first-coffer confirmation.");
+            return;
+        }
+
+        if (!scanner.Snapshot.HasTreasureBuff
+            || (bonusOfferWaitDeadlineAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow >= bonusOfferWaitDeadlineAt))
+        {
+            CompleteFirstCofferAndRecover(!scanner.Snapshot.HasTreasureBuff
+                ? "Treasure cache ended without a Bonus Coffer offer."
+                : "Bonus Coffer offer did not arrive before the safety timeout.");
+            return;
+        }
+
+        logger.DebugThrottled(
+            "pot-bonus-offer-wait",
+            WaitLogInterval,
+            $"Waiting for Bonus Coffer offer after first-coffer confirmation. cacheActive={scanner.Snapshot.HasTreasureBuff} deadline={bonusOfferWaitDeadlineAt:O}.");
+    }
+
+    private void BeginSecondChanceReturn(string reason)
+    {
+        secondChanceReturning = true;
+        bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
+        logger.Info($"{BuildLogTag()} op=bonus-offer-confirmed action=return-for-second-chance reason={reason}");
+        BeginRecoveryToBase(
+            "Bonus Coffer offer confirmed; returning to Base Camp before the enabled Bonus Coffer search.",
+            resumeBootstrapAfterRecovery: false,
+            completionResult: PotFarmRunResult.None);
+    }
+
+    private void CompleteFirstCofferAndRecover(string reason)
+    {
+        bonusOfferWaitDeadlineAt = DateTimeOffset.MinValue;
+        treasureHintTracker.CompleteCurrentTreasureSession(reason, TreasureSessionState.Completed);
+        ClearTreasurePotContext();
+        BeginRecoveryToBase(reason, resumeBootstrapAfterRecovery: false, completionResult: PotFarmRunResult.Completed);
+    }
 
     private void BeginSecondChanceDirectionWait()
     {
@@ -1728,6 +1788,7 @@ public sealed class PotFarmController : IDisposable
             or PotFarmState.TreasurePending
             or PotFarmState.RunningTreasureSearch
             or PotFarmState.RunningCofferInteraction
+            or PotFarmState.AwaitingBonusOffer
             or PotFarmState.ReturningForSecondChance
             or PotFarmState.WaitingForSecondChanceDirection
             or PotFarmState.TravelingToSecondChanceArea

@@ -13,6 +13,7 @@ public enum PotFarmState
     TreasurePending,
     RunningTreasureSearch,
     RunningCofferInteraction,
+    AwaitingBonusOffer,
     RecoveringToBase,
     ReturningForSecondChance,
     WaitingForSecondChanceDirection,
