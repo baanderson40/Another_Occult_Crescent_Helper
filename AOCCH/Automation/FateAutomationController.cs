@@ -28,6 +28,8 @@ public sealed class FateAutomationController : IDisposable
     private readonly MovementController movementController;
     private readonly AutorotationController autorotationController;
     private readonly CombatTargetController combatTargetController;
+    private readonly PotCycleTracker potCycleTracker;
+    private readonly PotFallbackWindowEvaluator potFallbackWindowEvaluator;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly object gate = new();
@@ -73,6 +75,8 @@ public sealed class FateAutomationController : IDisposable
         MovementController movementController,
         AutorotationController autorotationController,
         CombatTargetController combatTargetController,
+        PotCycleTracker potCycleTracker,
+        PotFallbackWindowEvaluator potFallbackWindowEvaluator,
         Configuration configuration,
         AocchLogger logger)
     {
@@ -83,6 +87,8 @@ public sealed class FateAutomationController : IDisposable
         this.movementController = movementController;
         this.autorotationController = autorotationController;
         this.combatTargetController = combatTargetController;
+        this.potCycleTracker = potCycleTracker;
+        this.potFallbackWindowEvaluator = potFallbackWindowEvaluator;
         this.configuration = configuration;
         this.logger = logger;
 
@@ -668,10 +674,32 @@ public sealed class FateAutomationController : IDisposable
     }
 
     private bool IsCePreempting(ScannerSnapshot snapshot)
-        => State is FateAutomationState.PlanningRoute or FateAutomationState.TravelingToFate
-            && !targetIsPot
-            && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
-            && snapshot.EffectiveTarget.WouldPreemptFate;
+    {
+        if (State is not (FateAutomationState.PlanningRoute or FateAutomationState.TravelingToFate)
+            || targetIsPot
+            || snapshot.EffectiveTarget.Kind != SelectedTargetKind.CriticalEncounter
+            || !snapshot.EffectiveTarget.WouldPreemptFate)
+        {
+            return false;
+        }
+
+        var ceStartDecision = potFallbackWindowEvaluator.EvaluateCeStart(
+            potCycleTracker.Snapshot,
+            DateTimeOffset.UtcNow,
+            snapshot.CanRunPotTreasure,
+            snapshot.TerritoryKey);
+        if (ceStartDecision.AllowStart)
+        {
+            return true;
+        }
+
+        var criticalEncounter = snapshot.EffectiveTarget.CriticalEncounter;
+        logger.DebugThrottled(
+            "fate-ce-preemption-cutoff",
+            MonitorLogInterval,
+            $"{BuildLogTag()} op=ce-preemption-blocked activeFate=\"{TargetFateName}\" ({TargetFateId}) candidateCe=\"{criticalEncounter?.Name ?? "unknown"}\" ({criticalEncounter?.Id ?? 0}) reason={ceStartDecision.Reason}");
+        return false;
+    }
 
     private bool IsAutorotationParticipationActive(FateRunTarget target)
     {
