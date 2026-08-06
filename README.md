@@ -33,7 +33,7 @@ The bundled data currently enables the listed automation features for **South Ho
 
 Add the following custom repository URL in Dalamud's plugin settings:
 
-`https://raw.githubusercontent.com/baanderson40/dalamud_plugins/master/repo.json`
+`https://raw.githubusercontent.com/baanderson40/dalamud_plugins/main/repo.json`
 
 Then install **Another Occult Crescent Helper** from the plugin list.
 
