@@ -1471,13 +1471,13 @@
               "candidateKey": "daylight-pottery-01",
               "label": "daylight-pottery-01",
               "position": {
-                "x": -536.877,
-                "y": 87,
-                "z": 148.845
+                "x": -536.1014,
+                "y": 87.01824,
+                "z": 149.8447
               },
               "closeAlternateCandidateKeys": ["daylight-pottery-02"],
               "aggroLevel": 34,
-              "notes": "Shrine of Spheres; provisional captured approach position."
+              "notes": "Shrine of Spheres; confirmed captured approach position."
             },
             {
               "fateId": 2072,
@@ -1874,7 +1874,7 @@
           "groupKey": "second-chance",
           "displayName": "Second Chance candidate pool",
           "candidates": [
-            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -840.089, "y": 160, "z": 740.063 }, "aggroLevel": 42, "notes": "Suspended Masonry; provisional shared Second Chance position." },
+            { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -839.9977, "y": 160, "z": 740 }, "aggroLevel": 42, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-03", "label": "second-chance-03", "position": { "x": -529.985, "y": 160.101, "z": 832.642 }, "aggroLevel": 41, "notes": "Suspended Masonry; provisional shared Second Chance position." },
             { "fateId": 2072, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
@@ -2063,12 +2063,12 @@
               "candidateKey": "in-a-pot-of-bother-13",
               "label": "in-a-pot-of-bother-13",
               "position": {
-                "x": 97.593,
-                "y": 3.536,
-                "z": -116.579
+                "x": 93.40000000000002,
+                "y": 3.7155468,
+                "z": -114.3
               },
               "aggroLevel": 39,
-              "notes": "Unhallowed Hamlet; provisional captured approach position."
+              "notes": "Unhallowed Hamlet; confirmed captured approach position."
             },
             {
               "fateId": 2073,
@@ -2174,13 +2174,13 @@
               "candidateKey": "in-a-pot-of-bother-21",
               "label": "in-a-pot-of-bother-21",
               "position": {
-                "x": 192.875,
-                "y": -0.3,
-                "z": 351.914
+                "x": 194.2296,
+                "y": -0.3000001,
+                "z": 352.9844
               },
               "closeAlternateCandidateKeys": ["in-a-pot-of-bother-20"],
               "aggroLevel": 30,
-              "notes": "South Shadowdeep Shore; provisional captured approach position."
+              "notes": "South Shadowdeep Shore; confirmed captured approach position."
             },
             {
               "fateId": 2073,
@@ -2310,7 +2310,7 @@
           "groupKey": "second-chance",
           "displayName": "Second Chance candidate pool",
           "candidates": [
-            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -840.089, "y": 160, "z": 740.063 }, "aggroLevel": 42, "notes": "Suspended Masonry; provisional shared Second Chance position." },
+            { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-01", "label": "second-chance-01", "position": { "x": -839.9977, "y": 160, "z": 740 }, "aggroLevel": 42, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-02", "label": "second-chance-02", "position": { "x": -631.9453, "y": 160, "z": 808.8979 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-03", "label": "second-chance-03", "position": { "x": -529.985, "y": 160.101, "z": 832.642 }, "aggroLevel": 41, "notes": "Suspended Masonry; provisional shared Second Chance position." },
             { "fateId": 2073, "groupKey": "second-chance", "candidateKey": "second-chance-04", "label": "second-chance-04", "position": { "x": -585, "y": 160, "z": 842 }, "aggroLevel": 41, "notes": "Suspended Masonry; confirmed shared Second Chance position." },
