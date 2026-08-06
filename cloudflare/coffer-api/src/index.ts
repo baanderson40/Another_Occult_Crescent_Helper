@@ -183,6 +183,23 @@ async function getCandidateDetail(candidateId: number, env: Env): Promise<Respon
   return jsonResponse({ candidate, members: members.results });
 }
 
+async function listInstallationHashes(env: Env): Promise<Response> {
+  const hashes = await env.DB.prepare(`
+    SELECT installation_hash,
+      COUNT(*) AS observation_count,
+      MIN(observed_at_utc) AS first_observed_at_utc,
+      MAX(observed_at_utc) AS last_observed_at_utc
+    FROM observations
+    GROUP BY installation_hash
+    ORDER BY installation_hash
+  `).all();
+
+  return jsonResponse({
+    installationHashes: hashes.results,
+    count: hashes.results.length,
+  });
+}
+
 async function exportAcceptedCandidates(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const territoryId = url.searchParams.get("territoryId");
@@ -523,6 +540,10 @@ export default {
       try {
         if (request.method === "GET" && url.pathname === "/api/v1/admin/candidates") {
           return await listCandidates(request, env);
+        }
+
+        if (request.method === "GET" && url.pathname === "/api/v1/admin/installation-hashes") {
+          return await listInstallationHashes(env);
         }
 
         if (request.method === "GET" && url.pathname === "/api/v1/admin/export/accepted-candidates") {
