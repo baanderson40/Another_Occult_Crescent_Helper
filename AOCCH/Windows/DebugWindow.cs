@@ -588,7 +588,7 @@ public sealed class DebugWindow : Window, IDisposable
                 && battleNpc is ICharacter character
                 && character.IsValid()
                 && character.IsTargetable
-                && IsHostile(character)
+                && character.CurrentHp > 0
                 && playerPosition.HasValue
                 && CalculateFlatDistance(playerPosition.Value, character.Position) <= 100f)
             .OrderBy(gameObject => playerPosition.HasValue
