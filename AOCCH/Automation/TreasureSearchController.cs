@@ -90,6 +90,8 @@ public sealed class TreasureSearchController : IDisposable
     private int currentCandidateIndex = -1;
     private int activeCandidateApproachWaypointIndex = -1;
     private int consumedHintRevision;
+    private int searchStartSessionId;
+    private int searchStartRevision;
     private string lastHandoffReason = string.Empty;
     private Vector3 traversalOriginCenter;
     private DateTimeOffset candidateTravelLastProgressAt = DateTimeOffset.MinValue;
@@ -427,6 +429,8 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex = 0;
             activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = hintSnapshot.Revision;
+            searchStartSessionId = hintSnapshot.SessionId;
+            searchStartRevision = hintSnapshot.Revision;
             lastHandoffReason = $"Selected initial treasure group {group.GroupKey} from first hint revision {hintSnapshot.InitialHintEvent?.Revision ?? 0}.";
             traversalOriginCenter = originCenter;
             ClearCandidateTravelProgressTracking();
@@ -445,7 +449,7 @@ public sealed class TreasureSearchController : IDisposable
             activeRefinementProbeOperationId = string.Empty;
         }
 
-        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) group={group.GroupKey} initialHintRevision={hintSnapshot.InitialHintEvent?.Revision ?? 0} origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
+        logger.Info($"{BuildLogTag(hintSnapshot.SessionId)} op=start fate=\"{fateName}\" ({fateId}) group={group.GroupKey} initialHintRevision={hintSnapshot.InitialHintEvent?.Revision ?? 0} searchStartSession={searchStartSessionId} searchStartRevision={searchStartRevision} origin=<{originCenter.X:0.0}, {originCenter.Y:0.0}, {originCenter.Z:0.0}>");
         movementController.SetLogOwner($"TreasureSession#{hintSnapshot.SessionId}");
         return BeginCurrentCandidate($"Starting treasure traversal for {fateName} from first-hint group {group.GroupKey}.");
     }
@@ -486,6 +490,8 @@ public sealed class TreasureSearchController : IDisposable
             currentCandidateIndex = -1;
             activeCandidateApproachWaypointIndex = -1;
             consumedHintRevision = 0;
+            searchStartSessionId = 0;
+            searchStartRevision = 0;
             lastHandoffReason = string.Empty;
             handledCandidateLabels.Clear();
             orderedCandidates.Clear();
@@ -633,6 +639,16 @@ public sealed class TreasureSearchController : IDisposable
         var revealEvent = hintSnapshot.RevealLatchedEvent;
         if (revealEvent == null)
         {
+            return false;
+        }
+
+        if (hintSnapshot.SessionId != searchStartSessionId
+            || revealEvent.Revision <= searchStartRevision)
+        {
+            logger.DebugThrottled(
+                "treasure-search-stale-reveal-latch",
+                WaitLogInterval,
+                $"Treasure search ignored a stale latched reveal while probing candidate {activeCandidateKey?.Label ?? "none"}. source={source} revealSession={hintSnapshot.SessionId} revealRevision={revealEvent.Revision} searchStartSession={searchStartSessionId} searchStartRevision={searchStartRevision}.");
             return false;
         }
 

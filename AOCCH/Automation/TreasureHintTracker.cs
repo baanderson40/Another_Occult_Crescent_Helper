@@ -187,6 +187,41 @@ public sealed class TreasureHintTracker : IDisposable
         return true;
     }
 
+    public void ClearRevealLatch(string reason)
+    {
+        TreasureHintSnapshot updatedSnapshot;
+        lock (gate)
+        {
+            if (snapshot.RevealLatchedEvent == null)
+            {
+                return;
+            }
+
+            updatedSnapshot = new TreasureHintSnapshot
+            {
+                SessionState = snapshot.SessionState,
+                SessionId = snapshot.SessionId,
+                TerritoryKey = snapshot.TerritoryKey,
+                TerritoryTypeId = snapshot.TerritoryTypeId,
+                StartedAt = snapshot.StartedAt,
+                CompletedAt = snapshot.CompletedAt,
+                CompletionReason = snapshot.CompletionReason,
+                Revision = snapshot.Revision,
+                InitialHintEvent = snapshot.InitialHintEvent,
+                LastHintEvent = snapshot.LastHintEvent,
+                LastEvent = snapshot.LastEvent,
+                RevealLatchedEvent = null,
+                BonusOfferLatchedEvent = snapshot.BonusOfferLatchedEvent,
+                PostBuffGraceDeadlineAt = snapshot.PostBuffGraceDeadlineAt,
+                LastTransition = reason,
+                LastResetReason = snapshot.LastResetReason,
+            };
+            snapshot = updatedSnapshot;
+        }
+
+        logger.Info($"[TreasureHintTracker session={updatedSnapshot.SessionId}] op=reveal-latch-cleared revision={updatedSnapshot.Revision} reason={reason}");
+    }
+
     public bool TryGetLatestCofferSurveySince(int revision, out TreasureCofferSurveySnapshot? survey)
     {
         var currentSurvey = CofferSurveySnapshot;

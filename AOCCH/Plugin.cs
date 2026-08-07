@@ -321,6 +321,7 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        TreasureHintTracker.ClearRevealLatch($"Confirmed pot-reveal coffer opened: {match.CandidateKey.Label}.");
         CofferObservationSubmissionService.Enqueue(Scanner.Snapshot, match.Coffer, "pot-reveal");
     }
 
