@@ -799,11 +799,8 @@ public sealed class FarmSessionController : IDisposable
     {
         if (criticalEngagementAutomationController.IsRunning)
         {
-            logger.DebugThrottled("farm-running-ce", WaitLogInterval, $"Farm session is still running CE automation. State={criticalEngagementAutomationController.State} target={criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).");
             return;
         }
-
-        logger.ResetThrottle("farm-running-ce");
 
         switch (criticalEngagementAutomationController.LastResult)
         {
