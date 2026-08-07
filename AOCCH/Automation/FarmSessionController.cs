@@ -68,7 +68,6 @@ public sealed class FarmSessionController : IDisposable
     private bool automaticTreasureCofferRestorePending;
     private bool automaticTreasureCofferStartRouteAfterRestore;
     private bool automaticTreasureCofferResumeAutomaticCheckAfterRestore;
-    private bool skipAutomaticTreasureCofferAfterDeathRecovery;
     private bool pendingAutomaticTreasureCofferCheckAfterExternalRecovery;
     private string pendingAutomaticTreasureCofferCheckSource = string.Empty;
     private byte automaticTreasureCofferOriginalSupportJob;
@@ -252,7 +251,6 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
-            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -281,7 +279,6 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
-            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -354,7 +351,6 @@ public sealed class FarmSessionController : IDisposable
             automaticTreasureCofferRestorePending = false;
             automaticTreasureCofferStartRouteAfterRestore = false;
             automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
-            skipAutomaticTreasureCofferAfterDeathRecovery = false;
             pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
             pendingAutomaticTreasureCofferCheckSource = string.Empty;
             automaticTreasureCofferOriginalSupportJob = 0;
@@ -405,15 +401,12 @@ public sealed class FarmSessionController : IDisposable
             {
                 if (currentState == FarmSessionState.RunningVisibleCofferRoute)
                 {
-                    lock (gate)
-                    {
-                        skipAutomaticTreasureCofferAfterDeathRecovery = true;
-                    }
-
-                    logger.Info($"{BuildLogTag()} op=auto-coffer-death-suppress-latch reason=Death interrupted automatic overworld coffer route; skipping the next Base Camp automatic coffer check.");
+                    ResetAutomaticTreasureCofferSurveyAfterDeath();
+                    deathRecoveryController.RequestImmediateRelease("Death interrupted the overworld coffer route; abandoning the route and returning to Base Camp.");
                 }
 
                 CaptureInterruptedActivity(currentState);
+                ConfigureDeathRecoveryRaiseWait(currentState);
                 TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
             }
 
@@ -422,13 +415,13 @@ public sealed class FarmSessionController : IDisposable
 
         if (currentState == FarmSessionState.WaitingForDeathRecovery)
         {
+            TryStartDeathRecoveryRaiseTimeoutAfterActivityEnds();
+        }
+
+        if (currentState == FarmSessionState.WaitingForDeathRecovery)
+        {
             if (!scanner.Snapshot.IsInSupportedTerritory)
             {
-                lock (gate)
-                {
-                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
-                }
-
                 ClearInterruptedActivity();
                 TransitionTo(FarmSessionState.WaitingForSupportedTerritory, "Death recovery completed outside a supported territory.", "Waiting for Supported Territory");
                 return;
@@ -436,11 +429,6 @@ public sealed class FarmSessionController : IDisposable
 
             if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised)
             {
-                lock (gate)
-                {
-                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
-                }
-
                 if (BeginInterruptedActivityResumeAfterRaise())
                 {
                     return;
@@ -704,20 +692,6 @@ public sealed class FarmSessionController : IDisposable
 
                     StartSessionBuffRotation("farm session recovery", recoverAfterSuccess: false, skipReason: "Recovery buff rotation skipped.");
                     return;
-                }
-
-                bool skipAutomaticCofferCheck;
-                lock (gate)
-                {
-                    skipAutomaticCofferCheck = skipAutomaticTreasureCofferAfterDeathRecovery;
-                    skipAutomaticTreasureCofferAfterDeathRecovery = false;
-                }
-
-                if (skipAutomaticCofferCheck)
-                {
-                    logger.Info($"{BuildLogTag()} op=auto-coffer-death-suppress-consume reason=Death interrupted automatic overworld coffer route; resuming normal farming after Base Camp recovery.");
-                    TransitionTo(FarmSessionState.SelectingTarget, "Death recovery completed after an interrupted overworld coffer route; skipping automatic coffer restart.", "Selecting target");
-                    break;
                 }
 
                 if (TryBeginAutomaticTreasureCofferFlow("Base Camp recovery completed."))
@@ -1147,6 +1121,55 @@ public sealed class FarmSessionController : IDisposable
         if (activity != InterruptedActivityKind.None)
         {
             logger.Info($"{BuildLogTag()} op=interrupted-capture activity={activity} target=\"{targetName}\" ({targetId}) reason=death-recovery");
+        }
+    }
+
+    private void ConfigureDeathRecoveryRaiseWait(FarmSessionState currentState)
+    {
+        if (currentState == FarmSessionState.RunningVisibleCofferRoute)
+        {
+            return;
+        }
+
+        InterruptedActivityKind activity;
+        lock (gate)
+        {
+            activity = interruptedActivity;
+        }
+
+        if (activity is InterruptedActivityKind.Ce or InterruptedActivityKind.Fate or InterruptedActivityKind.PotFate)
+        {
+            deathRecoveryController.WaitIndefinitelyForRaise($"Waiting for interrupted {activity} to end before starting the five-minute release timer.");
+        }
+    }
+
+    private void TryStartDeathRecoveryRaiseTimeoutAfterActivityEnds()
+    {
+        InterruptedActivityKind activity;
+        uint targetId;
+        lock (gate)
+        {
+            activity = interruptedActivity;
+            targetId = interruptedTargetId;
+        }
+
+        if (activity == InterruptedActivityKind.None || targetId == 0)
+        {
+            return;
+        }
+
+        var snapshot = scanner.Snapshot;
+        var activityStillActive = activity switch
+        {
+            InterruptedActivityKind.Ce => snapshot.FindCriticalEncounter(targetId) != null,
+            InterruptedActivityKind.Fate => snapshot.FindFateRunTarget(targetId, isPotTarget: false) != null,
+            InterruptedActivityKind.PotFate => snapshot.FindFateRunTarget(targetId, isPotTarget: true) != null,
+            _ => false,
+        };
+
+        if (!activityStillActive)
+        {
+            deathRecoveryController.StartRaiseTimeout($"Interrupted {activity} target {targetId} ended while dead.");
         }
     }
 
@@ -1832,6 +1855,28 @@ public sealed class FarmSessionController : IDisposable
         }
 
         SetAutomaticTreasureCofferStatus("Automatic overworld coffer route completed; a fresh Occult Treasuresight survey is required on the next base-camp recovery.");
+    }
+
+    private void ResetAutomaticTreasureCofferSurveyAfterDeath()
+    {
+        var currentSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision;
+        lock (gate)
+        {
+            remainingSilverCompletionsUntilRescan = 0;
+            remainingBronzeCompletionsUntilRescan = 0;
+            requiredFreshCofferSurveyRevision = currentSurveyRevision + 1;
+            automaticTreasureCofferRestorePending = false;
+            automaticTreasureCofferStartRouteAfterRestore = false;
+            automaticTreasureCofferResumeAutomaticCheckAfterRestore = false;
+            automaticTreasureCofferOriginalSupportJob = 0;
+            automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
+            automaticTreasureCofferNextSurveyActionAttemptAt = DateTimeOffset.MinValue;
+            pendingAutomaticTreasureCofferCheckAfterExternalRecovery = false;
+            pendingAutomaticTreasureCofferCheckSource = string.Empty;
+        }
+
+        logger.Info($"{BuildLogTag()} op=auto-coffer-death-reset surveyRevision={currentSurveyRevision} requiredFreshRevision={currentSurveyRevision + 1} reason=overworld-route-abandoned");
+        SetAutomaticTreasureCofferStatus("Overworld coffer route abandoned after death; a fresh Occult Treasuresight survey is required.");
     }
 
     private void UpdateAutomaticTreasureCofferRescanCounters(TreasureCofferSurveySnapshot surveySnapshot)
