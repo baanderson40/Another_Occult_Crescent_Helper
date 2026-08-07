@@ -60,12 +60,21 @@ fi
 
 if [[ "$DRY_RUN" != true ]]; then
     gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated"
-    git fetch origin master --tags
+    git show-ref --verify --quiet refs/heads/dev || fail "local dev branch does not exist"
+    git fetch origin master dev --tags
     read -r REMOTE_ONLY LOCAL_ONLY < <(git rev-list --left-right --count origin/master...HEAD)
-    [[ "$REMOTE_ONLY" -eq 0 ]] || fail "master is behind origin/master; update it before releasing"
     [[ "$LOCAL_ONLY" -eq 0 ]] || fail "master has unpushed commits; push or resolve them before releasing"
+    if [[ "$REMOTE_ONLY" -gt 0 ]]; then
+        printf 'Fast-forwarding master to origin/master...\n'
+        git merge --ff-only origin/master
+    fi
+    git merge-base --is-ancestor origin/dev origin/master || \
+        fail "origin/dev is not merged into origin/master; complete the pull request before releasing"
+    git merge-base --is-ancestor dev origin/master || \
+        fail "local dev contains commits not merged into origin/master"
 else
     printf 'Dry run on branch %s; no repository changes will be made.\n' "$CURRENT_BRANCH"
+    printf 'Branch alignment: master will follow origin/master; dev will follow master after release.\n'
 fi
 
 CURRENT_SOURCE_VERSION="$(sed -n 's:.*<Version>\([0-9][0-9.]*\)</Version>.*:\1:p' "$PROJECT_FILE" | head -n 1)"
@@ -212,5 +221,13 @@ else
     git -C "$TEMP_DIR/manifest" commit -m "Update AOCCH to $VERSION"
     git -C "$TEMP_DIR/manifest" push origin "$MANIFEST_BRANCH"
 fi
+
+printf 'Aligning dev with master...\n'
+git fetch origin master dev
+git push origin origin/master:dev
+git fetch origin dev
+git switch dev
+git merge --ff-only origin/dev
+git switch master
 
 printf 'Release %s complete.\n' "$VERSION"
