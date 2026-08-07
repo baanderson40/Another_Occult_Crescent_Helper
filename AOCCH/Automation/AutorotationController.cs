@@ -7,16 +7,20 @@ using System.Text.Json.Nodes;
 using AOCCH.IPC;
 using AOCCH.Logging;
 using AOCCH.Movement;
+using Dalamud.Plugin.Services;
 
 namespace AOCCH.Automation;
 
 public sealed class AutorotationController : IDisposable
 {
     private readonly BossModIpc bossMod;
+    private readonly RotationSolverRebornIpc rsr;
+    private readonly WrathComboIpc wrath;
     private readonly Configuration configuration;
     private readonly AocchLogger logger;
     private readonly GameActionController gameActionController;
     private readonly AutorotationRoleResolver roleResolver;
+    private readonly IFramework framework;
     private readonly object gate = new();
 
     private bool bossModAvailable;
@@ -28,17 +32,29 @@ public sealed class AutorotationController : IDisposable
     private string lastError = string.Empty;
     private string lastStatus = "Idle";
     private bool managedPresetCreated;
+    private bool passivePresetCreated;
+    private bool externalSolverActive;
+    private bool pendingExternalActivation;
+    private AutorotationProvider activeExternalProvider;
+    private string activeExternalContext = string.Empty;
+    private DateTime nextExternalSolverCheck = DateTime.MinValue;
+    private DateTime externalActivationDeadline = DateTime.MinValue;
     private string selectedSource = "None";
     private string selectedRole = "Unknown";
     private decimal selectedRange;
 
-    public AutorotationController(BossModIpc bossMod, Configuration configuration, GameActionController gameActionController, AocchLogger logger)
+    public AutorotationController(IFramework framework, BossModIpc bossMod, RotationSolverRebornIpc rsr, WrathComboIpc wrath, Configuration configuration, GameActionController gameActionController, AocchLogger logger)
     {
         this.bossMod = bossMod;
+        this.rsr = rsr;
+        this.wrath = wrath;
         this.configuration = configuration;
         this.logger = logger;
+        this.framework = framework;
         this.gameActionController = gameActionController;
         roleResolver = new AutorotationRoleResolver(logger);
+        framework.Update += OnFrameworkUpdate;
+        wrath.LeaseCancelled += OnWrathLeaseCancelled;
     }
 
     public bool BossModAvailable
@@ -121,7 +137,29 @@ public sealed class AutorotationController : IDisposable
     public string ConfiguredPreset
         => (configuration.AutorotationPresetName ?? string.Empty).Trim();
 
+    public AutorotationProvider ConfiguredProvider => configuration.AutorotationProvider;
+
+    public string ConfiguredProviderName => AutorotationProviderDiscovery.GetDisplayName(ConfiguredProvider);
+
+    public AutorotationProvider EffectiveProvider
+    {
+        get
+        {
+            var available = AutorotationProviderDiscovery.GetAvailable();
+            if (configuration.AutorotationProviderUserSelected && available.Contains(ConfiguredProvider))
+            {
+                return ConfiguredProvider;
+            }
+
+            return AutorotationProviderDiscovery.GetDefault(available) ?? ConfiguredProvider;
+        }
+    }
+
+    public string EffectiveProviderName => AutorotationProviderDiscovery.GetDisplayName(EffectiveProvider);
+
     public string ManagedPreset => "AOCCH";
+
+    public string PassiveManagedPreset => "AOCCH Passive";
 
     public string SelectedSource
     {
@@ -143,6 +181,8 @@ public sealed class AutorotationController : IDisposable
 
     public void Dispose()
     {
+        framework.Update -= OnFrameworkUpdate;
+        wrath.LeaseCancelled -= OnWrathLeaseCancelled;
         ReleaseOwnership("Plugin disposal");
         DeleteManagedPreset("Plugin disposal");
     }
@@ -154,7 +194,13 @@ public sealed class AutorotationController : IDisposable
             SetError("BossMod IPC is unavailable.", warning: true);
             return false;
         }
-        SetStatus("BossMod IPC is available; autorotation will be selected when combat begins.");
+        if (!IsExternalProviderAvailable(EffectiveProvider))
+        {
+            SetError($"Selected autorotation provider '{EffectiveProviderName}' is unavailable.", warning: true);
+            return false;
+        }
+
+        SetStatus($"BossMod IPC is available; {EffectiveProviderName} will be selected when combat begins.");
         return true;
     }
 
@@ -166,6 +212,38 @@ public sealed class AutorotationController : IDisposable
             return false;
         }
 
+        var provider = EffectiveProvider;
+        if (provider is AutorotationProvider.RSR or AutorotationProvider.Wrath)
+        {
+            if (!CreateManagedPreset(passive: true) || !ApplyPreset(PassiveManagedPreset, context, "Passive"))
+            {
+                return ApplyBossModFallback(context);
+            }
+
+            if (TryStartExternalProvider(provider))
+            {
+                MarkExternalActive(provider, context);
+                SetStatus($"Using {AutorotationProviderDiscovery.GetDisplayName(provider)} with passive BossMod dodging for {context}.");
+                return true;
+            }
+
+            lock (gate)
+            {
+                pendingExternalActivation = true;
+                activeExternalProvider = provider;
+                activeExternalContext = context;
+                externalActivationDeadline = DateTime.UtcNow.AddSeconds(10);
+                nextExternalSolverCheck = DateTime.UtcNow.AddMilliseconds(250);
+            }
+            SetStatus($"Waiting for {AutorotationProviderDiscovery.GetDisplayName(provider)} IPC before enabling autorotation.");
+            return true;
+        }
+
+        return ApplyBossModPreset(context);
+    }
+
+    private bool ApplyBossModPreset(string context)
+    {
         var preset = ConfiguredPreset;
         var serializedPreset = preset.Length == 0 ? string.Empty : bossMod.GetPreset(preset);
         if (serializedPreset.Length != 0)
@@ -193,12 +271,129 @@ public sealed class AutorotationController : IDisposable
         return ApplyPreset(ManagedPreset, context, "Managed");
     }
 
+    private bool ApplyBossModFallback(string context)
+    {
+        logger.Warning($"{BuildLogTag()} op=external-fallback provider={ConfiguredProviderName} fallback=BossMod");
+        return ApplyBossModPreset(context);
+    }
+
+    private bool IsExternalProviderAvailable(AutorotationProvider provider)
+        => provider switch
+        {
+            AutorotationProvider.RSR => AutorotationProviderDiscovery.GetAvailable().Contains(provider) && rsr.IsAvailable(),
+            AutorotationProvider.Wrath => AutorotationProviderDiscovery.GetAvailable().Contains(provider) && wrath.IsAvailable(),
+            _ => true,
+        };
+
+    private bool TryStartExternalProvider(AutorotationProvider provider)
+        => provider == AutorotationProvider.RSR ? rsr.StartManual() : wrath.Start();
+
+    private void MarkExternalActive(AutorotationProvider provider, string context)
+    {
+        lock (gate)
+        {
+            pendingExternalActivation = false;
+            externalSolverActive = true;
+            activeExternalProvider = provider;
+            activeExternalContext = context;
+            nextExternalSolverCheck = DateTime.UtcNow.AddSeconds(2);
+            externalActivationDeadline = DateTime.MinValue;
+            selectedSource = AutorotationProviderDiscovery.GetDisplayName(provider);
+        }
+    }
+
+    private void OnFrameworkUpdate(IFramework _)
+    {
+        AutorotationProvider provider;
+        string context;
+        var pending = false;
+        var activationExpired = false;
+        lock (gate)
+        {
+            if ((!externalSolverActive && !pendingExternalActivation) || DateTime.UtcNow < nextExternalSolverCheck)
+            {
+                return;
+            }
+
+            provider = activeExternalProvider;
+            context = activeExternalContext;
+            nextExternalSolverCheck = DateTime.UtcNow.AddSeconds(2);
+            pending = pendingExternalActivation;
+            activationExpired = pending && DateTime.UtcNow >= externalActivationDeadline;
+        }
+
+        if (pending)
+        {
+            if (!activationExpired && IsExternalProviderAvailable(provider) && TryStartExternalProvider(provider))
+            {
+                MarkExternalActive(provider, context);
+                SetStatus($"Using {AutorotationProviderDiscovery.GetDisplayName(provider)} with passive BossMod dodging for {context}.");
+                return;
+            }
+
+            if (!activationExpired && AutorotationProviderDiscovery.GetAvailable().Contains(provider))
+            {
+                return;
+            }
+
+            lock (gate) pendingExternalActivation = false;
+            logger.Warning($"{BuildLogTag()} op=external-fallback reason=activation-timeout provider={AutorotationProviderDiscovery.GetDisplayName(provider)}");
+            ReleaseOwnership("External solver activation timed out");
+            ApplyBossModFallback(context);
+            return;
+        }
+
+        if (IsExternalProviderAvailable(provider))
+        {
+            return;
+        }
+
+        logger.Warning($"{BuildLogTag()} op=external-fallback reason=provider-unavailable provider={AutorotationProviderDiscovery.GetDisplayName(provider)}");
+        ReleaseOwnership("External solver became unavailable");
+        ApplyBossModFallback(context);
+    }
+
+    private void OnWrathLeaseCancelled(int reason)
+    {
+        string context;
+        var shouldFallback = false;
+        lock (gate)
+        {
+            if (!externalSolverActive || activeExternalProvider != AutorotationProvider.Wrath)
+            {
+                return;
+            }
+
+            context = activeExternalContext;
+            externalSolverActive = false;
+            if (reason == 0)
+            {
+                shouldFallback = true;
+                pendingExternalActivation = false;
+            }
+            else
+            {
+                pendingExternalActivation = true;
+                externalActivationDeadline = DateTime.UtcNow.AddSeconds(10);
+                nextExternalSolverCheck = DateTime.UtcNow;
+            }
+        }
+
+        if (shouldFallback)
+        {
+            ReleaseOwnership("Wrath lease cancelled by user");
+            ApplyBossModFallback(context);
+        }
+    }
+
     public void DeleteManagedPreset(string reason)
     {
         bool shouldDelete;
+        bool shouldDeletePassive;
         lock (gate)
         {
             shouldDelete = managedPresetCreated;
+            shouldDeletePassive = passivePresetCreated;
         }
 
         if (!ProbeAvailability())
@@ -206,12 +401,14 @@ public sealed class AutorotationController : IDisposable
             return;
         }
 
-        if (!shouldDelete)
+        if (!shouldDelete && !shouldDeletePassive)
         {
             return;
         }
 
-        if (string.Equals(bossMod.GetActivePreset(), ManagedPreset, StringComparison.Ordinal))
+        var activePreset = bossMod.GetActivePreset();
+        if (string.Equals(activePreset, ManagedPreset, StringComparison.Ordinal)
+            || string.Equals(activePreset, PassiveManagedPreset, StringComparison.Ordinal))
         {
             if (!bossMod.ClearActivePreset())
             {
@@ -220,9 +417,16 @@ public sealed class AutorotationController : IDisposable
             }
         }
 
-        if (bossMod.DeletePreset(ManagedPreset))
+        var deleted = true;
+        if (shouldDelete) deleted &= bossMod.DeletePreset(ManagedPreset);
+        if (shouldDeletePassive) deleted &= bossMod.DeletePreset(PassiveManagedPreset);
+        if (deleted)
         {
-            lock (gate) managedPresetCreated = false;
+            lock (gate)
+            {
+                managedPresetCreated = false;
+                passivePresetCreated = false;
+            }
             logger.Info($"{BuildLogTag()} op=managed-delete reason=\"{reason}\" result=success");
         }
         else
@@ -283,7 +487,7 @@ public sealed class AutorotationController : IDisposable
         return true;
     }
 
-    private bool CreateManagedPreset()
+    private bool CreateManagedPreset(bool passive = false)
     {
         var assemblyDirectory = Plugin.PluginInterface.AssemblyLocation.DirectoryName;
         if (string.IsNullOrWhiteSpace(assemblyDirectory))
@@ -292,11 +496,11 @@ public sealed class AutorotationController : IDisposable
             return false;
         }
 
-        var path = Path.Combine(assemblyDirectory, "Data", "AocchAutorotation.json");
+            var path = Path.Combine(assemblyDirectory, "Data", passive ? "AocchPassiveAutorotation.json" : "AocchAutorotation.json");
         try
         {
             var root = JsonNode.Parse(File.ReadAllText(path))?.AsObject() ?? throw new JsonException("Preset root is not an object.");
-            root["Name"] = ManagedPreset;
+            root["Name"] = passive ? PassiveManagedPreset : ManagedPreset;
             var modules = root["Modules"]?.AsObject() ?? throw new JsonException("Preset has no Modules object.");
             var stayClose = modules["BossMod.Autorotation.MiscAI.StayCloseToTarget"]?.AsArray() ?? throw new JsonException("Preset has no StayCloseToTarget module.");
             var role = roleResolver.Resolve(gameActionController.CurrentClassJobId);
@@ -323,7 +527,8 @@ public sealed class AutorotationController : IDisposable
 
             lock (gate)
             {
-                managedPresetCreated = true;
+                managedPresetCreated = managedPresetCreated || !passive;
+                passivePresetCreated = passivePresetCreated || passive;
                 selectedRole = role.ToString();
                 selectedRange = range;
             }
@@ -339,6 +544,26 @@ public sealed class AutorotationController : IDisposable
 
     public void ReleaseOwnership(string reason)
     {
+        AutorotationProvider externalProvider = default;
+        var stopExternal = false;
+        lock (gate)
+        {
+            pendingExternalActivation = false;
+            externalActivationDeadline = DateTime.MinValue;
+            if (externalSolverActive)
+            {
+                externalProvider = activeExternalProvider;
+                stopExternal = true;
+                externalSolverActive = false;
+            }
+        }
+
+        if (stopExternal)
+        {
+            if (externalProvider == AutorotationProvider.RSR) rsr.Stop();
+            if (externalProvider == AutorotationProvider.Wrath) wrath.Release();
+        }
+
         var preset = string.Empty;
         var ownsPreset = false;
 
@@ -402,6 +627,10 @@ public sealed class AutorotationController : IDisposable
             selectedSource = "None";
             selectedRole = "Unknown";
             selectedRange = 0;
+            externalSolverActive = false;
+            activeExternalProvider = default;
+            activeExternalContext = string.Empty;
+            nextExternalSolverCheck = DateTime.MinValue;
         }
 
         logger.Info($"[Autorotation] op=reset reason={reason}");

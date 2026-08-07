@@ -874,8 +874,11 @@ public sealed class DebugWindow : Window, IDisposable
     {
         ImGui.TextUnformatted("Autorotation");
         ImGui.TextUnformatted($"BossMod: {(autorotationController.BossModAvailable ? "Available" : "Unavailable")}");
+        ImGui.TextWrapped($"Configured Provider: {autorotationController.ConfiguredProviderName}");
+        ImGui.TextWrapped($"Effective Provider: {autorotationController.EffectiveProviderName}");
         ImGui.TextWrapped($"Override Preset: {FormatPreset(autorotationController.ConfiguredPreset)}");
         ImGui.TextWrapped($"Managed Preset: {FormatPreset(autorotationController.ManagedPreset)}");
+        ImGui.TextWrapped($"Passive Preset: {FormatPreset(autorotationController.PassiveManagedPreset)}");
         ImGui.TextWrapped($"Selected Source: {autorotationController.SelectedSource}");
         ImGui.TextWrapped($"Selected Role: {autorotationController.SelectedRole}");
         ImGui.TextWrapped($"Selected Range: {autorotationController.SelectedRange:0.0#}");
@@ -892,6 +895,25 @@ public sealed class DebugWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(autorotationController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {autorotationController.LastError}");
+        }
+
+        if (ImGui.Button("Test Rotation Plugin IPCs"))
+        {
+            var availableProviders = AutorotationProviderDiscovery.GetAvailable();
+            var bossModLoaded = availableProviders.Contains(AutorotationProvider.BossMod)
+                || availableProviders.Contains(AutorotationProvider.BossModReborn);
+            var rsrLoaded = availableProviders.Contains(AutorotationProvider.RSR);
+            var wrathLoaded = availableProviders.Contains(AutorotationProvider.Wrath);
+            var bossMod = bossModLoaded && autorotationController.RefreshBossModAvailability();
+            var rsr = rsrLoaded ? plugin.RotationSolverReborn.Test().ToString() : "skipped-unloaded";
+            var wrath = wrathLoaded ? plugin.WrathCombo.Test().ToString() : "skipped-unloaded";
+            plugin.Logger.Info($"[DebugWindow] op=rotation-ipc-test bossMod={(bossModLoaded ? bossMod.ToString() : "skipped-unloaded")} rsr={rsr} wrath={wrath}");
+        }
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        if (configuration.ShowTooltips && ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Probes BossMod preset IPC, RSR Test IPC, and Wrath IPCReady/Test without changing rotation state.");
         }
     }
 
@@ -1382,7 +1404,7 @@ public sealed class DebugWindow : Window, IDisposable
 
     private void DrawSafety(ScannerSnapshot snapshot)
     {
-        var bossModRequired = autorotationController.ConfiguredPreset.Length > 0;
+        var bossModRequired = plugin.GetNormalAutomationDependencyReport().Statuses.Any(status => status.Key == "rotation" && status.Required);
         var bossModAvailable = autorotationController.RefreshBossModAvailability();
         var scannerOnlyMode = configuration.ScannerOnlyMode;
 

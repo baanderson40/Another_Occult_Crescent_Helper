@@ -1,0 +1,38 @@
+{
+  "Name": "AOCCH Passive",
+  "Modules": {
+    "BossMod.Autorotation.MiscAI.AutoTarget": [
+      {
+        "Track": "FATE",
+        "Option": "Enabled"
+      }
+    ],
+    "BossMod.Autorotation.MiscAI.StayCloseToTarget": [
+      {
+        "Track": "range",
+        "Option": "3"
+      }
+    ],
+    "BossMod.Autorotation.MiscAI.StayWithinLeylines": [
+      {
+        "Track": "Use Between The Lines",
+        "Option": "Yes"
+      },
+      {
+        "Track": "Use Retrace",
+        "Option": "Yes"
+      }
+    ],
+    "BossMod.Autorotation.MiscAI.GoToPositional": [],
+    "BossMod.Autorotation.MiscAI.NormalMovement": [
+      {
+        "Track": "Destination",
+        "Option": "Pathfind"
+      },
+      {
+        "Track": "ForbiddenZoneCushion",
+        "Option": "Small"
+      }
+    ]
+  }
+}
