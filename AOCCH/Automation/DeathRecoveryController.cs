@@ -36,6 +36,7 @@ public sealed class DeathRecoveryController : IDisposable
     private DeathRecoveryMethod lastRecoveryMethod = DeathRecoveryMethod.None;
     private bool raiseDetected;
     private bool cleanupApplied;
+    private bool raiseTimeoutEnabled;
     private DateTimeOffset stateEnteredAt = DateTimeOffset.MinValue;
     private DateTimeOffset deathDetectedAt = DateTimeOffset.MinValue;
     private DateTimeOffset raiseDetectedAt = DateTimeOffset.MinValue;
@@ -151,6 +152,7 @@ public sealed class DeathRecoveryController : IDisposable
             deathDetectedAt = DateTimeOffset.MinValue;
             raiseDetectedAt = DateTimeOffset.MinValue;
             actionStartedAt = DateTimeOffset.MinValue;
+            raiseTimeoutEnabled = false;
         }
 
         logger.Info($"[DeathRecovery] op=reset reason={reason}");
@@ -178,6 +180,46 @@ public sealed class DeathRecoveryController : IDisposable
 
         logger.Info($"{BuildLogTag()} op=immediate-release-request state={currentState} reason={reason}");
         TransitionTo(DeathRecoveryState.Releasing, reason);
+    }
+
+    public void WaitIndefinitelyForRaise(string reason)
+    {
+        lock (gate)
+        {
+            if (state is DeathRecoveryState.Idle
+                or DeathRecoveryState.Releasing
+                or DeathRecoveryState.Recovered
+                or DeathRecoveryState.Failed
+                or DeathRecoveryState.Stopped)
+            {
+                return;
+            }
+
+            raiseTimeoutEnabled = false;
+        }
+
+        logger.Info($"{BuildLogTag()} op=raise-timeout-disabled reason={reason}");
+    }
+
+    public void StartRaiseTimeout(string reason)
+    {
+        lock (gate)
+        {
+            if ((state is DeathRecoveryState.Idle
+                or DeathRecoveryState.Releasing
+                or DeathRecoveryState.Recovered
+                or DeathRecoveryState.Failed
+                or DeathRecoveryState.Stopped)
+                || raiseTimeoutEnabled)
+            {
+                return;
+            }
+
+            raiseTimeoutEnabled = true;
+            deathDetectedAt = DateTimeOffset.UtcNow;
+        }
+
+        logger.Info($"{BuildLogTag()} op=raise-timeout-start reason={reason}");
     }
 
     public void Dispose()
@@ -259,11 +301,12 @@ public sealed class DeathRecoveryController : IDisposable
             lastRecoveryMethod = DeathRecoveryMethod.None;
             raiseDetected = false;
             cleanupApplied = false;
+            raiseTimeoutEnabled = true;
             lastError = string.Empty;
         }
 
         movementController.SetLogOwner(currentRunId);
-        TransitionTo(DeathRecoveryState.DetectedDead, "Player is dead. Waiting up to 5 minutes for raise.");
+        TransitionTo(DeathRecoveryState.DetectedDead, "Player is dead. Waiting for the recovery policy.");
         ApplyCleanupOnce();
         TransitionTo(DeathRecoveryState.WaitingForRaise, "Waiting for raise.");
     }
@@ -318,7 +361,9 @@ public sealed class DeathRecoveryController : IDisposable
 
         logger.DebugThrottled("death-waiting-raise", WaitLogInterval, $"Death recovery is still waiting for a raise. elapsed={Elapsed:mm\\:ss} raiseDetected={RaiseDetected}.");
 
-        if (deathDetectedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - deathDetectedAt >= RaiseTimeout)
+        if (raiseTimeoutEnabled
+            && deathDetectedAt != DateTimeOffset.MinValue
+            && DateTimeOffset.UtcNow - deathDetectedAt >= RaiseTimeout)
         {
             logger.ResetThrottle("death-waiting-raise");
             logger.Warning($"{BuildLogTag()} op=raise-timeout action=release-home-point");
@@ -420,6 +465,7 @@ public sealed class DeathRecoveryController : IDisposable
             deathDetectedAt = DateTimeOffset.MinValue;
             raiseDetectedAt = DateTimeOffset.MinValue;
             actionStartedAt = DateTimeOffset.MinValue;
+            raiseTimeoutEnabled = false;
         }
 
         logger.Info($"{BuildLogTag()} op=complete method={recoveryMethod} reason={reason}");

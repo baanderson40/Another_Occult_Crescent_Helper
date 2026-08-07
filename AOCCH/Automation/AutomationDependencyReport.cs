@@ -10,7 +10,8 @@ public sealed record AutomationDependencyStatus(
     string Name,
     bool Installed,
     bool Available,
-    string Detail)
+    string Detail,
+    bool Required = true)
 {
     public bool IsUsable => Installed && Available;
 }
@@ -24,10 +25,10 @@ public sealed class AutomationDependencyReport
 
     public IReadOnlyList<AutomationDependencyStatus> Statuses { get; }
 
-    public bool IsReady => Statuses.All(status => status.IsUsable);
+    public bool IsReady => Statuses.Where(status => status.Required).All(status => status.IsUsable);
 
     public string FailureSummary
-        => string.Join(" ", Statuses.Where(status => !status.IsUsable).Select(status => status.Detail));
+        => string.Join(" ", Statuses.Where(status => status.Required && !status.IsUsable).Select(status => status.Detail));
 }
 
 public sealed class NormalAutomationDependencyChecker
@@ -38,23 +39,24 @@ public sealed class NormalAutomationDependencyChecker
 
     private readonly VNavmeshIpc vnavmesh;
     private readonly BossModIpc bossMod;
+    private readonly WrathComboIpc wrath;
 
-    public NormalAutomationDependencyChecker(VNavmeshIpc vnavmesh, BossModIpc bossMod)
+    public NormalAutomationDependencyChecker(VNavmeshIpc vnavmesh, BossModIpc bossMod, WrathComboIpc wrath)
     {
         this.vnavmesh = vnavmesh;
         this.bossMod = bossMod;
+        this.wrath = wrath;
     }
 
     public AutomationDependencyReport Evaluate()
     {
         var installedPlugins = Plugin.PluginInterface.InstalledPlugins;
         var vnavmeshInstalled = installedPlugins.Any(plugin => string.Equals(plugin.InternalName, VNavmeshName, StringComparison.OrdinalIgnoreCase));
-        var rotationProvider = installedPlugins.FirstOrDefault(plugin =>
-            plugin.IsLoaded
-            && (string.Equals(plugin.InternalName, BossModName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(plugin.InternalName, BossModRebornName, StringComparison.OrdinalIgnoreCase)));
-        var rotationProviderName = rotationProvider?.InternalName;
-        var bossModAvailable = rotationProvider != null && bossMod.IsAvailable();
+        var bossModInstalled = installedPlugins.Any(plugin => plugin.IsLoaded && string.Equals(plugin.InternalName, BossModName, StringComparison.OrdinalIgnoreCase));
+        var bossModRebornInstalled = installedPlugins.Any(plugin => plugin.IsLoaded && string.Equals(plugin.InternalName, BossModRebornName, StringComparison.OrdinalIgnoreCase));
+        var rotationSolverInstalled = installedPlugins.Any(plugin => plugin.IsLoaded && string.Equals(plugin.InternalName, "RotationSolver", StringComparison.OrdinalIgnoreCase));
+        var wrathInstalled = installedPlugins.Any(plugin => plugin.IsLoaded && string.Equals(plugin.InternalName, "WrathCombo", StringComparison.OrdinalIgnoreCase));
+        var bossModAvailable = (bossModInstalled || bossModRebornInstalled) && bossMod.IsAvailable();
 
         return new AutomationDependencyReport(
         [
@@ -66,12 +68,14 @@ public sealed class NormalAutomationDependencyChecker
                 vnavmeshInstalled ? "vnavmesh is installed but unavailable." : "vnavmesh is not installed."),
             new AutomationDependencyStatus(
                 "rotation",
-                rotationProviderName ?? "BossMod / BossModReborn",
-                rotationProviderName != null,
+                bossModRebornInstalled ? "BossModReborn" : bossModInstalled ? "BossMod" : "BossMod / BossModReborn",
+                bossModInstalled || bossModRebornInstalled,
                 bossModAvailable,
-                rotationProviderName == null
+                !bossModInstalled && !bossModRebornInstalled
                     ? "BossMod or BossModReborn is not installed or enabled."
-                    : $"BossMod Presets IPC is unavailable from {rotationProviderName}.")
+                    : "BossMod Presets IPC is unavailable.") ,
+            new AutomationDependencyStatus("rotation-solver-reborn", "RotationSolver", rotationSolverInstalled, rotationSolverInstalled, rotationSolverInstalled ? "Optional solver is available." : "Optional solver is not enabled.", Required: false),
+            new AutomationDependencyStatus("wrath", "WrathCombo", wrathInstalled, wrathInstalled && wrath.IsAvailable(), wrathInstalled ? "Optional solver is available." : "Optional solver is not enabled.", Required: false)
         ]);
     }
 }

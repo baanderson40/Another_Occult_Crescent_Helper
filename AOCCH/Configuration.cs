@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using AOCCH.Data;
 using AOCCH.Logging;
 using AOCCH.Shopping;
+using AOCCH.Automation;
 
 namespace AOCCH;
 
@@ -92,8 +93,10 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 13;
+    public int Version { get; set; } = 14;
 
+    public AutorotationProvider AutorotationProvider { get; set; } = AutorotationProvider.BossMod;
+    public bool AutorotationProviderUserSelected { get; set; }
     public string AutorotationPresetName { get; set; } = string.Empty;
     public decimal MeleeTargetRange { get; set; } = 3;
     public decimal RangedTargetRange { get; set; } = 25;
@@ -392,7 +395,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 13)
+        if (Version >= 14)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -553,8 +556,8 @@ public class Configuration : IPluginConfiguration
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 13;
-        logger?.Info("[Configuration] op=migration-complete version=13");
+        Version = 14;
+        logger?.Info("[Configuration] op=migration-complete version=14");
         return true;
     }
 

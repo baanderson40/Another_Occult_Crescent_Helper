@@ -134,11 +134,11 @@
     {
       "key": "daylight-pottery-01",
       "position": {
-        "x": -536.877,
-        "y": 87,
-        "z": 148.845
+        "x": -536.1014,
+        "y": 87.01824,
+        "z": 149.8447
       },
-      "positionConfidence": "provisional",
+      "positionConfidence": "confirmed",
       "region": "Shrine of Spheres",
       "mapCapture": {
         "label": "P02",
@@ -1226,11 +1226,11 @@
     {
       "key": "in-a-pot-of-bother-13",
       "position": {
-        "x": 97.593,
-        "y": 3.536,
-        "z": -116.579
+        "x": 93.40000000000002,
+        "y": 3.7155468,
+        "z": -114.3
       },
-      "positionConfidence": "provisional",
+      "positionConfidence": "confirmed",
       "region": "Unhallowed Hamlet",
       "mapCapture": {
         "label": "P03",
@@ -1434,11 +1434,11 @@
     {
       "key": "in-a-pot-of-bother-21",
       "position": {
-        "x": 192.875,
-        "y": -0.3,
-        "z": 351.914
+        "x": 194.2296,
+        "y": -0.3000001,
+        "z": 352.9844
       },
-      "positionConfidence": "provisional",
+      "positionConfidence": "confirmed",
       "region": "South Shadowdeep Shore",
       "mapCapture": {
         "label": "P11",
@@ -1694,11 +1694,11 @@
     {
       "key": "second-chance-01",
       "position": {
-        "x": -840.089,
+        "x": -839.9977,
         "y": 160,
-        "z": 740.063
+        "z": 740
       },
-      "positionConfidence": "provisional",
+      "positionConfidence": "confirmed",
       "region": "Suspended Masonry",
       "mapCapture": {
         "label": "P06",

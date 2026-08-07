@@ -1265,6 +1265,7 @@ public sealed class OccultCrescentScanner : IDisposable
             || gameObject is not IBattleNpc
             || gameObject is not ICharacter character
             || character.CurrentHp <= 0
+            || IsPetBattleNpc(gameObject)
             || !gameObject.IsTargetable)
         {
             return false;
@@ -1277,6 +1278,10 @@ public sealed class OccultCrescentScanner : IDisposable
 
         return true;
     }
+
+    private static bool IsPetBattleNpc(IGameObject gameObject)
+        => gameObject is IBattleNpc battleNpc
+            && string.Equals(battleNpc.BattleNpcKind.ToString(), "Pet", StringComparison.OrdinalIgnoreCase);
 
     private static unsafe ushort GetBattleNpcFateId(IGameObject gameObject)
     {

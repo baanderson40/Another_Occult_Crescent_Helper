@@ -1,6 +1,10 @@
 .vs/
 obj/
 bin/
+*/bin/
+!/bin/
+/bin/*
+!/bin/release.sh
 *.user
 AOCCH/Properties/PublishProfiles/
 knowledge-base/

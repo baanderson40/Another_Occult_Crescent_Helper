@@ -34,7 +34,7 @@ public sealed class CombatTargetController
 
         var liveTarget = objectTable.FirstOrDefault(gameObject => gameObject.GameObjectId == target.LiveTargetObjectId);
         return liveTarget != null
-            && IsValidCombatTarget(liveTarget)
+            && IsValidFateTarget(liveTarget)
             && EnsureTarget(liveTarget, "FATE combat target");
     }
 
@@ -47,7 +47,7 @@ public sealed class CombatTargetController
         }
 
         var boss = objectTable
-            .Where(gameObject => IsValidCombatTarget(gameObject))
+            .Where(gameObject => IsValidCeTarget(gameObject))
             .Where(gameObject => TryGetForayLevel(gameObject) == 1)
             .Where(gameObject => CalculateFlatDistance(playerPosition.Value, gameObject.Position) <= CeBossSearchRadius)
             .OrderBy(gameObject => CalculateFlatDistance(playerPosition.Value, gameObject.Position))
@@ -94,13 +94,26 @@ public sealed class CombatTargetController
         return true;
     }
 
-    private static bool IsValidCombatTarget(IGameObject gameObject)
+    private static bool IsValidFateTarget(IGameObject gameObject)
         => gameObject is IBattleNpc
             && gameObject is ICharacter character
             && character.IsValid()
             && character.IsTargetable
             && character.CurrentHp > 0
+            && !IsPet(gameObject)
             && IsHostile(character);
+
+    private static bool IsValidCeTarget(IGameObject gameObject)
+        => gameObject is IBattleNpc
+            && gameObject is ICharacter character
+            && character.IsValid()
+            && character.IsTargetable
+            && character.CurrentHp > 0
+            && !IsPet(gameObject);
+
+    private static bool IsPet(IGameObject gameObject)
+        => gameObject is IBattleNpc battleNpc
+            && string.Equals(battleNpc.BattleNpcKind.ToString(), "Pet", StringComparison.OrdinalIgnoreCase);
 
     private static unsafe int TryGetForayLevel(IGameObject gameObject)
     {

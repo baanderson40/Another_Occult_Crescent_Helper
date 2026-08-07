@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AOCCH.Data;
+using AOCCH.Automation;
 using AOCCH.Logging;
 using AOCCH.Shopping;
 using Dalamud.Interface;
@@ -27,6 +28,7 @@ public class ConfigWindow : Window, IDisposable
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
     private const float PotsNumericInputWidth = 60f;
     private const float SettingsNumericInputWidth = 60f;
+    private const float CombatRotationControlWidth = 160f;
     private const float SettingsTextInputMinWidth = 120f;
     private const float SettingsTextInputMaxWidth = 240f;
 
@@ -687,9 +689,36 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.TextUnformatted("Combat");
 
+        var providers = AutorotationProviderDiscovery.GetAvailable();
+        var provider = configuration.AutorotationProviderUserSelected && providers.Contains(configuration.AutorotationProvider)
+            ? configuration.AutorotationProvider
+            : AutorotationProviderDiscovery.GetDefault(providers) ?? configuration.AutorotationProvider;
+        var providerIndex = Math.Max(0, providers.ToList().IndexOf(provider));
+        var providerLabels = providers.Select(AutorotationProviderDiscovery.GetDisplayName).ToArray();
+        var automationRunning = plugin.FarmSessionController.IsRunning
+            || plugin.CriticalEngagementAutomationController.IsRunning
+            || plugin.FateAutomationController.IsRunning
+            || plugin.PotFarmController.IsRunning
+            || plugin.TreasureCofferFarmController.IsRunning;
         var autorotationPresetName = configuration.AutorotationPresetName;
-        var presetWidth = ImGui.CalcTextSize(autorotationPresetName).X + 24f;
-        presetWidth = Math.Clamp(presetWidth, SettingsTextInputMinWidth, SettingsTextInputMaxWidth);
+        var presetWidth = CombatRotationControlWidth;
+        ImGui.BeginDisabled(automationRunning || providers.Count == 0);
+        ImGui.SetNextItemWidth(presetWidth);
+        if (ImGui.Combo("Autorotation Provider", ref providerIndex, providerLabels, providerLabels.Length))
+        {
+            var selectedProvider = providers[providerIndex];
+            logger.Info($"[Config] op=setting-change key=AutorotationProvider old={configuration.AutorotationProvider} new={selectedProvider}");
+            configuration.AutorotationProvider = selectedProvider;
+            configuration.AutorotationProviderUserSelected = true;
+            configuration.Save();
+        }
+        ImGui.EndDisabled();
+        DrawSettingTooltip(automationRunning
+            ? "Stop automation before changing the autorotation provider."
+            : "Only enabled and loaded rotation plugins are listed. BossMod or BossModReborn is required for dodging.");
+
+        var bossModProvider = provider is AutorotationProvider.BossMod or AutorotationProvider.BossModReborn;
+        ImGui.BeginDisabled(!bossModProvider);
         ImGui.SetNextItemWidth(presetWidth);
         if (ImGui.InputText("Autorotation Override Preset Name", ref autorotationPresetName, 120))
         {
@@ -700,6 +729,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
         DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
+        ImGui.EndDisabled();
 
         DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
         DrawSettingTooltip("Max targeting range for melee jobs before engaging (1.1 to 30 yalms).");
@@ -745,7 +775,7 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextUnformatted("Interface");
 
         var mainWindowStatusTextScalePercent = configuration.MainWindowStatusTextScalePercent;
-        ImGui.SetNextItemWidth(160f);
+        ImGui.SetNextItemWidth(CombatRotationControlWidth);
         if (ImGui.SliderInt("Main Window Status Text Size", ref mainWindowStatusTextScalePercent, 85, 150, "%d%%"))
         {
             var nextValue = Math.Clamp(mainWindowStatusTextScalePercent, 85, 150);
