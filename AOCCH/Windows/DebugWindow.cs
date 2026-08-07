@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using AOCCH.Automation;
 using AOCCH.Movement;
 using AOCCH.Scanning;
@@ -505,6 +506,12 @@ public sealed class DebugWindow : Window, IDisposable
             DumpCeBossCandidates(snapshot);
         }
 
+        if (ImGui.Button("Dump CE Entity Metadata"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-ce-entity-metadata");
+            DumpCeEntityMetadata(snapshot);
+        }
+
         if (ImGui.Button("Dump Live CE States"))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-live-ce-states");
@@ -634,6 +641,89 @@ public sealed class DebugWindow : Window, IDisposable
         if (count == 0)
         {
             plugin.Logger.Info("[DebugWindow] op=live-ce-state-dump-entry count=0");
+        }
+    }
+
+    private static void DumpCeEntityMetadata(ScannerSnapshot snapshot)
+    {
+        var playerPosition = Plugin.ObjectTable.LocalPlayer?.Position;
+        var currentTarget = Plugin.TargetManager.Target;
+        var currentCe = snapshot.CurrentCriticalEncounter;
+
+        Plugin.Log.Info(
+            $"[DebugWindow] op=ce-entity-metadata territory={snapshot.TerritoryTypeId} " +
+            $"currentCeId={snapshot.CurrentCriticalEncounterId} currentCe=\"{currentCe?.Name ?? "none"}\" " +
+            $"currentCeState=\"{currentCe?.State ?? "none"}\"");
+
+        if (currentTarget != null)
+        {
+            Plugin.Log.Info($"[DebugWindow] op=ce-entity-metadata-current {FormatCeCandidate(currentTarget, playerPosition)} optional={FormatOptionalEntityProperties(currentTarget)}");
+        }
+        else
+        {
+            Plugin.Log.Info("[DebugWindow] op=ce-entity-metadata-current available=false reason=no-target");
+        }
+
+        var candidates = Plugin.ObjectTable
+            .Where(gameObject => gameObject is IBattleNpc
+                && gameObject is ICharacter character
+                && character.IsValid()
+                && playerPosition.HasValue
+                && CalculateFlatDistance(playerPosition.Value, character.Position) <= 100f)
+            .OrderBy(gameObject => CalculateFlatDistance(playerPosition!.Value, gameObject.Position))
+            .ToArray();
+
+        Plugin.Log.Info($"[DebugWindow] op=ce-entity-metadata-candidates count={candidates.Length} radius=100");
+        foreach (var candidate in candidates)
+        {
+            Plugin.Log.Info($"[DebugWindow] op=ce-entity-metadata-entry {FormatCeCandidate(candidate, playerPosition)} optional={FormatOptionalEntityProperties(candidate)}");
+        }
+
+        Plugin.ChatGui.Print($"CE entity metadata dump logged ({candidates.Length} nearby Battle NPCs).");
+    }
+
+    private static string FormatOptionalEntityProperties(IGameObject gameObject)
+    {
+        var properties = new[]
+            {
+                gameObject.GetType(),
+                typeof(IGameObject),
+                typeof(IBattleNpc),
+                typeof(ICharacter),
+            }
+            .SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            .Where(property => property.Name.Contains("Owner", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Pet", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Summon", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Battle", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Npc", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Kind", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Entity", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Type", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(property => property.Name, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .Select(property => FormatOptionalEntityProperty(gameObject, property))
+            .ToArray();
+
+        return properties.Length == 0 ? "none" : string.Join(",", properties);
+    }
+
+    private static string FormatOptionalEntityProperty(IGameObject gameObject, PropertyInfo property)
+    {
+        try
+        {
+            var value = property.GetValue(gameObject);
+            var formattedValue = value == null
+                ? "null"
+                : value is string or ValueType
+                    ? value.ToString()
+                    : $"<{value.GetType().Name}>";
+            return $"{property.Name}={formattedValue}";
+        }
+        catch (Exception ex)
+        {
+            return $"{property.Name}=<error:{ex.GetType().Name}>";
         }
     }
 

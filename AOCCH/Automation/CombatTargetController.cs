@@ -100,6 +100,7 @@ public sealed class CombatTargetController
             && character.IsValid()
             && character.IsTargetable
             && character.CurrentHp > 0
+            && !IsPet(gameObject)
             && IsHostile(character);
 
     private static bool IsValidCeTarget(IGameObject gameObject)
@@ -107,7 +108,12 @@ public sealed class CombatTargetController
             && gameObject is ICharacter character
             && character.IsValid()
             && character.IsTargetable
-            && character.CurrentHp > 0;
+            && character.CurrentHp > 0
+            && !IsPet(gameObject);
+
+    private static bool IsPet(IGameObject gameObject)
+        => gameObject is IBattleNpc battleNpc
+            && string.Equals(battleNpc.BattleNpcKind.ToString(), "Pet", StringComparison.OrdinalIgnoreCase);
 
     private static unsafe int TryGetForayLevel(IGameObject gameObject)
     {
