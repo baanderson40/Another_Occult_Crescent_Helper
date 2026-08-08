@@ -20,12 +20,16 @@ public sealed class FateAutomationController : IDisposable
     private const int MinimumFateDismountDistance = 5;
     private const int MaximumFateDismountDistance = 50;
     private const float LiveTargetReplanDistance = 10f;
+    private const int AutorotationDismountCycles = 3;
+    private const int AutorotationDismountDispatchesPerCycle = 2;
+    private static readonly TimeSpan AutorotationDismountPollInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly IFramework framework;
     private readonly ICondition condition;
     private readonly IObjectTable objectTable;
     private readonly OccultCrescentScanner scanner;
     private readonly MovementController movementController;
+    private readonly GameActionController gameActionController;
     private readonly AutorotationController autorotationController;
     private readonly CombatTargetController combatTargetController;
     private readonly PotCycleTracker potCycleTracker;
@@ -60,6 +64,10 @@ public sealed class FateAutomationController : IDisposable
     private string lastObservedState = string.Empty;
     private DateTimeOffset monitorStartedAt = DateTimeOffset.MinValue;
     private bool autorotationApplied;
+    private int autorotationDismountCycle;
+    private int autorotationDismountDispatches;
+    private DateTimeOffset autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+    private bool autorotationDismountPending;
     private AutomationRunResult lastResult;
     private string pendingCompletionReason = string.Empty;
     private bool plannedRouteUsesLiveTarget;
@@ -73,6 +81,7 @@ public sealed class FateAutomationController : IDisposable
         IObjectTable objectTable,
         OccultCrescentScanner scanner,
         MovementController movementController,
+        GameActionController gameActionController,
         AutorotationController autorotationController,
         CombatTargetController combatTargetController,
         PotCycleTracker potCycleTracker,
@@ -85,6 +94,7 @@ public sealed class FateAutomationController : IDisposable
         this.objectTable = objectTable;
         this.scanner = scanner;
         this.movementController = movementController;
+        this.gameActionController = gameActionController;
         this.autorotationController = autorotationController;
         this.combatTargetController = combatTargetController;
         this.potCycleTracker = potCycleTracker;
@@ -300,6 +310,10 @@ public sealed class FateAutomationController : IDisposable
             lastObservedState = string.Empty;
             monitorStartedAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
+            autorotationDismountCycle = 0;
+            autorotationDismountDispatches = 0;
+            autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+            autorotationDismountPending = false;
             lastResult = AutomationRunResult.None;
             pendingCompletionReason = string.Empty;
             plannedRouteUsesLiveTarget = false;
@@ -369,6 +383,10 @@ public sealed class FateAutomationController : IDisposable
             lastObservedState = string.Empty;
             monitorStartedAt = DateTimeOffset.MinValue;
             autorotationApplied = false;
+            autorotationDismountCycle = 0;
+            autorotationDismountDispatches = 0;
+            autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+            autorotationDismountPending = false;
             lastResult = AutomationRunResult.None;
             pendingCompletionReason = string.Empty;
             plannedRouteUsesLiveTarget = false;
@@ -604,6 +622,24 @@ public sealed class FateAutomationController : IDisposable
             }
         }
 
+        if (condition[ConditionFlag.Mounting])
+        {
+            logger.DebugThrottled(
+                "fate-autorotation-mounting",
+                MonitorLogInterval,
+                $"{BuildLogTag()} op=autorotation-wait reason=mounting target=\"{target.Name}\" ({target.Id}).");
+            return;
+        }
+
+        if (!condition[ConditionFlag.Mounted])
+        {
+            ResetAutorotationDismountState();
+        }
+        else if (!ProcessAutorotationDismount(target))
+        {
+            return;
+        }
+
         var reason = target.IsInFate
             ? "joined FATE"
             : "entered combat";
@@ -612,6 +648,120 @@ public sealed class FateAutomationController : IDisposable
         lock (gate)
         {
             autorotationApplied = true;
+        }
+    }
+
+    private bool ProcessAutorotationDismount(FateRunTarget target)
+    {
+        var now = DateTimeOffset.UtcNow;
+        lock (gate)
+        {
+            if (!autorotationDismountPending)
+            {
+                autorotationDismountPending = true;
+                autorotationDismountCycle = 1;
+                autorotationDismountDispatches = 0;
+                autorotationDismountNextPollAt = now;
+            }
+
+            if (now < autorotationDismountNextPollAt)
+            {
+                return false;
+            }
+
+            if (autorotationDismountCycle > AutorotationDismountCycles)
+            {
+                // The final 500 ms poll has elapsed with the player still mounted.
+                autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+            }
+        }
+
+        if (!condition[ConditionFlag.Mounted])
+        {
+            ResetAutorotationDismountState();
+            return true;
+        }
+
+        int cycle;
+        int dispatch;
+        lock (gate)
+        {
+            cycle = autorotationDismountCycle;
+            if (cycle > AutorotationDismountCycles)
+            {
+                // Keep the failure outside the lock so recovery can transition state safely.
+                dispatch = 0;
+            }
+            else
+            {
+                dispatch = ++autorotationDismountDispatches;
+                autorotationDismountNextPollAt = now + AutorotationDismountPollInterval;
+            }
+        }
+
+        if (cycle > AutorotationDismountCycles)
+        {
+            logger.Warning($"{BuildLogTag()} op=autorotation-dismount-failed target=\"{target.Name}\" ({target.Id}) cycles={AutorotationDismountCycles} dispatches={AutorotationDismountCycles * AutorotationDismountDispatchesPerCycle} action=abandon-fate");
+            AbandonFateForDismountFailure(target);
+            return false;
+        }
+
+        var actionDescription = $"FATE autorotation dismount cycle {cycle}/{AutorotationDismountCycles} dispatch {dispatch}/{AutorotationDismountDispatchesPerCycle}";
+        if (!gameActionController.TryExecuteGeneralAction(GameActionController.DismountActionId, actionDescription))
+        {
+            logger.Warning($"{BuildLogTag()} op=autorotation-dismount-dispatch-failed target=\"{target.Name}\" ({target.Id}) cycle={cycle}/{AutorotationDismountCycles} dispatch={dispatch}/{AutorotationDismountDispatchesPerCycle}");
+        }
+        else
+        {
+            logger.Info($"{BuildLogTag()} op=autorotation-dismount-dispatch target=\"{target.Name}\" ({target.Id}) cycle={cycle}/{AutorotationDismountCycles} dispatch={dispatch}/{AutorotationDismountDispatchesPerCycle}");
+        }
+
+        if (dispatch == AutorotationDismountDispatchesPerCycle)
+        {
+            lock (gate)
+            {
+                autorotationDismountCycle++;
+                autorotationDismountDispatches = 0;
+            }
+        }
+
+        return false;
+    }
+
+    private void AbandonFateForDismountFailure(FateRunTarget target)
+    {
+        const string reason = "FATE autorotation could not dismount the player after three cycles; returning to Base Camp.";
+        autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
+
+        if (movementController.RecoverToBaseCamp())
+        {
+            ResetAutorotationDismountState();
+            TransitionTo(FateAutomationState.Recovering, reason, clearTarget: true, clearAutorotationState: true);
+            return;
+        }
+
+        if (!returnTravelFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
+        {
+            returnTravelFallbackAttempted = true;
+            logger.Warning($"{BuildLogTag()} op=autorotation-dismount-recovery-fallback target=\"{target.Name}\" ({target.Id}) reason=return-setup-failed fallback=direct-base-camp");
+            ResetAutorotationDismountState();
+            TransitionTo(FateAutomationState.Recovering, $"{reason} Return fallback disabled.", clearTarget: true, clearAutorotationState: true);
+            return;
+        }
+
+        ResetAutorotationDismountState();
+        SetFailure($"{reason} Failed to start Base Camp recovery: {movementController.LastError}");
+    }
+
+    private void ResetAutorotationDismountState()
+    {
+        lock (gate)
+        {
+            autorotationDismountCycle = 0;
+            autorotationDismountDispatches = 0;
+            autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+            autorotationDismountPending = false;
         }
     }
 
@@ -773,6 +923,10 @@ public sealed class FateAutomationController : IDisposable
             if (clearAutorotationState)
             {
                 autorotationApplied = false;
+                autorotationDismountCycle = 0;
+                autorotationDismountDispatches = 0;
+                autorotationDismountNextPollAt = DateTimeOffset.MinValue;
+                autorotationDismountPending = false;
                 lastCombatSeenAt = DateTimeOffset.MinValue;
             }
 

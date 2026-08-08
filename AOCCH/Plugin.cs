@@ -140,7 +140,7 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
-        FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, PotCycleTracker, PotFallbackWindowEvaluator, Configuration, Logger);
+        FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, AutorotationController, CombatTargetController, PotCycleTracker, PotFallbackWindowEvaluator, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(Logger);
         TreasureHintTracker = new TreasureHintTracker(Framework, ChatGui, ObjectTable, Scanner, Logger);

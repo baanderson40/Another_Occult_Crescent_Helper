@@ -368,6 +368,7 @@ public sealed class RoutePlanner
                 InteractionCenter = sourcePosition,
                 InteractDistanceMin = sourceAethernet.InteractDistanceMin,
                 InteractDistanceMax = sourceAethernet.InteractDistanceMax,
+                ShouldDismountOnArrival = true,
                 ShouldMountBeforeStep = shouldMountBeforeStep,
             });
         }
@@ -443,6 +444,7 @@ public sealed class RoutePlanner
                 InteractionCenter = baseCamp.Position.ToVector3(),
                 InteractDistanceMin = baseCamp.InteractDistanceMin,
                 InteractDistanceMax = baseCamp.InteractDistanceMax,
+                ShouldDismountOnArrival = true,
                 ShouldMountBeforeStep = false,
             });
 
