@@ -171,6 +171,7 @@ if [[ "$CURRENT_SOURCE_VERSION" != "$VERSION" ]]; then
     sed -i "0,/<Version>[0-9.]*<\/Version>/{s/<Version>[0-9.]*<\/Version>/<Version>$VERSION<\/Version>/}" "$PROJECT_FILE"
     git add "$PROJECT_FILE"
     git commit -m "Version: $VERSION"
+    git restore --worktree -- "$PROJECT_FILE"
     git push origin master
 fi
 
