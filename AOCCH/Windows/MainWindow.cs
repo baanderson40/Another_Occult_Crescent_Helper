@@ -6,6 +6,7 @@ using AOCCH.Movement;
 using AOCCH.Scanning;
 using Dalamud.Interface;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Utility;
 using Dalamud.Interface.Windowing;
 
 namespace AOCCH.Windows;
@@ -52,7 +53,15 @@ public sealed class MainWindow : Window, IDisposable
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
-        TitleBarButtons = [];
+        TitleBarButtons =
+        [
+            new TitleBarButton
+            {
+                Icon = FontAwesomeIcon.Heart,
+                ShowTooltip = () => ImGui.SetTooltip("Support on Ko-fi"),
+                Click = _ => Util.OpenLink("https://ko-fi.com/baanderson40"),
+            },
+        ];
     }
 
     public void Dispose() { }

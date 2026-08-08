@@ -8,6 +8,7 @@ using AOCCH.Logging;
 using AOCCH.Shopping;
 using Dalamud.Interface;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Utility;
 using Dalamud.Interface.Windowing;
 
 namespace AOCCH.Windows;
@@ -52,6 +53,16 @@ public class ConfigWindow : Window, IDisposable
     {
         Size = new Vector2(620, 360);
         SizeCondition = ImGuiCond.FirstUseEver;
+
+        TitleBarButtons =
+        [
+            new TitleBarButton
+            {
+                Icon = FontAwesomeIcon.Heart,
+                ShowTooltip = () => ImGui.SetTooltip("Support on Ko-fi"),
+                Click = _ => Util.OpenLink("https://ko-fi.com/baanderson40"),
+            },
+        ];
 
         this.plugin = plugin;
         this.configuration = configuration;
