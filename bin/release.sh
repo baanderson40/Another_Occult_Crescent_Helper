@@ -133,6 +133,15 @@ gh release view "$NEW_TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1 && \
     fail "GitHub release $NEW_TAG already exists"
 
 DOWNLOAD_COUNT="$CURRENT_MANIFEST_COUNT"
+PREVIOUS_DOWNLOAD_COUNT="$(gh release view "$PREVIOUS_TAG" \
+    --repo "$SOURCE_REPO" \
+    --json assets \
+    --jq '.assets[] | select(.name == "latest.zip") | .downloadCount' \
+    2>/dev/null || true)"
+if [[ "$PREVIOUS_DOWNLOAD_COUNT" =~ ^[0-9]+$ ]] \
+    && (( PREVIOUS_DOWNLOAD_COUNT > DOWNLOAD_COUNT )); then
+    DOWNLOAD_COUNT="$PREVIOUS_DOWNLOAD_COUNT"
+fi
 
 NEW_DOWNLOAD_URL="https://github.com/$SOURCE_REPO/releases/download/$NEW_TAG/latest.zip"
 
