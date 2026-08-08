@@ -79,6 +79,7 @@ public sealed class TerritoryVisibleCofferSafetySetting
     public string TerritoryKey { get; set; } = string.Empty;
     public bool SkipHighLevelCavernsDuringAshkin { get; set; }
     public bool SkipUnsafeWeatherRoutes { get; set; }
+    public bool UseHamletLiveKnowledgeHideThresholdOverride { get; set; } = true;
 }
 
 [Serializable]
@@ -308,6 +309,25 @@ public class Configuration : IPluginConfiguration
         }
 
         setting.SkipUnsafeWeatherRoutes = enabled;
+        return true;
+    }
+
+    public bool GetUseHamletLiveKnowledgeHideThresholdOverride(string territoryKey)
+    {
+        NormalizeTerritorySettings();
+        return VisibleCofferSafetySettings.FirstOrDefault(setting => MatchesTerritory(setting.TerritoryKey, territoryKey))?.UseHamletLiveKnowledgeHideThresholdOverride ?? true;
+    }
+
+    public bool SetUseHamletLiveKnowledgeHideThresholdOverride(string territoryKey, bool enabled)
+    {
+        NormalizeTerritorySettings();
+        var setting = GetOrAddVisibleCofferSafetySetting(territoryKey);
+        if (setting.UseHamletLiveKnowledgeHideThresholdOverride == enabled)
+        {
+            return false;
+        }
+
+        setting.UseHamletLiveKnowledgeHideThresholdOverride = enabled;
         return true;
     }
 

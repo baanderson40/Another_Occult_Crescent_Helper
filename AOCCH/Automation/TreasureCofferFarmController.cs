@@ -29,6 +29,9 @@ public sealed class TreasureCofferFarmController : IDisposable
     private const float MatchConfidenceRadius = 25f;
     private const float VisibleCofferApproachScanTriggerDistance = 40f;
     private const int RequiredInventoryFreeSlots = 3;
+    private const string HamletArea = "UnhallowedHamlet";
+    private const string HamletThresholdRouteLabel = "UnhallowedHamlet_3";
+    private const string HamletForcedRouteLabel = "UnhallowedHamlet_4";
     private const ConditionFlag WindCurrentJumpCondition = (ConditionFlag)61;
     private static readonly TimeSpan ApproachScanPollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
@@ -73,6 +76,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private VisibleCofferFarmSpotData? activePreviousThresholdSpot;
     private bool activeSpotRequiresHiddenTravel;
     private bool activeSpotWeatherForcedHidden;
+    private bool hamletForcedHiddenTravel;
     private bool windCurrentJumpObserved;
     private DateTimeOffset windCurrentJumpWaitStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
@@ -300,6 +304,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
             activeSpotWeatherForcedHidden = false;
+            hamletForcedHiddenTravel = false;
             pendingAreaTransitionRouteIndex = -1;
             ResetHiddenTravelReadiness();
         }
@@ -360,6 +365,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             activePreviousThresholdSpot = null;
             activeSpotRequiresHiddenTravel = false;
             activeSpotWeatherForcedHidden = false;
+            hamletForcedHiddenTravel = false;
             pendingAreaTransitionRouteIndex = -1;
             ResetHiddenTravelReadiness();
         }
@@ -452,6 +458,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             }
 
             var routeEntry = territory.VisibleCofferFarmRoute[nextIndex];
+            ActivateHamletForcedHiddenTravelIfNeeded(routeEntry);
             if (RequiresAreaTransition(territory, routeEntry))
             {
                 if (!TryFindNextEligibleAreaRouteIndex(territory, nextIndex, out var eligibleAreaRouteIndex))
@@ -557,6 +564,22 @@ public sealed class TreasureCofferFarmController : IDisposable
                 return;
             }
         }
+    }
+
+    private void ActivateHamletForcedHiddenTravelIfNeeded(VisibleCofferFarmRouteEntryData nextRouteEntry)
+    {
+        if (hamletForcedHiddenTravel
+            || !string.Equals(activeRouteEntry?.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(activeRouteEntry.Label, HamletThresholdRouteLabel, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(nextRouteEntry.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(nextRouteEntry.Label, HamletForcedRouteLabel, StringComparison.OrdinalIgnoreCase)
+            || !configuration.GetUseHamletLiveKnowledgeHideThresholdOverride(scanner.Snapshot.TerritoryKey))
+        {
+            return;
+        }
+
+        hamletForcedHiddenTravel = true;
+        logger.Info($"{BuildLogTag()} op=hamlet-knowledge-policy-activated after={activeRouteEntry.Label} next={nextRouteEntry.Label} hideOffset={GetVisibleKnowledgeHideOffset()} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"}");
     }
 
     private bool RequiresAreaTransition(OccultCrescentTerritoryData territory, VisibleCofferFarmRouteEntryData nextRouteEntry)
@@ -766,16 +789,16 @@ public sealed class TreasureCofferFarmController : IDisposable
         var previousThresholdActive = playerPosition.HasValue && IsWithinHideThreshold(activePreviousThresholdSpot, playerPosition.Value);
         var aggroExceededMax = IsDangerousByAggro(spot);
         var hiddenDecision = GetHiddenTravelDecision(spot);
-        if (RequiresDangerousTravel(spot))
-        {
-            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive={previousThresholdActive} previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
-            return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
-        }
-
         if (previousThresholdActive)
         {
             logger.Info($"{BuildLogTag()} op=travel-mode-select mode=clear-previous-threshold spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=true previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
             return BeginPreviousThresholdCarryoverTravel(spot, destination, arrivalDistance);
+        }
+
+        if (RequiresDangerousTravel(spot))
+        {
+            logger.Info($"{BuildLogTag()} op=travel-mode-select mode=dangerous-destination spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
+            return BeginDangerousTravelToActiveSpot(spot, destination, arrivalDistance);
         }
 
         logger.Info($"{BuildLogTag()} op=travel-mode-select mode=normal spot={DescribeActiveSpot()} aggroLevel={spot.AggroLevel} maxAggro={GetVisibleCofferAggroLimit()} aggroExceededMax={aggroExceededMax} hiddenDecision={hiddenDecision} previousThresholdActive=false previousSpot={DescribeSpot(activePreviousThresholdSpot)} currentRequiresHidden={activeSpotRequiresHiddenTravel} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
@@ -806,29 +829,33 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool BeginPreviousThresholdCarryoverTravel(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance)
     {
-        var hiddenReadiness = EnsureVisibleRouteHiddenReady($"threshold carryover for {spot.Area}:{spot.Label}");
-        if (hiddenReadiness == HiddenTravelReadiness.Failed)
+        var previousThresholdSpot = activePreviousThresholdSpot;
+        if (previousThresholdSpot == null)
         {
+            SetFailure($"Overworld coffer route could not start threshold carryover to {spot.Area}:{spot.Label} because the previous threshold spot is unavailable.");
             return false;
         }
 
-        if (hiddenReadiness == HiddenTravelReadiness.Pending)
+        var playerPosition = objectTable.LocalPlayer?.Position;
+        if (!playerPosition.HasValue)
         {
-            TransitionTo(TreasureCofferFarmState.ClearingPreviousHideThreshold, $"Preparing Hide while leaving previous threshold before traveling to {spot.Area}:{spot.Label}.");
-            return true;
+            SetFailure($"Overworld coffer route could not start threshold carryover to {spot.Area}:{spot.Label} because the player position is unavailable.");
+            return false;
+        }
+
+        var thresholdCandidate = ToDangerousTravelThresholdCandidate(previousThresholdSpot);
+        var dangerousOptions = GetVisibleDangerousTravelOptions();
+        logger.Info($"{BuildLogTag()} op=threshold-carryover-dangerous-start spot={DescribeActiveSpot()} previousSpot={DescribeSpot(previousThresholdSpot)} playerPos={FormatVector(playerPosition)} destination={FormatVector(destination)} threshold={GetHideThresholdDistance(previousThresholdSpot):0.0} aggroLevel={thresholdCandidate.AggroLevel} maxAggro={dangerousOptions.MaximumAggroLevel} gearset={dangerousOptions.GearsetNumber}");
+        if (!dangerousTreasureTravelController.Start("VisibleCofferFarm", null, thresholdCandidate, destination, arrivalDistance, dangerousOptions))
+        {
+            SetFailure(dangerousTreasureTravelController.LastError.Length == 0
+                ? $"Failed to start Ninja gearset travel while clearing the previous threshold for {spot.Area}:{spot.Label}."
+                : dangerousTreasureTravelController.LastError);
+            return false;
         }
 
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Hidden threshold carryover for {spot.Label}", destination, arrivalDistance, shouldMountBeforeStep: false))
-        {
-            SetFailure(movementController.LastError.Length == 0
-                ? $"Failed to start hidden threshold carryover travel for {spot.Area}:{spot.Label}."
-                : movementController.LastError);
-            return false;
-        }
-
-        logger.Info($"{BuildLogTag()} op=previous-threshold-start spot={DescribeActiveSpot()} previousSpot={DescribeSpot(activePreviousThresholdSpot)} threshold={GetHideThresholdDistance(activePreviousThresholdSpot):0.0} destination={FormatVector(destination)} arrivalDistance={arrivalDistance:0.0}");
-        TransitionTo(TreasureCofferFarmState.ClearingPreviousHideThreshold, $"Traveling hidden while leaving previous threshold toward {spot.Area}:{spot.Label}.");
+        TransitionTo(TreasureCofferFarmState.TravelingToDangerousSpot, $"Equipping Ninja and clearing the previous hide threshold before traveling to {spot.Area}:{spot.Label}.");
         return true;
     }
 
@@ -1371,7 +1398,7 @@ public sealed class TreasureCofferFarmController : IDisposable
 
         var dangerousCandidate = ToDangerousTravelCandidate(spot, playerPosition.Value, match.Coffer.Position);
         var dangerousOptions = GetVisibleDangerousTravelOptions();
-        logger.Info($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-enter source={source} spot={DescribeActiveSpot()} coffer={match.Coffer.GameObjectId:X} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        logger.Info($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-enter source={source} spot={DescribeActiveSpot()} coffer={match.Coffer.GameObjectId:X} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={GetVisibleKnowledgeHideOffset()} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
         if (!dangerousTreasureTravelController.Start("VisibleCofferInteraction", null, dangerousCandidate, match.Coffer.Position, 4.5f, dangerousOptions, GetVisibleKnowledgeThreatPolicy()))
         {
             SetFailure(dangerousTreasureTravelController.LastError.Length == 0
@@ -1641,10 +1668,17 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private KnowledgeThreatPolicy GetVisibleKnowledgeThreatPolicy()
         => new(
-            configuration.VisibleCofferKnowledgeHideOffset,
+            GetVisibleKnowledgeHideOffset(),
             configuration.KnowledgeThreatEnterDistance,
             configuration.KnowledgeThreatExitDistance,
             scanner.ActiveTerritoryData?.MaximumKnowledgeLevel ?? 28);
+
+    private int GetVisibleKnowledgeHideOffset()
+        => hamletForcedHiddenTravel
+            && string.Equals(activeRouteEntry?.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
+            && configuration.GetUseHamletLiveKnowledgeHideThresholdOverride(scanner.Snapshot.TerritoryKey)
+            ? 0
+            : configuration.VisibleCofferKnowledgeHideOffset;
 
     private DangerousTreasureTravelOptions GetVisibleDangerousTravelOptions()
         => new(
@@ -1667,7 +1701,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         movementController.Stop("Live knowledge threat entered the overworld coffer Hide range.");
-        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=overworld-coffer spot={DescribeActiveSpot()} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={configuration.VisibleCofferKnowledgeHideOffset} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
+        logger.Info($"{BuildLogTag()} op=knowledge-threat-enter mode=overworld-coffer spot={DescribeActiveSpot()} entity='{threat?.Name ?? "unknown"}' objectId={threat?.ObjectId:X} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} offset={GetVisibleKnowledgeHideOffset()} entityLevel={threat?.KnowledgeLevel ?? 0} hideAtOrAbove={hideAtOrAbove} enterRange={configuration.KnowledgeThreatEnterDistance:0.0} exitRange={configuration.KnowledgeThreatExitDistance:0.0} distance={threat?.DistanceToPlayer:0.0}");
         BeginDangerousTravelToActiveSpot(spot, ActiveResolvedPosition, GetArrivalDistance(spot));
         return true;
     }
@@ -1692,7 +1726,10 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private int GetVisibleCofferAggroLimit()
         => scanner.Snapshot.PlayerForayLevel is { } knowledgeLevel
-            ? Math.Clamp(knowledgeLevel + configuration.VisibleTreasureCofferAggroLevelOffset, 1, 50)
+            ? Math.Clamp(knowledgeLevel + (hamletForcedHiddenTravel
+                && string.Equals(activeRouteEntry?.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
+                ? 0
+                : configuration.VisibleTreasureCofferAggroLevelOffset), 1, 50)
             : configuration.VisibleTreasureCofferFallbackMaximumAggroLevel;
 
     private bool ShouldSkipForSafetyRules(VisibleCofferFarmSpotData spot, out string reason)
@@ -2056,6 +2093,17 @@ public sealed class TreasureCofferFarmController : IDisposable
             Notes = spot.Note,
         };
     }
+
+    private TreasureCofferCandidateData ToDangerousTravelThresholdCandidate(VisibleCofferFarmSpotData spot)
+        => new()
+        {
+            CandidateKey = BuildKey(spot.Area, spot.Label),
+            Label = $"{spot.Area}:{spot.Label} threshold",
+            Position = spot.Position,
+            AggroLevel = GetVisibleCofferAggroLimit() + 1,
+            HideThresholdDistance = GetHideThresholdDistance(spot),
+            Notes = spot.Note,
+        };
 
     private static string DescribeSpot(VisibleCofferFarmSpotData? spot)
         => spot == null ? "none" : $"{spot.Area}:{spot.Label}";

@@ -519,6 +519,20 @@ public class ConfigWindow : Window, IDisposable
         if (string.Equals(territory.Key, "southHorn", StringComparison.OrdinalIgnoreCase)
             || string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
+            {
+                var useHamletLiveKnowledgeHideThresholdOverride = configuration.GetUseHamletLiveKnowledgeHideThresholdOverride(territory.Key);
+                if (ImGui.Checkbox("Use Hamlet Live Knowledge Hide Threshold Override", ref useHamletLiveKnowledgeHideThresholdOverride))
+                {
+                    var oldValue = configuration.GetUseHamletLiveKnowledgeHideThresholdOverride(territory.Key);
+                    logger.Info($"[Config] op=setting-change key=UseHamletLiveKnowledgeHideThresholdOverride territoryKey={territory.Key} old={oldValue} new={useHamletLiveKnowledgeHideThresholdOverride}");
+                    configuration.SetUseHamletLiveKnowledgeHideThresholdOverride(territory.Key, useHamletLiveKnowledgeHideThresholdOverride);
+                    configuration.Save();
+                }
+
+                DrawSettingTooltip("Uses the player's Knowledge level as the Hide threshold after Hamlet coffer 3.");
+            }
+
             var skipHighLevelCavernsDuringAshkin = configuration.GetSkipHighLevelCavernsDuringAshkin(territory.Key);
             var ashkinSettingLabel = string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase)
                 ? "Skip Ashkin-Time Coffer Positions"
