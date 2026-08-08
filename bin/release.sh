@@ -97,13 +97,15 @@ MANIFEST_PATH="$TEMP_DIR/manifest/$MANIFEST_FILE"
 MANIFEST_DATA="$(jq -er '
     map(select(.InternalName == "AOCCH"))
     | if length != 1 then error("expected exactly one AOCCH manifest entry") else .[0] end
-    | [.AssemblyVersion, .DownloadLinkInstall]
+    | [.AssemblyVersion, .DownloadLinkInstall, (.DownloadCount // 0)]
     | @tsv
 ' "$MANIFEST_PATH")" || fail "could not read the AOCCH manifest entry"
-IFS=$'\t' read -r MANIFEST_VERSION CURRENT_DOWNLOAD_URL <<< "$MANIFEST_DATA"
+IFS=$'\t' read -r MANIFEST_VERSION CURRENT_DOWNLOAD_URL CURRENT_MANIFEST_COUNT <<< "$MANIFEST_DATA"
 
 [[ "$MANIFEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
     fail "manifest AssemblyVersion is invalid: $MANIFEST_VERSION"
+[[ "$CURRENT_MANIFEST_COUNT" =~ ^[0-9]+$ ]] || \
+    fail "manifest DownloadCount is invalid: $CURRENT_MANIFEST_COUNT"
 [[ "$CURRENT_DOWNLOAD_URL" =~ /releases/download/([^/]+)/latest\.zip$ ]] || \
     fail "could not parse the current release tag from DownloadLinkInstall"
 PREVIOUS_TAG="${BASH_REMATCH[1]}"
@@ -138,6 +140,11 @@ PREVIOUS_DOWNLOAD_COUNT="$(gh release view "$PREVIOUS_TAG" \
 [[ "$PREVIOUS_DOWNLOAD_COUNT" =~ ^[0-9]+$ ]] || \
     fail "release $PREVIOUS_TAG has no latest.zip download count"
 
+DOWNLOAD_COUNT="$PREVIOUS_DOWNLOAD_COUNT"
+if (( CURRENT_MANIFEST_COUNT > DOWNLOAD_COUNT )); then
+    DOWNLOAD_COUNT="$CURRENT_MANIFEST_COUNT"
+fi
+
 NEW_DOWNLOAD_URL="https://github.com/$SOURCE_REPO/releases/download/$NEW_TAG/latest.zip"
 
 printf '\nRelease plan:\n'
@@ -145,13 +152,14 @@ printf '  Source branch:       %s\n' "$CURRENT_BRANCH"
 printf '  Source version:      %s -> %s\n' "$CURRENT_SOURCE_VERSION" "$VERSION"
 printf '  Git tag:             %s\n' "$NEW_TAG"
 printf '  Previous release:    %s\n' "$PREVIOUS_TAG"
-printf '  Manifest count:      %s\n' "$PREVIOUS_DOWNLOAD_COUNT"
+printf '  Previous asset count: %s\n' "$PREVIOUS_DOWNLOAD_COUNT"
+printf '  Manifest count:      %s\n' "$DOWNLOAD_COUNT"
 printf '  New download URL:    %s\n' "$NEW_DOWNLOAD_URL"
 
 if [[ "$DRY_RUN" == true ]]; then
     jq --arg version "$VERSION" \
        --arg url "$NEW_DOWNLOAD_URL" \
-       --argjson count "$PREVIOUS_DOWNLOAD_COUNT" \
+       --argjson count "$DOWNLOAD_COUNT" \
        'map(if .InternalName == "AOCCH" then
            .AssemblyVersion = $version
            | .DownloadLinkInstall = $url
@@ -205,7 +213,7 @@ gh release view "$NEW_TAG" --repo "$SOURCE_REPO" \
 
 jq --arg version "$VERSION" \
    --arg url "$NEW_DOWNLOAD_URL" \
-   --argjson count "$PREVIOUS_DOWNLOAD_COUNT" \
+   --argjson count "$DOWNLOAD_COUNT" \
    'map(if .InternalName == "AOCCH" then
        .AssemblyVersion = $version
        | .DownloadLinkInstall = $url
