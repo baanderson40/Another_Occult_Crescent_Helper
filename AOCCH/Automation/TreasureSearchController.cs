@@ -1522,7 +1522,7 @@ public sealed class TreasureSearchController : IDisposable
         if (dangerousTreasureTravelController.IsRunning)
         {
             dangerousTreasureTravelController.Stop($"Visible coffer matched during dangerous travel for {candidateKey.Label}.");
-            dangerousTreasureTravelController.AcknowledgeTerminalState();
+            dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
         }
 
         if (movementController.State is not MovementState.Idle and not MovementState.Stopped and not MovementState.Arrived)
@@ -1929,11 +1929,16 @@ public sealed class TreasureSearchController : IDisposable
 
     private bool TryHandleDangerousTravelTerminalResult()
     {
+        if (!dangerousTreasureTravelController.IsTerminalStateOwnedBy("TreasureSearch"))
+        {
+            return false;
+        }
+
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
                 var arriveReason = dangerousTreasureTravelController.LastTransition;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 lock (gate)
                 {
                     ClearCandidateTravelProgressTracking();
@@ -1961,21 +1966,21 @@ public sealed class TreasureSearchController : IDisposable
                 return true;
             case DangerousTreasureTravelState.CandidateSkipped:
                 var skipReason = dangerousTreasureTravelController.LastTransition;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 AdvanceCandidate(skipReason);
                 return true;
             case DangerousTreasureTravelState.Failed:
                 var failureReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 SetFailure(failureReason);
                 return true;
             case DangerousTreasureTravelState.Stopped:
                 var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 SetFailure(stoppedReason);
                 return true;
             default:
@@ -2226,7 +2231,7 @@ public sealed class TreasureSearchController : IDisposable
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+            dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 if (confirmedCofferVerificationMovePending)
                 {
                     confirmedCofferVerificationMovePending = false;
@@ -2238,7 +2243,7 @@ public sealed class TreasureSearchController : IDisposable
                 return dangerousHandoffResult != CandidateHandoffResult.DangerousTransitionStarted;
             case DangerousTreasureTravelState.CandidateSkipped:
                 var skipReason = dangerousTreasureTravelController.LastTransition;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 AdvanceCandidate(skipReason);
                 return false;
@@ -2246,7 +2251,7 @@ public sealed class TreasureSearchController : IDisposable
                 var failureReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 AdvanceCandidate(failureReason);
                 return false;
@@ -2254,7 +2259,7 @@ public sealed class TreasureSearchController : IDisposable
                 var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("TreasureSearch");
                 refinementMoveDeadlineAt = DateTimeOffset.MinValue;
                 Stop(stoppedReason);
                 return false;

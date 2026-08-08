@@ -673,19 +673,42 @@ public sealed class DangerousTreasureTravelController : IDisposable
         logger.Info($"{BuildLogTag()} op=restore-gearset-attempt context=\"{context}\" attempt={restoreAttemptCount} gearset={restoreTargetGearsetNumber} gearsetName=\"{restoreGearsetName}\" targetClassJob={restoreTargetClassJobId} currentClassJob={gameActionController.CurrentClassJobId}");
     }
 
-    public void AcknowledgeTerminalState()
+    public bool IsTerminalStateOwnedBy(string expectedCaller)
     {
-        logger.Info($"{BuildLogTag()} op=terminal-ack caller={FormatValue(callerName)} state={State} result={LastResult} candidate={activeCandidateLabel}");
         lock (gate)
         {
-            if (state is DangerousTreasureTravelState.Arrived
-                or DangerousTreasureTravelState.CandidateSkipped
-                or DangerousTreasureTravelState.Stopped
-                or DangerousTreasureTravelState.Failed)
-            {
-                state = DangerousTreasureTravelState.Idle;
-            }
+            return string.Equals(callerName, expectedCaller, StringComparison.Ordinal)
+                && state is (DangerousTreasureTravelState.Arrived
+                    or DangerousTreasureTravelState.CandidateSkipped
+                    or DangerousTreasureTravelState.Stopped
+                    or DangerousTreasureTravelState.Failed);
         }
+    }
+
+    public bool AcknowledgeTerminalState(string expectedCaller)
+    {
+        string actualCaller;
+        DangerousTreasureTravelState actualState;
+        DangerousTreasureTravelResult actualResult;
+        lock (gate)
+        {
+            actualCaller = callerName;
+            actualState = state;
+            actualResult = lastResult;
+            if (!string.Equals(callerName, expectedCaller, StringComparison.Ordinal)
+                || state is not (DangerousTreasureTravelState.Arrived
+                    or DangerousTreasureTravelState.CandidateSkipped
+                    or DangerousTreasureTravelState.Stopped
+                    or DangerousTreasureTravelState.Failed))
+            {
+                return false;
+            }
+
+            state = DangerousTreasureTravelState.Idle;
+        }
+
+        logger.Info($"{BuildLogTag()} op=terminal-ack caller={FormatValue(actualCaller)} expectedCaller={FormatValue(expectedCaller)} state={actualState} result={actualResult} candidate={activeCandidateLabel}");
+        return true;
     }
 
     public void Dispose()

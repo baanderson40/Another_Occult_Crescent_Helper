@@ -975,16 +975,21 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void TickTravelingToThreatenedCoffer()
     {
+        if (!dangerousTreasureTravelController.IsTerminalStateOwnedBy("VisibleCofferInteraction"))
+        {
+            return;
+        }
+
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferInteraction");
                 logger.Info($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-arrived spot={DescribeActiveSpot()} action=resume-hidden-interaction");
                 TransitionTo(TreasureCofferFarmState.WaitingForInteractionHandoff, "Reached the matched coffer under live knowledge threat protection; resuming hidden interaction.");
                 return;
             case DangerousTreasureTravelState.CandidateSkipped:
                 var skipReason = dangerousTreasureTravelController.LastTransition;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferInteraction");
                 logger.Warning($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-terminal state=CandidateSkipped action=advance reason={skipReason}");
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, skipReason);
                 return;
@@ -992,7 +997,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 var failureReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferInteraction");
                 logger.Warning($"{BuildLogTag()} op=coffer-interaction-knowledge-threat-terminal state=Failed action=fail reason={failureReason}");
                 SetFailure(failureReason);
                 return;
@@ -1000,7 +1005,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                 var stoppedReason = dangerousTreasureTravelController.LastError.Length == 0
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferInteraction");
                 TransitionTo(TreasureCofferFarmState.Stopped, stoppedReason, error: stoppedReason, result: TreasureCofferFarmResult.Stopped);
                 return;
         }
@@ -1980,6 +1985,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private bool HandleDangerousTravelTerminalResult()
     {
+        if (!dangerousTreasureTravelController.IsTerminalStateOwnedBy("VisibleCofferFarm"))
+        {
+            return false;
+        }
+
         switch (dangerousTreasureTravelController.State)
         {
             case DangerousTreasureTravelState.Arrived:
@@ -1996,7 +2006,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     return true;
                 }
 
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferFarm");
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 logger.ResetThrottle("visible-coffer-farm-dangerous-arrival-pending");
                 logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Arrived result=Arrived action=arrival-complete nextFarmState={State} transition={LastTransition}");
@@ -2005,7 +2015,7 @@ public sealed class TreasureCofferFarmController : IDisposable
             case DangerousTreasureTravelState.CandidateSkipped:
                 var skipReason = dangerousTreasureTravelController.LastTransition;
                 logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=CandidateSkipped result={dangerousTreasureTravelController.LastResult} action=advance transition={skipReason} error={FormatValue(dangerousTreasureTravelController.LastError)}");
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferFarm");
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 TransitionTo(TreasureCofferFarmState.AdvancingRoute, skipReason);
                 return true;
@@ -2014,7 +2024,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
                 logger.Warning($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Failed result={dangerousTreasureTravelController.LastResult} action=fail transition={dangerousTreasureTravelController.LastTransition} error={FormatValue(dangerousTreasureTravelController.LastError)}");
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferFarm");
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 SetFailure(failureReason);
                 return true;
@@ -2023,7 +2033,7 @@ public sealed class TreasureCofferFarmController : IDisposable
                     ? dangerousTreasureTravelController.LastTransition
                     : dangerousTreasureTravelController.LastError;
                 logger.Info($"{BuildLogTag()} op=dangerous-travel-terminal spot={DescribeActiveSpot()} controllerState=Stopped result={dangerousTreasureTravelController.LastResult} action=stop transition={dangerousTreasureTravelController.LastTransition} error={FormatValue(dangerousTreasureTravelController.LastError)}");
-                dangerousTreasureTravelController.AcknowledgeTerminalState();
+                dangerousTreasureTravelController.AcknowledgeTerminalState("VisibleCofferFarm");
                 logger.ResetThrottle("visible-coffer-farm-dangerous-travel");
                 TransitionTo(TreasureCofferFarmState.Stopped, stoppedReason, error: stoppedReason, result: TreasureCofferFarmResult.Stopped);
                 return true;
