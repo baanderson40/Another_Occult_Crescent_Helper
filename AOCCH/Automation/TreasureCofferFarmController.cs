@@ -568,9 +568,11 @@ public sealed class TreasureCofferFarmController : IDisposable
 
     private void ActivateHamletForcedHiddenTravelIfNeeded(VisibleCofferFarmRouteEntryData nextRouteEntry)
     {
+        var currentRouteEntry = activeRouteEntry;
         if (hamletForcedHiddenTravel
-            || !string.Equals(activeRouteEntry?.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(activeRouteEntry.Label, HamletThresholdRouteLabel, StringComparison.OrdinalIgnoreCase)
+            || currentRouteEntry == null
+            || !string.Equals(currentRouteEntry.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(currentRouteEntry.Label, HamletThresholdRouteLabel, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(nextRouteEntry.Area, HamletArea, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(nextRouteEntry.Label, HamletForcedRouteLabel, StringComparison.OrdinalIgnoreCase)
             || !configuration.GetUseHamletLiveKnowledgeHideThresholdOverride(scanner.Snapshot.TerritoryKey))
@@ -579,7 +581,7 @@ public sealed class TreasureCofferFarmController : IDisposable
         }
 
         hamletForcedHiddenTravel = true;
-        logger.Info($"{BuildLogTag()} op=hamlet-knowledge-policy-activated after={activeRouteEntry.Label} next={nextRouteEntry.Label} hideOffset={GetVisibleKnowledgeHideOffset()} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"}");
+        logger.Info($"{BuildLogTag()} op=hamlet-knowledge-policy-activated after={currentRouteEntry.Label} next={nextRouteEntry.Label} hideOffset={GetVisibleKnowledgeHideOffset()} playerKnowledgeLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"}");
     }
 
     private bool RequiresAreaTransition(OccultCrescentTerritoryData territory, VisibleCofferFarmRouteEntryData nextRouteEntry)
