@@ -55,6 +55,7 @@ public sealed class AutorotationController : IDisposable
         roleResolver = new AutorotationRoleResolver(logger);
         framework.Update += OnFrameworkUpdate;
         wrath.LeaseCancelled += OnWrathLeaseCancelled;
+        bossMod.SetRecoveryGuard(CanRecoverBossMod);
     }
 
     public bool BossModAvailable
@@ -645,6 +646,14 @@ public sealed class AutorotationController : IDisposable
         }
 
         return available;
+    }
+
+    private bool CanRecoverBossMod()
+    {
+        lock (gate)
+        {
+            return !hasOwnership && !externalSolverActive && !pendingExternalActivation;
+        }
     }
 
     private void ResetOwnershipState(string status, bool clearError = true)

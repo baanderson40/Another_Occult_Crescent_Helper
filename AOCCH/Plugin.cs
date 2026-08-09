@@ -126,7 +126,7 @@ public sealed class Plugin : IDalamudPlugin
         OccultCrescentNameResolver = new OccultCrescentNameResolver(DataManager, OccultCrescentData, Logger);
         Scanner = new OccultCrescentScanner(ClientState, FateTable, Framework, ObjectTable, OccultCrescentData, Configuration, Logger);
         VNavmesh = new VNavmeshIpc(Logger);
-        BossMod = new BossModIpc(Logger);
+        BossMod = new BossModIpc(Logger, Framework);
         RotationSolverReborn = new RotationSolverRebornIpc(Logger);
         WrathCombo = new WrathComboIpc(Logger);
         DependencyChecker = new NormalAutomationDependencyChecker(VNavmesh, BossMod, WrathCombo);
@@ -247,6 +247,7 @@ public sealed class Plugin : IDalamudPlugin
         FateAutomationController.Dispose();
         CriticalEngagementAutomationController.Dispose();
         BuffRotationController.Dispose();
+        BossMod.Dispose();
         AutorotationController.Dispose();
         MovementController.Dispose();
         Scanner.Dispose();
