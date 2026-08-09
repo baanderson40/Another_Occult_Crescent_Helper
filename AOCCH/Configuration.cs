@@ -94,7 +94,7 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 14;
+    public int Version { get; set; } = 15;
 
     public AutorotationProvider AutorotationProvider { get; set; } = AutorotationProvider.BossMod;
     public bool AutorotationProviderUserSelected { get; set; }
@@ -111,6 +111,7 @@ public class Configuration : IPluginConfiguration
     public List<TerritoryEventSetting> DisabledTerritoryFateIds { get; set; } = [];
     public bool UseReturn { get; set; } = true;
     public bool EnableBuffRotation { get; set; } = true;
+    public bool EnablePostActivityRevival { get; set; }
     public int MinimumMountingRange { get; set; } = 20;
     public bool ScannerOnlyMode { get; set; }
     // Retained only to migrate the version 8 global preference into South Horn.
@@ -415,7 +416,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 14)
+        if (Version >= 15)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return false;
@@ -576,8 +577,8 @@ public class Configuration : IPluginConfiguration
 
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 14;
-        logger?.Info("[Configuration] op=migration-complete version=14");
+        Version = 15;
+        logger?.Info("[Configuration] op=migration-complete version=15");
         return true;
     }
 

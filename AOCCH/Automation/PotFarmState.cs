@@ -8,6 +8,8 @@ public enum PotFarmState
     TravelingToSpawn,
     WaitingAtSpawn,
     RunningPotFate,
+    RunningActiveRevival,
+    RunningPostActivityRevival,
     WaitingForTreasureBuff,
     MovingNearTreasureCenter,
     TreasurePending,

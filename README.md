@@ -16,6 +16,7 @@ Another Occult Crescent Helper (AOCCH) is a Dalamud plugin for automating and mo
 - Optional Ninja gearset and Hide handling for dangerous treasure and coffer routes.
 - Buff rotation and BossMod autorotation integration.
 - Death recovery and return-to-base handling.
+- Optional post-CE/FATE player revival during unified farm sessions using Chemist or White Mage.
 - Instance-time management with configurable completion, treasure-hunt, and exit budgets.
 - Currency shopping with reserve amounts, start thresholds, purchase quantities, priorities, and keep-buying behavior.
 - Main, configuration, debug, dependency, and log windows.
@@ -58,7 +59,7 @@ The configuration window is divided into these tabs:
 - North Horn bonus coffers are disabled by default because their three destination areas contain high-level aggro. When enabled, the plugin returns to Base Camp after the first coffer, uses another Magical Elixir, follows the KI-selected direction by aethernet, and resumes the geometric search in that area.
 - **Treasure Coffers**: configure manual and automatic overworld coffer routes, guide markers, thresholds, route arrival, threat handling, dangerous travel, South Horn weather, and territory-specific Ashkin policies.
 - **Shopping**: configure currency reserves, purchase thresholds, item priorities, keep amounts, one-off purchases, and keep-buying behavior.
-- **Settings**: configure confirmed coffer observation sharing, autorotation overrides, target ranges, buff rotation, Return usage, mounting distance, and interface scaling.
+- **Settings**: configure confirmed coffer observation sharing, autorotation overrides, target ranges, buff rotation, post-CE/FATE revival, Return usage, mounting distance, and interface scaling.
 
 Confirmed coffer observation sharing is disabled by default. When enabled, the plugin transmits only territory, position, coffer type, version, and timestamp to the public coffer observation database for crowdsourcing.
 

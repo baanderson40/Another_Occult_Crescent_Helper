@@ -24,6 +24,13 @@ public sealed class FarmSessionController : IDisposable
         PotFate,
     }
 
+    private enum ActiveRevivalActivityKind
+    {
+        None,
+        Ce,
+        Fate,
+    }
+
     private static readonly TimeSpan IdleRescanInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
 
@@ -36,6 +43,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
     private readonly FateAutomationController fateAutomationController;
+    private readonly PostActivityRevivalController postActivityRevivalController;
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly DangerousTreasureTravelController dangerousTreasureTravelController;
     private readonly PotCycleTracker potCycleTracker;
@@ -58,6 +66,8 @@ public sealed class FarmSessionController : IDisposable
     private bool pendingStop;
     private bool recoverAfterBuffRotation;
     private bool runBuffRotationAfterRecovery;
+    private bool postActivityDeathRecoveryPending;
+    private ActiveRevivalActivityKind activeRevivalActivity;
     private InterruptedActivityKind interruptedActivity;
     private uint interruptedTargetId;
     private string interruptedTargetName = string.Empty;
@@ -86,6 +96,7 @@ public sealed class FarmSessionController : IDisposable
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
         FateAutomationController fateAutomationController,
+        PostActivityRevivalController postActivityRevivalController,
         DeathRecoveryController deathRecoveryController,
         DangerousTreasureTravelController dangerousTreasureTravelController,
         PotCycleTracker potCycleTracker,
@@ -106,6 +117,7 @@ public sealed class FarmSessionController : IDisposable
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
         this.fateAutomationController = fateAutomationController;
+        this.postActivityRevivalController = postActivityRevivalController;
         this.deathRecoveryController = deathRecoveryController;
         this.dangerousTreasureTravelController = dangerousTreasureTravelController;
         this.potCycleTracker = potCycleTracker;
@@ -241,6 +253,8 @@ public sealed class FarmSessionController : IDisposable
             lastIdleScanAt = DateTimeOffset.MinValue;
             recoverAfterBuffRotation = false;
             runBuffRotationAfterRecovery = false;
+            postActivityDeathRecoveryPending = false;
+            activeRevivalActivity = ActiveRevivalActivityKind.None;
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
@@ -257,6 +271,7 @@ public sealed class FarmSessionController : IDisposable
             requiredFreshCofferSurveyRevision = treasureHintTracker.CofferSurveySnapshot.Revision + 1;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
             automaticTreasureCofferStatus = "Starting automatic coffer tracking.";
+            postActivityContinuation = null;
         }
 
         logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
@@ -285,6 +300,9 @@ public sealed class FarmSessionController : IDisposable
             requiredFreshCofferSurveyRevision = 0;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
             automaticTreasureCofferStatus = "Idle";
+            postActivityDeathRecoveryPending = false;
+            activeRevivalActivity = ActiveRevivalActivityKind.None;
+            postActivityContinuation = null;
         }
 
         if (criticalEngagementAutomationController.IsRunning)
@@ -295,6 +313,11 @@ public sealed class FarmSessionController : IDisposable
         if (fateAutomationController.IsRunning)
         {
             fateAutomationController.Stop(reason);
+        }
+
+        if (postActivityRevivalController.IsRunning)
+        {
+            postActivityRevivalController.Stop(reason);
         }
 
         if (potFarmController.IsRunning)
@@ -341,6 +364,7 @@ public sealed class FarmSessionController : IDisposable
             pendingStop = false;
             recoverAfterBuffRotation = false;
             runBuffRotationAfterRecovery = false;
+            postActivityDeathRecoveryPending = false;
             interruptedActivity = InterruptedActivityKind.None;
             interruptedTargetId = 0;
             interruptedTargetName = string.Empty;
@@ -357,6 +381,7 @@ public sealed class FarmSessionController : IDisposable
             requiredFreshCofferSurveyRevision = 0;
             automaticTreasureCofferSurveyDeadlineAt = DateTimeOffset.MinValue;
             automaticTreasureCofferStatus = reason;
+            postActivityContinuation = null;
         }
 
         logger.Info($"[Farm] op=reset reason={reason}");
@@ -397,6 +422,54 @@ public sealed class FarmSessionController : IDisposable
 
         if (deathRecoveryController.State is not DeathRecoveryState.Idle and not DeathRecoveryState.Recovered)
         {
+            if (currentState == FarmSessionState.RunningActiveRevival)
+            {
+                var interruptedActiveActivity = activeRevivalActivity;
+                postActivityRevivalController.Stop("Player died during active FATE/CE revival.");
+                if (interruptedActiveActivity == ActiveRevivalActivityKind.Ce)
+                {
+                    CaptureInterruptedActivity(FarmSessionState.RunningCe);
+                    ConfigureDeathRecoveryRaiseWait(FarmSessionState.RunningCe);
+                }
+                else if (interruptedActiveActivity == ActiveRevivalActivityKind.Fate)
+                {
+                    CaptureInterruptedActivity(FarmSessionState.RunningFate);
+                    ConfigureDeathRecoveryRaiseWait(FarmSessionState.RunningFate);
+                }
+
+                lock (gate)
+                {
+                    activeRevivalActivity = ActiveRevivalActivityKind.None;
+                }
+
+                TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
+                return;
+            }
+
+            if (currentState == FarmSessionState.RunningPostActivityRevival)
+            {
+                postActivityRevivalController.Stop("Player died during post-activity revival.");
+                lock (gate)
+                {
+                    postActivityDeathRecoveryPending = true;
+                }
+                TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
+                return;
+            }
+
+            if (currentState == FarmSessionState.RunningPots
+                && (potFarmController.State is PotFarmState.RunningPostActivityRevival or PotFarmState.RunningActiveRevival))
+            {
+                potFarmController.Stop("Player died during post-activity revival after a pot FATE.");
+                lock (gate)
+                {
+                    postActivityDeathRecoveryPending = true;
+                }
+
+                TransitionTo(FarmSessionState.WaitingForDeathRecovery, deathRecoveryController.LastTransition, "Death recovery");
+                return;
+            }
+
             if (currentState != FarmSessionState.WaitingForDeathRecovery)
             {
                 if (currentState == FarmSessionState.RunningVisibleCofferRoute)
@@ -429,6 +502,20 @@ public sealed class FarmSessionController : IDisposable
 
             if (deathRecoveryController.LastRecoveryMethod == DeathRecoveryMethod.Raised)
             {
+                var recoverToBaseAfterRevivalDeath = false;
+                lock (gate)
+                {
+                    recoverToBaseAfterRevivalDeath = postActivityDeathRecoveryPending;
+                    postActivityDeathRecoveryPending = false;
+                }
+
+                if (recoverToBaseAfterRevivalDeath)
+                {
+                    ClearInterruptedActivity();
+                    StartRecoveryToBase("Death recovery completed after post-activity revival was interrupted.");
+                    return;
+                }
+
                 if (BeginInterruptedActivityResumeAfterRaise())
                 {
                     return;
@@ -478,6 +565,12 @@ public sealed class FarmSessionController : IDisposable
                 break;
             case FarmSessionState.RunningFate:
                 TickFateRun();
+                break;
+            case FarmSessionState.RunningPostActivityRevival:
+                TickPostActivityRevival();
+                break;
+            case FarmSessionState.RunningActiveRevival:
+                TickActiveRevival();
                 break;
             case FarmSessionState.SwitchingToFreelancerForCofferSurvey:
                 TickSwitchingToFreelancerForCofferSurvey();
@@ -753,7 +846,7 @@ public sealed class FarmSessionController : IDisposable
                     return;
                 }
 
-                if (!criticalEngagementAutomationController.Start(snapshot.EffectiveTarget.CriticalEncounter))
+                if (!criticalEngagementAutomationController.Start(snapshot.EffectiveTarget.CriticalEncounter, completeInPlace: true))
                 {
                     SetFailure(criticalEngagementAutomationController.LastError.Length == 0
                         ? "Failed to start CE automation."
@@ -778,7 +871,7 @@ public sealed class FarmSessionController : IDisposable
                     return;
                 }
 
-                if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate))
+                if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate, FateRunCompletionBehavior.CompleteInPlace))
                 {
                     SetFailure(fateAutomationController.LastError.Length == 0
                         ? "Failed to start FATE automation."
@@ -799,6 +892,11 @@ public sealed class FarmSessionController : IDisposable
     {
         if (criticalEngagementAutomationController.IsRunning)
         {
+            if (TryStartActiveRevival(ActiveRevivalActivityKind.Ce, "active CE revival"))
+            {
+                return;
+            }
+
             return;
         }
 
@@ -810,7 +908,7 @@ public sealed class FarmSessionController : IDisposable
                     LatchAutomaticTreasureCofferCheckAfterExternalRecovery("CE");
                 }
 
-                StartPostCeFlow();
+                StartPostActivityRevival("CE completion", StartPostCeFlow);
                 break;
             case AutomationRunResult.Preempted:
                 TransitionTo(FarmSessionState.SelectingTarget, criticalEngagementAutomationController.LastTransition, "Selecting target");
@@ -830,6 +928,12 @@ public sealed class FarmSessionController : IDisposable
     {
         if (fateAutomationController.IsRunning)
         {
+            if (!fateAutomationController.TargetIsPot
+                && TryStartActiveRevival(ActiveRevivalActivityKind.Fate, "active FATE revival"))
+            {
+                return;
+            }
+
             logger.DebugThrottled("farm-running-fate", WaitLogInterval, $"Farm session is still running FATE automation. State={fateAutomationController.State} target={fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).");
             return;
         }
@@ -844,7 +948,7 @@ public sealed class FarmSessionController : IDisposable
                     LatchAutomaticTreasureCofferCheckAfterExternalRecovery("FATE");
                 }
 
-                StartPostFateFlow();
+                StartPostActivityRevival("FATE completion", StartPostFateFlow);
                 break;
             case AutomationRunResult.Preempted:
                 TransitionTo(FarmSessionState.SelectingTarget, fateAutomationController.LastTransition, "Selecting target");
@@ -863,26 +967,140 @@ public sealed class FarmSessionController : IDisposable
     private void StartPostCeFlow()
     {
         DecrementAutomaticTreasureCofferRescanCounters("CE completion");
-
-        if (!configuration.UseReturn)
+        lock (gate)
         {
-            lock (gate)
-            {
-                runBuffRotationAfterRecovery = configuration.EnableBuffRotation;
-            }
-
-            StartRecoveryToBase("CE complete; returning to Base Camp.");
-            return;
+            runBuffRotationAfterRecovery = configuration.EnableBuffRotation;
         }
 
-        StartPostActivityFlow();
+        StartRecoveryToBase("CE complete; post-activity revival finished, returning to Base Camp.");
     }
 
     private void StartPostFateFlow()
     {
         DecrementAutomaticTreasureCofferRescanCounters("FATE completion");
+        if (configuration.UseReturn)
+        {
+            LatchAutomaticTreasureCofferCheckAfterExternalRecovery("FATE");
+        }
 
-        StartPostActivityFlow();
+        lock (gate)
+        {
+            runBuffRotationAfterRecovery = configuration.EnableBuffRotation;
+        }
+
+        StartRecoveryToBase("FATE complete; post-activity revival finished, returning to Base Camp.");
+    }
+
+    private void StartPostActivityRevival(string context, Action continuation)
+    {
+        if (!configuration.EnablePostActivityRevival)
+        {
+            continuation();
+            return;
+        }
+
+        if (!postActivityRevivalController.Start(context))
+        {
+            logger.Warning($"{BuildLogTag()} op=revival-start-failed context=\"{context}\" reason={postActivityRevivalController.LastError}");
+            continuation();
+            return;
+        }
+
+        lock (gate)
+        {
+            postActivityContinuation = continuation;
+        }
+
+        TransitionTo(FarmSessionState.RunningPostActivityRevival, postActivityRevivalController.LastTransition, "Post-activity revival");
+    }
+
+    private Action? postActivityContinuation;
+
+    private void TickPostActivityRevival()
+    {
+        if (postActivityRevivalController.IsRunning)
+        {
+            return;
+        }
+
+        Action? continuation;
+        lock (gate)
+        {
+            continuation = postActivityContinuation;
+            postActivityContinuation = null;
+        }
+
+        logger.Info($"{BuildLogTag()} op=revival-complete state={postActivityRevivalController.State} transition=\"{postActivityRevivalController.LastTransition}\" error=\"{postActivityRevivalController.LastError}\"");
+        continuation?.Invoke();
+    }
+
+    private bool TryStartActiveRevival(ActiveRevivalActivityKind activity, string context)
+    {
+        if (!configuration.EnablePostActivityRevival || postActivityRevivalController.IsRunning)
+        {
+            return false;
+        }
+
+        if ((activity == ActiveRevivalActivityKind.Ce && !criticalEngagementAutomationController.CanPauseForRevival)
+            || (activity == ActiveRevivalActivityKind.Fate && !fateAutomationController.CanPauseForRevival))
+        {
+            return false;
+        }
+
+        if (!postActivityRevivalController.StartActive(context))
+        {
+            return false;
+        }
+
+        var paused = activity switch
+        {
+            ActiveRevivalActivityKind.Ce => criticalEngagementAutomationController.PauseForRevival("Pausing CE combat for active revival."),
+            ActiveRevivalActivityKind.Fate => fateAutomationController.PauseForRevival("Pausing FATE combat for active revival."),
+            _ => false,
+        };
+        if (!paused)
+        {
+            postActivityRevivalController.Stop("Could not pause the active FATE/CE before revival.");
+            return false;
+        }
+
+        lock (gate)
+        {
+            activeRevivalActivity = activity;
+        }
+
+        TransitionTo(FarmSessionState.RunningActiveRevival, postActivityRevivalController.LastTransition, "Active revival");
+        return true;
+    }
+
+    private void TickActiveRevival()
+    {
+        if (postActivityRevivalController.IsRunning)
+        {
+            return;
+        }
+
+        ActiveRevivalActivityKind activity;
+        lock (gate)
+        {
+            activity = activeRevivalActivity;
+            activeRevivalActivity = ActiveRevivalActivityKind.None;
+        }
+
+        var resumed = activity switch
+        {
+            ActiveRevivalActivityKind.Ce => criticalEngagementAutomationController.ResumeAfterRevival("Active revival completed; resuming CE combat."),
+            ActiveRevivalActivityKind.Fate => fateAutomationController.ResumeAfterRevival("Active revival completed; resuming FATE combat."),
+            _ => false,
+        };
+
+        logger.Info($"{BuildLogTag()} op=active-revival-complete state={postActivityRevivalController.State} transition=\"{postActivityRevivalController.LastTransition}\" resumed={resumed} error=\"{postActivityRevivalController.LastError}\"");
+        TransitionTo(activity switch
+        {
+            ActiveRevivalActivityKind.Ce => FarmSessionState.RunningCe,
+            ActiveRevivalActivityKind.Fate => FarmSessionState.RunningFate,
+            _ => FarmSessionState.SelectingTarget,
+        }, resumed ? "Active revival complete; activity resumed." : "Active revival complete; activity requires re-evaluation.", resumed ? "FATE/CE" : "Selecting target");
     }
 
     private void StartPostActivityFlow()
@@ -1264,7 +1482,7 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!criticalEngagementAutomationController.Start(ceTarget, resumeAfterRaise: true))
+        if (!criticalEngagementAutomationController.Start(ceTarget, resumeAfterRaise: true, completeInPlace: true))
         {
             SetFailure(criticalEngagementAutomationController.LastError.Length == 0
                 ? $"Failed to resume CE {ceTarget.Name} ({ceTarget.Id}) after raise."
@@ -1339,7 +1557,7 @@ public sealed class FarmSessionController : IDisposable
             return false;
         }
 
-        if (!potFarmController.IsRunning && !potFarmController.Start())
+        if (!potFarmController.IsRunning && !potFarmController.Start(startedByFarmSession: true))
         {
             SetFailure(potFarmController.LastError.Length == 0
                 ? "Failed to start pot farm control."
@@ -1381,7 +1599,7 @@ public sealed class FarmSessionController : IDisposable
         {
             PotFarmState.WaitingForPredictedWindow or PotFarmState.Bootstrapping => FarmSessionState.WaitingForPredictedPotWindow,
             PotFarmState.TravelingToSpawn or PotFarmState.WaitingAtSpawn => FarmSessionState.WaitingAtPotSpawn,
-            PotFarmState.RunningPotFate or PotFarmState.RecoveringToBase => FarmSessionState.RunningPots,
+            PotFarmState.RunningPotFate or PotFarmState.RunningActiveRevival or PotFarmState.RunningPostActivityRevival or PotFarmState.RecoveringToBase => FarmSessionState.RunningPots,
             PotFarmState.WaitingForTreasureBuff or PotFarmState.MovingNearTreasureCenter or PotFarmState.TreasurePending or PotFarmState.RunningTreasureSearch or PotFarmState.RunningCofferInteraction => FarmSessionState.RunningTreasureHunt,
             _ => FarmSessionState.RunningPots,
         };

@@ -39,6 +39,8 @@ public sealed class GameActionController
     public const uint HiddenStatusId = 614;
     public const uint NinjaClassJobId = 30;
     public const uint OccultTreasuresightActionId = 41651;
+    public const uint OccultChemistRaiseActionId = 41634;
+    public const uint OccultWhiteMageRaiseActionId = 49070;
     public const uint MagicalElixirEventItemId = 2003296;
     public const string MagicalElixirKeyItemName = "Magical Elixir";
     public const byte FreelancerSupportJobId = 0;
@@ -144,8 +146,32 @@ public sealed class GameActionController
     public unsafe bool CanUseGeneralAction(uint actionId)
         => ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, actionId) == 0;
 
-    public unsafe bool CanUseAction(uint actionId)
-        => ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId) == 0;
+    public unsafe bool CanUseAction(uint actionId, ulong? targetObjectId = null)
+        => GetActionStatusCode(actionId, targetObjectId) == 0;
+
+    public unsafe uint GetActionStatusCode(uint actionId, ulong? targetObjectId = null)
+        => targetObjectId.HasValue
+            ? ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId, targetObjectId.Value)
+            : ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId);
+
+    public ulong? CurrentTargetObjectId
+        => targetManager.Target?.GameObjectId;
+
+    public string GetCurrentTargetSummary()
+    {
+        var target = targetManager.Target;
+        if (target == null)
+        {
+            return "target=none";
+        }
+
+        var localPlayer = objectTable.LocalPlayer;
+        var distance = localPlayer == null
+            ? "unavailable"
+            : CalculateFlatDistance(localPlayer.Position, target.Position).ToString("0.0");
+        var hp = target is ICharacter character ? character.CurrentHp.ToString() : "unavailable";
+        return $"target=\"{target.Name.TextValue}\" objectId={target.GameObjectId:X} objectKind={target.ObjectKind} hp={hp} distance={distance} valid={target.IsValid()}";
+    }
 
     public unsafe bool TryExecuteGeneralAction(uint actionId, string description)
     {
@@ -167,23 +193,27 @@ public sealed class GameActionController
         return true;
     }
 
-    public unsafe bool TryExecuteAction(uint actionId, string description)
+    public unsafe bool TryExecuteAction(uint actionId, string description, ulong? targetObjectId = null)
     {
-        var actionStatus = ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId);
+        var actionStatus = GetActionStatusCode(actionId, targetObjectId);
+        var targetBefore = GetCurrentTargetSummary();
+        var explicitTarget = targetObjectId.HasValue ? targetObjectId.Value.ToString("X") : "default";
         if (actionStatus != 0)
         {
-            logger.Warning($"[GameAction] op=action-failed actionId={actionId} actionType={ActionType.Action} statusCode={actionStatus} description=\"{description}\" reason=unavailable");
+            logger.Warning($"[GameAction] op=action-failed actionId={actionId} actionType={ActionType.Action} statusCode={actionStatus} explicitTargetId={explicitTarget} description=\"{description}\" {targetBefore} conditions={GetActionConditionSummary()} reason=unavailable");
             return false;
         }
 
-        var used = ActionManager.Instance()->UseAction(ActionType.Action, actionId);
+        var used = targetObjectId.HasValue
+            ? ActionManager.Instance()->UseAction(ActionType.Action, actionId, targetObjectId.Value)
+            : ActionManager.Instance()->UseAction(ActionType.Action, actionId);
         if (!used)
         {
-            logger.Warning($"[GameAction] op=action-failed actionId={actionId} description=\"{description}\" reason=dispatch-failed");
+            logger.Warning($"[GameAction] op=action-failed actionId={actionId} actionType={ActionType.Action} statusCode={actionStatus} explicitTargetId={explicitTarget} description=\"{description}\" before={targetBefore} after={GetCurrentTargetSummary()} conditions={GetActionConditionSummary()} reason=dispatch-failed");
             return false;
         }
 
-        logger.Info($"[GameAction] op=action actionId={actionId} description=\"{description}\"");
+        logger.Info($"[GameAction] op=action actionId={actionId} explicitTargetId={explicitTarget} description=\"{description}\" target={targetBefore}");
         return true;
     }
 
@@ -204,6 +234,9 @@ public sealed class GameActionController
 
     public string GetChangeableStateSummary()
         => $"playerLoaded={playerState.IsLoaded} currentClassJob={CurrentClassJobId} inCombat={condition[ConditionFlag.InCombat]} casting={condition[ConditionFlag.Casting]} mounted={condition[ConditionFlag.Mounted]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupied={condition[ConditionFlag.Occupied]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]}";
+
+    public string GetActionConditionSummary()
+        => $"inCombat={condition[ConditionFlag.InCombat]} casting={condition[ConditionFlag.Casting]} mounted={condition[ConditionFlag.Mounted]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupied={condition[ConditionFlag.Occupied]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]}";
 
     public bool WaitForChangeableState(TimeSpan timeout, out string error)
     {
@@ -599,6 +632,13 @@ public sealed class GameActionController
 
     private static bool IsAcceptedUseItemResult(long result)
         => result is 0 or 1;
+
+    private static float CalculateFlatDistance(System.Numerics.Vector3 left, System.Numerics.Vector3 right)
+    {
+        var deltaX = left.X - right.X;
+        var deltaZ = left.Z - right.Z;
+        return MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+    }
 
     public unsafe string DescribeMagicalElixirState()
     {

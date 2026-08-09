@@ -31,6 +31,7 @@ public sealed class DebugWindow : Window, IDisposable
         Autorotation,
         BuffRotation,
         DeathRecovery,
+        RevivalActions,
         ShopInspector,
         Movement,
         CriticalEngagements,
@@ -131,6 +132,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.CriticalEngagements, "Critical Engagements");
         DrawSectionButton(DebugSection.DangerousTreasureTravel, "Dangerous Treasure Travel");
         DrawSectionButton(DebugSection.DeathRecovery, "Death Recovery");
+        DrawSectionButton(DebugSection.RevivalActions, "Revival Actions");
         DrawSectionButton(DebugSection.NorthHornPreview, "North Horn Preview");
         DrawSectionButton(DebugSection.FateAutomation, "FATE Automation");
         DrawSectionButton(DebugSection.Fates, "FATEs");
@@ -198,6 +200,9 @@ public sealed class DebugWindow : Window, IDisposable
                 break;
             case DebugSection.DeathRecovery:
                 DrawDeathRecovery();
+                break;
+            case DebugSection.RevivalActions:
+                DrawRevivalActions();
                 break;
             case DebugSection.ShopInspector:
                 DrawShopInspector();
@@ -1146,6 +1151,30 @@ public sealed class DebugWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(deathRecoveryController.LastError))
         {
             ImGui.TextWrapped($"Last Error: {deathRecoveryController.LastError}");
+        }
+    }
+
+    private void DrawRevivalActions()
+    {
+        ImGui.TextUnformatted("Revival Actions");
+        ImGui.TextWrapped("Debug actions use the current game target. Select a dead player before pressing either button.");
+        ImGui.TextWrapped(gameActionController.GetCurrentTargetSummary());
+        var targetObjectId = gameActionController.CurrentTargetObjectId;
+        ImGui.TextWrapped($"Occult Raise (White Mage) 49070 status={gameActionController.GetActionStatusCode(GameActionController.OccultWhiteMageRaiseActionId, targetObjectId)}");
+        ImGui.TextWrapped($"Occult Raise (Chemist) 41634 status={gameActionController.GetActionStatusCode(GameActionController.OccultChemistRaiseActionId, targetObjectId)}");
+        ImGui.TextWrapped($"Conditions: {gameActionController.GetActionConditionSummary()}");
+
+        if (ImGui.Button("Use Occult Raise (White Mage)"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=debug-occult-white-mage-raise");
+            gameActionController.TryExecuteAction(GameActionController.OccultWhiteMageRaiseActionId, "debug Occult Raise White Mage", gameActionController.CurrentTargetObjectId);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Use Occult Raise (Chemist)"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=debug-occult-chemist-raise");
+            gameActionController.TryExecuteAction(GameActionController.OccultChemistRaiseActionId, "debug Occult Raise Chemist", gameActionController.CurrentTargetObjectId);
         }
     }
 

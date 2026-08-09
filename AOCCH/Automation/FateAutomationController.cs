@@ -64,6 +64,7 @@ public sealed class FateAutomationController : IDisposable
     private string lastObservedState = string.Empty;
     private DateTimeOffset monitorStartedAt = DateTimeOffset.MinValue;
     private bool autorotationApplied;
+    private bool pausedForRevival;
     private int autorotationDismountCycle;
     private int autorotationDismountDispatches;
     private DateTimeOffset autorotationDismountNextPollAt = DateTimeOffset.MinValue;
@@ -221,6 +222,51 @@ public sealed class FateAutomationController : IDisposable
             and not FateAutomationState.Completed
             and not FateAutomationState.Failed;
 
+    public bool PauseForRevival(string reason)
+    {
+        if (State != FateAutomationState.Participating)
+        {
+            return false;
+        }
+
+        movementController.Stop(reason);
+        autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
+        lock (gate)
+        {
+            autorotationApplied = false;
+        }
+        pausedForRevival = true;
+        logger.Info($"{BuildLogTag()} op=pause-for-revival target=\"{TargetFateName}\" ({TargetFateId}) reason={reason}");
+        return true;
+    }
+
+    public bool CanPauseForRevival
+        => State == FateAutomationState.Participating
+            && condition[ConditionFlag.InCombat];
+
+    public bool ResumeAfterRevival(string reason)
+    {
+        if (!pausedForRevival)
+        {
+            return false;
+        }
+
+        var target = scanner.Snapshot.FindFateRunTarget(TargetFateId, targetIsPot);
+        if (target == null || !IsFateActive(target))
+        {
+            pausedForRevival = false;
+            return false;
+        }
+
+        pausedForRevival = false;
+        lastCombatSeenAt = DateTimeOffset.UtcNow;
+        combatTargetController.MaintainFateTarget(target);
+        EnsureAutorotationApplied(target);
+        logger.Info($"{BuildLogTag()} op=resume-after-revival target=\"{TargetFateName}\" ({TargetFateId}) reason={reason}");
+        return true;
+    }
+
     public AutomationRunResult LastResult
     {
         get
@@ -237,6 +283,9 @@ public sealed class FateAutomationController : IDisposable
 
     public bool Start(ActiveFate? target)
         => Start(target?.ToFateRunTarget(), FateRunCompletionBehavior.RecoverToBase);
+
+    public bool Start(ActiveFate? target, FateRunCompletionBehavior completionBehavior)
+        => Start(target?.ToFateRunTarget(), completionBehavior);
 
     public bool Start(ActivePotFate? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.CompleteInPlace)
         => Start(target?.ToFateRunTarget(), completionBehavior);
@@ -320,6 +369,7 @@ public sealed class FateAutomationController : IDisposable
             liveTargetRoutingActivated = false;
             plannedLiveTargetObjectId = 0;
             plannedFateDestination = Vector3.Zero;
+            pausedForRevival = false;
         }
 
         logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} completionBehavior={completionBehavior} initialDestinationOverride={(initialDestinationOverride.HasValue ? FormatVector(initialDestinationOverride.Value) : "none")} initialArrivalToleranceOverride={(initialArrivalToleranceOverride.HasValue ? $"{initialArrivalToleranceOverride.Value:0.0}" : "none")}");
@@ -427,6 +477,11 @@ public sealed class FateAutomationController : IDisposable
         if (IsCePreempting(snapshot))
         {
             HandleCePreemption(snapshot);
+            return;
+        }
+
+        if (pausedForRevival)
+        {
             return;
         }
 

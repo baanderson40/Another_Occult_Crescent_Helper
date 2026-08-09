@@ -773,6 +773,15 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("Automatically applies job and foray buff actions during combat and route travel.");
 
+        var enablePostActivityRevival = configuration.EnablePostActivityRevival;
+        if (ImGui.Checkbox("Revive Player with Phantom Actions", ref enablePostActivityRevival))
+        {
+            logger.Info($"[Config] op=setting-change key=EnablePostActivityRevival old={configuration.EnablePostActivityRevival} new={enablePostActivityRevival}");
+            configuration.EnablePostActivityRevival = enablePostActivityRevival;
+            configuration.Save();
+        }
+        DrawSettingTooltip("After CE or FATE completion, searches for dead players, uses Chemist or White Mage to raise them, then returns to Base Camp.");
+
         ImGui.Separator();
         ImGui.TextUnformatted("Movement");
 

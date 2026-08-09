@@ -75,6 +75,7 @@ public sealed class Plugin : IDalamudPlugin
     public DangerousTreasureTravelController DangerousTreasureTravelController { get; init; }
     public AutorotationController AutorotationController { get; init; }
     public BuffRotationController BuffRotationController { get; init; }
+    public PostActivityRevivalController PostActivityRevivalController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
@@ -137,6 +138,7 @@ public sealed class Plugin : IDalamudPlugin
         DangerousTreasureTravelController = new DangerousTreasureTravelController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         AutorotationController = new AutorotationController(Framework, BossMod, RotationSolverReborn, WrathCombo, Configuration, GameActionController, Logger);
         BuffRotationController = new BuffRotationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
+        PostActivityRevivalController = new PostActivityRevivalController(Framework, ObjectTable, Scanner, MovementController, GameActionController, Configuration, Logger);
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
@@ -151,14 +153,14 @@ public sealed class Plugin : IDalamudPlugin
         Scanner.CofferOpened += OnScannerCofferOpened;
         TreasureCofferFarmController = new TreasureCofferFarmController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, DeathRecoveryController, DangerousTreasureTravelController, CofferInteractionController, VisibleCofferPositionOverrideStore, Configuration, Logger);
         PotInstanceTimeEvaluator = new PotInstanceTimeEvaluator(Configuration, Logger);
-        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, Configuration, Logger);
+        PotFarmController = new PotFarmController(Framework, Scanner, MovementController, GameActionController, FateAutomationController, PostActivityRevivalController, DeathRecoveryController, InstancedContentController, PotCycleTracker, TreasureHintTracker, TreasureSearchController, CofferInteractionController, DangerousTreasureTravelController, PotInstanceTimeEvaluator, Configuration, Logger);
         AutomaticTreasureCofferDebugController = new AutomaticTreasureCofferDebugController(Framework, Scanner, GameActionController, DeathRecoveryController, TreasureHintTracker, Configuration, Logger);
         TreasureGuideRenderer = new TreasureGuideRenderer(PluginInterface, Configuration, Scanner, Condition, ObjectTable, Logger);
         ShopInspectorController = new ShopInspectorController(Framework, GameGui, DataManager, Logger);
         ShopPurchaseController = new ShopPurchaseController(Framework, ChatGui, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
         ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Scanner, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, PostActivityRevivalController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -234,6 +236,7 @@ public sealed class Plugin : IDalamudPlugin
         ShopPurchaseController.Dispose();
         FarmSessionController.Dispose();
         PotFarmController.Dispose();
+        PostActivityRevivalController.Dispose();
         TreasureCofferFarmController.Dispose();
         CofferInteractionController.CofferOpened -= OnCofferOpened;
         Scanner.CofferOpened -= OnScannerCofferOpened;

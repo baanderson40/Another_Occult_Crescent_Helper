@@ -15,6 +15,8 @@ public enum FarmSessionState
     RunningTreasureHunt,
     RunningCe,
     RunningFate,
+    RunningPostActivityRevival,
+    RunningActiveRevival,
     SwitchingToFreelancerForCofferSurvey,
     WaitingForCofferSurvey,
     RestoringOriginalJobAfterCofferSurvey,

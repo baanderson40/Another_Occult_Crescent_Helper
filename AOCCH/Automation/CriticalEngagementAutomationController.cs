@@ -46,6 +46,8 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     private bool returnTravelFallbackAttempted;
     private bool returnRecoveryFallbackAttempted;
     private bool preemptionRecoveryPending;
+    private bool completeInPlace;
+    private bool pausedForRevival;
     private Vector3 ceWaitPoint;
     private float ceWaitPointArrivalTolerance;
 
@@ -156,6 +158,45 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             and not CriticalEngagementAutomationState.Completed
             and not CriticalEngagementAutomationState.Failed;
 
+    public bool PauseForRevival(string reason)
+    {
+        if (State != CriticalEngagementAutomationState.InBattle)
+        {
+            return false;
+        }
+
+        movementController.Stop(reason);
+        autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
+        pausedForRevival = true;
+        logger.Info($"{BuildLogTag()} op=pause-for-revival target=\"{TargetCeName}\" ({TargetCeId}) reason={reason}");
+        return true;
+    }
+
+    public bool CanPauseForRevival
+        => State == CriticalEngagementAutomationState.InBattle
+            && condition[ConditionFlag.InCombat];
+
+    public bool ResumeAfterRevival(string reason)
+    {
+        if (!pausedForRevival)
+        {
+            return false;
+        }
+
+        var target = scanner.Snapshot.FindCriticalEncounter(TargetCeId);
+        if (target == null || !target.IsBattle || scanner.Snapshot.CurrentCriticalEncounterId != TargetCeId)
+        {
+            pausedForRevival = false;
+            return false;
+        }
+
+        pausedForRevival = false;
+        EnterBattle(target, reason);
+        logger.Info($"{BuildLogTag()} op=resume-after-revival target=\"{TargetCeName}\" ({TargetCeId}) reason={reason}");
+        return true;
+    }
+
     public AutomationRunResult LastResult
     {
         get
@@ -170,7 +211,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     public bool Start()
         => Start(scanner.Snapshot.EffectiveTarget.CriticalEncounter);
 
-    public bool Start(ActiveCriticalEncounter? target, bool resumeAfterRaise = false)
+    public bool Start(ActiveCriticalEncounter? target, bool resumeAfterRaise = false, bool completeInPlace = false)
     {
         if (IsRunning)
         {
@@ -221,11 +262,13 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
             preemptionRecoveryPending = false;
+            this.completeInPlace = completeInPlace;
             ceWaitPoint = default;
             ceWaitPointArrivalTolerance = 0f;
+            pausedForRevival = false;
         }
 
-        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id})");
+        logger.Info($"{BuildLogTag()} op=start target=\"{target.Name}\" ({target.Id}) completeInPlace={completeInPlace}");
         movementController.SetLogOwner(currentRunId);
         autorotationController.ValidateConfiguredPreset();
 
@@ -272,6 +315,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             returnTravelFallbackAttempted = false;
             returnRecoveryFallbackAttempted = false;
             preemptionRecoveryPending = false;
+            completeInPlace = false;
             ceWaitPoint = default;
             ceWaitPointArrivalTolerance = 0f;
         }
@@ -302,6 +346,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         if (!snapshot.IsInSupportedTerritory || !snapshot.CanFarmCriticalEncounters)
         {
             Stop("CE automation stopped because its territory feature became unavailable.");
+            return;
+        }
+
+        if (pausedForRevival)
+        {
             return;
         }
 
@@ -557,6 +606,12 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         autorotationController.ReleaseOwnership(reason);
         combatTargetController.ReleaseOwnedTarget(reason);
+        if (completeInPlace)
+        {
+            TransitionTo(CriticalEngagementAutomationState.Completed, reason, clearTarget: true, result: AutomationRunResult.Completed);
+            return;
+        }
+
         if (configuration.UseReturn)
         {
             StartRecovery(reason);

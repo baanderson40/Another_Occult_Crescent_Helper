@@ -41,6 +41,7 @@ public sealed class PotFarmController : IDisposable
     private readonly MovementController movementController;
     private readonly GameActionController gameActionController;
     private readonly FateAutomationController fateAutomationController;
+    private readonly PostActivityRevivalController postActivityRevivalController;
     private readonly DeathRecoveryController deathRecoveryController;
     private readonly InstancedContentController instancedContentController;
     private readonly PotCycleTracker potCycleTracker;
@@ -83,6 +84,7 @@ public sealed class PotFarmController : IDisposable
     private bool leavePending;
     private bool pendingStop;
     private bool waitingToResumeInterruptedPotFateAfterDeath;
+    private bool startedByFarmSession;
     private bool resumeBootstrapAfterRecovery;
     private bool isWaitingForConfiguredBootstrapPot;
     private PotFarmRunResult completionResultAfterRecovery;
@@ -103,6 +105,7 @@ public sealed class PotFarmController : IDisposable
         MovementController movementController,
         GameActionController gameActionController,
         FateAutomationController fateAutomationController,
+        PostActivityRevivalController postActivityRevivalController,
         DeathRecoveryController deathRecoveryController,
         InstancedContentController instancedContentController,
         PotCycleTracker potCycleTracker,
@@ -119,6 +122,7 @@ public sealed class PotFarmController : IDisposable
         this.movementController = movementController;
         this.gameActionController = gameActionController;
         this.fateAutomationController = fateAutomationController;
+        this.postActivityRevivalController = postActivityRevivalController;
         this.deathRecoveryController = deathRecoveryController;
         this.instancedContentController = instancedContentController;
         this.potCycleTracker = potCycleTracker;
@@ -342,7 +346,7 @@ public sealed class PotFarmController : IDisposable
         return false;
     }
 
-    public bool Start()
+    public bool Start(bool startedByFarmSession = false)
     {
         var scannerSnapshot = scanner.Snapshot;
         if (!configuration.IsPotFarmingEnabled(scannerSnapshot.TerritoryKey))
@@ -374,6 +378,7 @@ public sealed class PotFarmController : IDisposable
 
         lock (gate)
         {
+            this.startedByFarmSession = startedByFarmSession;
             currentRunId = $"Pot#{Interlocked.Increment(ref nextRunSequence)}";
             runStartedAt = DateTimeOffset.UtcNow;
             pendingStop = false;
@@ -436,6 +441,11 @@ public sealed class PotFarmController : IDisposable
             fateAutomationController.Stop(reason);
         }
 
+        if (postActivityRevivalController.IsRunning)
+        {
+            postActivityRevivalController.Stop(reason);
+        }
+
         treasureHintTracker.CompleteCurrentTreasureSession($"Pot farm stopped: {reason}", TreasureSessionState.Abandoned);
         if (treasureSearchController.State != TreasureSearchState.Idle)
         {
@@ -489,6 +499,7 @@ public sealed class PotFarmController : IDisposable
             leavePending = false;
             pendingStop = false;
             waitingToResumeInterruptedPotFateAfterDeath = false;
+            startedByFarmSession = false;
             resumeBootstrapAfterRecovery = false;
             isWaitingForConfiguredBootstrapPot = false;
             completionResultAfterRecovery = PotFarmRunResult.None;
@@ -539,7 +550,10 @@ public sealed class PotFarmController : IDisposable
         var deathRecoveryInProgress = deathRecoveryController.State is not DeathRecoveryState.Idle
             and not DeathRecoveryState.Stopped
             and not DeathRecoveryState.Failed;
-        if (currentState != PotFarmState.RunningPotFate && deathRecoveryInProgress)
+        if (currentState != PotFarmState.RunningPotFate
+            && currentState != PotFarmState.RunningPostActivityRevival
+            && currentState != PotFarmState.RunningActiveRevival
+            && deathRecoveryInProgress)
         {
             Stop("Player died; stopping non-resumable pot farm activity during death recovery.");
             return;
@@ -619,6 +633,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         if (currentState != PotFarmState.RunningPotFate
+            && currentState != PotFarmState.RunningPostActivityRevival
             && currentState is not PotFarmState.ReturningForSecondChance
             and not PotFarmState.WaitingForSecondChanceDirection
             and not PotFarmState.TravelingToSecondChanceArea
@@ -634,6 +649,8 @@ public sealed class PotFarmController : IDisposable
         }
 
         if (currentState is not PotFarmState.RunningPotFate
+            and not PotFarmState.RunningPostActivityRevival
+            and not PotFarmState.RunningActiveRevival
             and not PotFarmState.WaitingForTreasureBuff
             and not PotFarmState.MovingNearTreasureCenter
             and not PotFarmState.TreasurePending
@@ -670,6 +687,12 @@ public sealed class PotFarmController : IDisposable
                 break;
             case PotFarmState.RunningPotFate:
                 TickRunningPotFate();
+                break;
+            case PotFarmState.RunningActiveRevival:
+                TickActiveRevival();
+                break;
+            case PotFarmState.RunningPostActivityRevival:
+                TickPostActivityRevival();
                 break;
             case PotFarmState.WaitingForTreasureBuff:
                 TickWaitingForTreasureBuff();
@@ -825,6 +848,19 @@ public sealed class PotFarmController : IDisposable
     {
         if (fateAutomationController.IsRunning)
         {
+            if (startedByFarmSession
+                && fateAutomationController.CanPauseForRevival
+                && postActivityRevivalController.StartActive("active pot FATE revival"))
+            {
+                if (fateAutomationController.PauseForRevival("Pausing pot FATE combat for active revival."))
+                {
+                    TransitionTo(PotFarmState.RunningActiveRevival, postActivityRevivalController.LastTransition);
+                    return;
+                }
+
+                postActivityRevivalController.Stop("Could not pause the pot FATE before active revival.");
+            }
+
             logger.DebugThrottled("pot-running-fate", WaitLogInterval, $"Pot farm is still running {CurrentPotName}. FateState={fateAutomationController.State}.");
             return;
         }
@@ -833,6 +869,19 @@ public sealed class PotFarmController : IDisposable
         switch (fateAutomationController.LastResult)
         {
             case AutomationRunResult.Completed:
+                if (startedByFarmSession && configuration.EnablePostActivityRevival)
+                {
+                    if (!postActivityRevivalController.Start("pot FATE completion"))
+                    {
+                        logger.Warning($"{BuildLogTag()} op=revival-start-failed context=\"pot FATE completion\" reason={postActivityRevivalController.LastError}");
+                        BeginTreasureBuffWait();
+                        return;
+                    }
+
+                    TransitionTo(PotFarmState.RunningPostActivityRevival, postActivityRevivalController.LastTransition);
+                    return;
+                }
+
                 BeginTreasureBuffWait();
                 return;
             case AutomationRunResult.Stopped when pendingStop:
@@ -844,6 +893,34 @@ public sealed class PotFarmController : IDisposable
                     : fateAutomationController.LastError);
                 return;
         }
+    }
+
+    private void TickActiveRevival()
+    {
+        if (postActivityRevivalController.IsRunning)
+        {
+            return;
+        }
+
+        if (fateAutomationController.ResumeAfterRevival("Active revival completed; resuming pot FATE combat."))
+        {
+            TransitionTo(PotFarmState.RunningPotFate, "Active revival complete; resuming pot FATE combat.");
+            return;
+        }
+
+        fateAutomationController.Stop("Pot FATE was no longer active after active revival.");
+        BeginTreasureBuffWait();
+    }
+
+    private void TickPostActivityRevival()
+    {
+        if (postActivityRevivalController.IsRunning)
+        {
+            return;
+        }
+
+        logger.Info($"{BuildLogTag()} op=revival-complete state={postActivityRevivalController.State} transition=\"{postActivityRevivalController.LastTransition}\"; resuming treasure flow.");
+        BeginTreasureBuffWait();
     }
 
     private void TickWaitingForTreasureBuff()
