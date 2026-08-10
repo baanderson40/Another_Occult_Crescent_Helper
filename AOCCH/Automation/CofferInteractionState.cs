@@ -7,6 +7,8 @@ public enum CofferInteractionState
     TargetingCoffer,
     InteractingWithCoffer,
     WaitingForOpenConfirmation,
+    RepositioningPastCoffer,
+    ReturningToCoffer,
     Opened,
     LostCoffer,
     TimedOut,
