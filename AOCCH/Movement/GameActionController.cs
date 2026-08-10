@@ -149,10 +149,17 @@ public sealed class GameActionController
     public unsafe bool CanUseAction(uint actionId, ulong? targetObjectId = null)
         => GetActionStatusCode(actionId, targetObjectId) == 0;
 
-    public unsafe uint GetActionStatusCode(uint actionId, ulong? targetObjectId = null)
+    public unsafe uint GetActionStatusCode(
+        uint actionId,
+        ulong? targetObjectId = null,
+        bool checkRecastActive = true,
+        bool checkCastingActive = true)
         => targetObjectId.HasValue
-            ? ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId, targetObjectId.Value)
-            : ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId);
+            ? ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId, targetObjectId.Value, checkRecastActive, checkCastingActive)
+            : ActionManager.Instance()->GetActionStatus(ActionType.Action, actionId, 0xE000_0000, checkRecastActive, checkCastingActive);
+
+    public unsafe float GetActionRecastTime(uint actionId)
+        => ActionManager.Instance()->GetRecastTime(ActionType.Action, actionId);
 
     public ulong? CurrentTargetObjectId
         => targetManager.Target?.GameObjectId;

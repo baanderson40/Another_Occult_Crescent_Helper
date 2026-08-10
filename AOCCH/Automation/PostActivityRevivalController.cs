@@ -110,13 +110,6 @@ public sealed class PostActivityRevivalController : IDisposable
             return true;
         }
 
-        var candidates = FindDeadPlayers(anchor);
-        if (candidates.Length == 0)
-        {
-            TransitionTo(PostActivityRevivalState.Completed, "No dead players without Raise status were detected.");
-            return true;
-        }
-
         if (!TrySelectJob(currentJob, levels, out var selectedJob, out var actionId, out var jobName))
         {
             TransitionTo(PostActivityRevivalState.Skipped, "Post-activity revival skipped because neither Chemist nor White Mage met the required level.");
@@ -143,7 +136,7 @@ public sealed class PostActivityRevivalController : IDisposable
             activeMode = false;
         }
 
-        logger.Info($"[Revival] op=start context=\"{context}\" anchor={FormatVector(anchor)} originalJob={currentJob} selectedJob={jobName} actionId={actionId} candidates={candidates.Length}");
+        logger.Info($"[Revival] op=start context=\"{context}\" anchor={FormatVector(anchor)} originalJob={currentJob} selectedJob={jobName} actionId={actionId} candidates=deferred-until-recast-ready");
         TransitionTo(PostActivityRevivalState.SwitchingJob, $"Waiting for the FATE/CE completion transition before using {jobName}.");
 
         return true;
@@ -159,9 +152,18 @@ public sealed class PostActivityRevivalController : IDisposable
         var position = objectTable.LocalPlayer?.Position;
         if (!position.HasValue
             || !gameActionController.TryReadSupportJobState(out var currentJob, out var levels)
-            || !TrySelectCurrentJob(currentJob, levels, out var actionId, out var jobName)
-            || !gameActionController.CanUseAction(actionId))
+            || !TrySelectCurrentJob(currentJob, levels, out var actionId, out var jobName))
         {
+            return false;
+        }
+
+        var recastTime = gameActionController.GetActionRecastTime(actionId);
+        if (recastTime > 0f)
+        {
+            logger.VerboseThrottled(
+                "revival-active-recast-wait",
+                TimeSpan.FromSeconds(2),
+                $"[Revival] op=active-wait actionId={actionId} job={jobName} recast={recastTime:0.00} conditions={gameActionController.GetActionConditionSummary()} target={gameActionController.GetCurrentTargetSummary()}");
             return false;
         }
 
@@ -319,7 +321,7 @@ public sealed class PostActivityRevivalController : IDisposable
         nextJobSwitchAttemptAt = now + JobSwitchRetryInterval;
         if (!gameActionController.IsPlayerInChangeableState())
         {
-            logger.DebugThrottled(
+            logger.VerboseThrottled(
                 "revival-job-switch-blocked",
                 TimeSpan.FromSeconds(2),
                 $"[Revival] op=job-switch-wait targetJob={selectedJob} job={selectedJobName} conditions={gameActionController.GetChangeableStateSummary()} deadline={jobSwitchDeadlineAt:O}");
@@ -328,7 +330,7 @@ public sealed class PostActivityRevivalController : IDisposable
 
         if (!gameActionController.TryChangeSupportJob(selectedJob, $"post-activity revival {selectedJobName}"))
         {
-            logger.DebugThrottled(
+            logger.VerboseThrottled(
                 "revival-job-switch-rejected",
                 TimeSpan.FromSeconds(2),
                 $"[Revival] op=job-switch-retry targetJob={selectedJob} job={selectedJobName} conditions={gameActionController.GetChangeableStateSummary()} deadline={jobSwitchDeadlineAt:O}");
@@ -343,10 +345,17 @@ public sealed class PostActivityRevivalController : IDisposable
         }
 
         nextScanAt = DateTimeOffset.UtcNow + ScanInterval;
-        if (activeMode && !gameActionController.CanUseAction(selectedActionId))
+        if (!activeMode)
         {
-            logger.DebugThrottled("revival-action-wait", TimeSpan.FromSeconds(10), $"Waiting for active {selectedJobName} revive action {selectedActionId} to become castable.");
-            return;
+            var recastTime = gameActionController.GetActionRecastTime(selectedActionId);
+            if (recastTime > 0f)
+            {
+                logger.VerboseThrottled(
+                    "revival-post-recast-wait",
+                    TimeSpan.FromSeconds(2),
+                    $"[Revival] op=post-wait actionId={selectedActionId} job={selectedJobName} recast={recastTime:0.00}.");
+                return;
+            }
         }
 
         var candidates = FindDeadPlayers(scanAnchor);
@@ -358,7 +367,14 @@ public sealed class PostActivityRevivalController : IDisposable
 
         if (!gameActionController.CanUseAction(selectedActionId))
         {
-            logger.DebugThrottled("revival-action-wait", TimeSpan.FromSeconds(10), $"Waiting for {selectedJobName} revive action {selectedActionId} to become castable; candidates={candidates.Length}.");
+            var actionStatus = gameActionController.GetActionStatusCode(selectedActionId);
+            var statusWithoutRecast = gameActionController.GetActionStatusCode(selectedActionId, checkRecastActive: false);
+            var statusWithoutCasting = gameActionController.GetActionStatusCode(selectedActionId, checkCastingActive: false);
+            var statusWithoutRecastOrCasting = gameActionController.GetActionStatusCode(selectedActionId, checkRecastActive: false, checkCastingActive: false);
+            logger.VerboseThrottled(
+                "revival-action-wait",
+                TimeSpan.FromSeconds(2),
+                $"[Revival] op=action-wait actionId={selectedActionId} job={selectedJobName} statusCode={actionStatus} statusWithoutRecast={statusWithoutRecast} statusWithoutCasting={statusWithoutCasting} statusWithoutRecastOrCasting={statusWithoutRecastOrCasting} recast={gameActionController.GetActionRecastTime(selectedActionId):0.00} candidates={candidates.Length} conditions={gameActionController.GetActionConditionSummary()} target={gameActionController.GetCurrentTargetSummary()}");
             return;
         }
 
@@ -507,15 +523,29 @@ public sealed class PostActivityRevivalController : IDisposable
             return;
         }
 
-        if (!gameActionController.CanUseAction(selectedActionId))
+        if (gameActionController.GetActionRecastTime(selectedActionId) <= 0f)
         {
+            if (activeCastAttempt >= 3)
+            {
+                FinishWithRestore(PostActivityRevivalState.Skipped, BuildRaiseFailureReason($"{selectedJobName} raise action remained off cooldown after {activeCastAttempt} attempt(s)."));
+                return;
+            }
+
+            logger.VerboseThrottled(
+                "revival-raise-status-wait",
+                TimeSpan.FromSeconds(2),
+                $"[Revival] op=raise-wait actionId={selectedActionId} job={selectedJobName} recast=0 attempt={activeCastAttempt}/3.");
+        }
+        else
+        {
+            var reason = $"{selectedJobName} raise action entered cooldown after {activeCastAttempt} attempt(s).";
             if (activeMode)
             {
-                FinishWithRestore(PostActivityRevivalState.Completed, BuildRaiseSuccessReason($"{selectedJobName} raise action entered cooldown after {activeCastAttempt} attempt(s)."));
+                FinishWithRestore(PostActivityRevivalState.Completed, BuildRaiseSuccessReason(reason));
             }
             else
             {
-                ClearTargetAndRescan($"{selectedJobName} raise action entered cooldown after {activeCastAttempt} attempt(s); continuing the revival scan.");
+                ClearTargetAndRescan($"{reason} Continuing the revival scan.");
             }
             return;
         }
@@ -543,7 +573,7 @@ public sealed class PostActivityRevivalController : IDisposable
         activeCastAttempt++;
         if (!gameActionController.TryExecuteAction(selectedActionId, $"{selectedJobName} raise retry {activeCastAttempt}/3 for {targetName}", target.GameObjectId))
         {
-            logger.DebugThrottled(
+            logger.VerboseThrottled(
                 "active-revival-dispatch-retry",
                 TimeSpan.FromSeconds(2),
                 $"[Revival] op=active-raise-dispatch-retry target=\"{targetName}\" attempt={activeCastAttempt}/3 actionId={selectedActionId}");
@@ -638,13 +668,18 @@ public sealed class PostActivityRevivalController : IDisposable
             .OrderBy(gameObject => CalculateFlatDistance(anchor, gameObject.Position))
             .ToArray();
 
-        logger.DebugThrottled(
-            "revival-scan",
-            TimeSpan.FromSeconds(10),
-            $"[Revival] op=scan players={players.Length} dead={deadPlayers.Length} eligible={candidates.Length} radius={ScanRadius:0}.");
+        var scanMessage = $"[Revival] op=scan players={players.Length} dead={deadPlayers.Length} eligible={candidates.Length} radius={ScanRadius:0}.";
+        if (candidates.Length > 0)
+        {
+            logger.DebugThrottled("revival-scan", TimeSpan.FromSeconds(10), scanMessage);
+        }
+        else
+        {
+            logger.VerboseThrottled("revival-scan-empty", TimeSpan.FromSeconds(10), scanMessage);
+        }
         if (deadPlayers.Length > 0)
         {
-            logger.DebugThrottled(
+            logger.VerboseThrottled(
                 "revival-dead-player-diagnostics",
                 TimeSpan.FromSeconds(10),
                 $"[Revival] op=dead-player-diagnostics {string.Join(" | ", deadPlayers.Select(gameObject => DescribeDeadPlayer(gameObject, anchor)))}");
