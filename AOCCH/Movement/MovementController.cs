@@ -44,6 +44,7 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
+    private const int MaximumMountAttempts = 3;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
     private const int MaxIdlePathResets = 5;
@@ -83,6 +84,8 @@ public sealed class MovementController : IDisposable
     private float progressDistance = float.MaxValue;
     private bool stepStarted;
     private bool mountAttempted;
+    private int mountAttemptCount;
+    private DateTimeOffset mountReadyWaitStartedAt = DateTimeOffset.MinValue;
     private bool dismountAttempted;
     private DateTimeOffset dismountAttemptedAt = DateTimeOffset.MinValue;
     private int stepAttemptCount;
@@ -265,6 +268,8 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             windCurrentJumpPending = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -403,6 +408,8 @@ public sealed class MovementController : IDisposable
             stepStarted = false;
             windCurrentJumpPending = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -456,6 +463,8 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -517,6 +526,8 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -547,6 +558,8 @@ public sealed class MovementController : IDisposable
             state = MovementState.Stopped;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -773,6 +786,8 @@ public sealed class MovementController : IDisposable
                 state = MovementState.UsingReturn;
                 stepStarted = true;
                 mountAttempted = false;
+                mountAttemptCount = 0;
+                mountReadyWaitStartedAt = DateTimeOffset.MinValue;
                 dismountAttempted = false;
                 dismountAttemptedAt = DateTimeOffset.MinValue;
                 stepAttemptCount = 0;
@@ -1454,6 +1469,8 @@ public sealed class MovementController : IDisposable
             lastDistance = float.MaxValue;
             progressDistance = float.MaxValue;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -1483,6 +1500,8 @@ public sealed class MovementController : IDisposable
             state = MovementState.Arrived;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -1509,6 +1528,8 @@ public sealed class MovementController : IDisposable
             state = failureState;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -1543,6 +1564,8 @@ public sealed class MovementController : IDisposable
             progressDistance = float.MaxValue;
             stepStarted = false;
             mountAttempted = false;
+            mountAttemptCount = 0;
+            mountReadyWaitStartedAt = DateTimeOffset.MinValue;
             dismountAttempted = false;
             dismountAttemptedAt = DateTimeOffset.MinValue;
             stepAttemptCount = 0;
@@ -1936,42 +1959,100 @@ public sealed class MovementController : IDisposable
                 return true;
             }
 
-            logger.Debug($"Attempting mount action for '{step.Description}'. conditions={DescribeMovementConditions()}.");
-            if (!gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, step.Description))
+            var now = DateTimeOffset.UtcNow;
+            if (mountReadyWaitStartedAt == DateTimeOffset.MinValue)
             {
                 lock (gate)
                 {
-                    mountAttempted = true;
+                    mountReadyWaitStartedAt = now;
+                }
+            }
+
+            var mountReadyElapsed = now - mountReadyWaitStartedAt;
+            if (!gameActionController.CanUseGeneralAction(GameActionController.MountActionId))
+            {
+                if (mountReadyElapsed > MountTimeout)
+                {
+                    lock (gate)
+                    {
+                        mountAttempted = true;
+                    }
+
+                    logger.Warning($"{BuildLogTag()} op=mount-ready-timeout step=\"{step.Description}\" elapsed={mountReadyElapsed.TotalSeconds:0.0}s action=proceed-on-foot conditions={DescribeMovementConditions()}");
+                    return true;
                 }
 
-                logger.Debug($"Mount action dispatch failed for '{step.Description}'. conditions={DescribeMovementConditions()}.");
-                logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-dispatch-unavailable action=proceed-on-foot");
-                return true;
+                logger.DebugThrottled(
+                    BuildStepLogKey("mount-ready-wait"),
+                    TimeSpan.FromSeconds(1),
+                    $"Waiting for mount action availability on '{step.Description}'. elapsed={mountReadyElapsed.TotalMilliseconds:0}ms timeout={MountTimeout.TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+                return false;
+            }
+
+            logger.Debug($"Attempting mount action for '{step.Description}'. conditions={DescribeMovementConditions()}.");
+            lock (gate)
+            {
+                mountAttemptCount++;
+            }
+
+            if (!gameActionController.TryExecuteGeneralAction(GameActionController.MountActionId, step.Description))
+            {
+                if (mountAttemptCount >= MaximumMountAttempts)
+                {
+                    lock (gate)
+                    {
+                        mountAttempted = true;
+                    }
+
+                    logger.Warning($"{BuildLogTag()} op=mount-skip step=\"{step.Description}\" reason=mount-dispatch-unavailable attempts={mountAttemptCount}/{MaximumMountAttempts} action=proceed-on-foot");
+                    return true;
+                }
+
+                lock (gate)
+                {
+                    mountReadyWaitStartedAt = DateTimeOffset.UtcNow;
+                }
+
+                logger.Warning($"{BuildLogTag()} op=mount-retry step=\"{step.Description}\" reason=mount-dispatch-unavailable attempt={mountAttemptCount}/{MaximumMountAttempts} action=retry");
+                return false;
             }
 
             lock (gate)
             {
                 mountAttempted = true;
+                mountReadyWaitStartedAt = DateTimeOffset.MinValue;
                 stepStartedAt = DateTimeOffset.UtcNow;
                 lastProgressAt = DateTimeOffset.UtcNow;
                 state = MovementState.Pathfinding;
             }
 
-            logger.Info($"{BuildLogTag()} op=mount-wait step=\"{step.Description}\"");
+            logger.Info($"{BuildLogTag()} op=mount-wait step=\"{step.Description}\" attempt={mountAttemptCount}/{MaximumMountAttempts}");
             return false;
         }
 
         if (DateTimeOffset.UtcNow - stepStartedAt > MountTimeout)
         {
+            if (mountAttemptCount < MaximumMountAttempts)
+            {
+                lock (gate)
+                {
+                    mountAttempted = false;
+                    mountReadyWaitStartedAt = DateTimeOffset.UtcNow;
+                }
+
+                logger.Warning($"{BuildLogTag()} op=mount-retry step=\"{step.Description}\" reason=mount-confirmation-timeout attempt={mountAttemptCount}/{MaximumMountAttempts} action=retry");
+                return false;
+            }
+
             logger.Debug($"Mount confirmation timed out for '{step.Description}'. conditions={DescribeMovementConditions()}.");
-            logger.Warning($"{BuildLogTag()} op=mount-timeout step=\"{step.Description}\" action=proceed-on-foot");
+            logger.Warning($"{BuildLogTag()} op=mount-timeout step=\"{step.Description}\" attempts={mountAttemptCount}/{MaximumMountAttempts} action=proceed-on-foot");
             return true;
         }
 
         logger.DebugThrottled(
             BuildStepLogKey("mount-wait"),
             TimeSpan.FromSeconds(1),
-            $"Still waiting for mount confirmation on '{step.Description}'. elapsed={(DateTimeOffset.UtcNow - stepStartedAt).TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
+            $"Still waiting for mount confirmation on '{step.Description}'. attempt={mountAttemptCount}/{MaximumMountAttempts} elapsed={(DateTimeOffset.UtcNow - stepStartedAt).TotalMilliseconds:0}ms conditions={DescribeMovementConditions()}.");
         return false;
     }
 

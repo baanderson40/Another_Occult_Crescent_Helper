@@ -28,7 +28,12 @@ The bundled data currently enables the listed automation features for **South Ho
 ## Requirements
 
 - [vnavmesh](https://github.com/awgil/ffxiv_navmesh)
-- [BossMod](https://github.com/nyaoouo/FFXIV_Bossmod)
+- Either [BossMod](https://github.com/awgil/ffxiv_bossmod) or [BossmodReborn](https://github.com/FFXIV-CombatReborn/BossmodReborn)
+
+### Optional Rotations
+
+- [RotationSolverReborn](https://github.com/FFXIV-CombatReborn/RotationSolverReborn)
+- [Wrath](https://github.com/PunishXIV/WrathCombo)
 
 ## Installation
 
@@ -43,7 +48,7 @@ The project is not a standalone application and must run inside Dalamud alongsid
 ## Getting Started
 
 1. Enter a supported Occult Crescent territory.
-2. Install and enable vnavmesh and BossMod.
+2. Install and enable vnavmesh and BossMod or BossmodReborn.
 3. Open AOCCH with `/aocch` if needed.
 4. Configure the desired CE, FATE, pot, treasure, coffer, combat, and shopping options in the config window.
 5. Start the unified farm session from the main window or with `/aocch start`.

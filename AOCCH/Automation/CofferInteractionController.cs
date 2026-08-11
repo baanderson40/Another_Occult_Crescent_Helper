@@ -32,11 +32,21 @@ public sealed class CofferInteractionController : IDisposable
     private const uint JumpActionId = 2;
     private const float JumpAssistTriggerDistance = 10f;
     private const float PotRevealConfirmationFallbackRadius = 8f;
+    private const float PotRevealRetryPassDistance = 10f;
+    private const float PotRevealRetryPassSearchRadius = 8f;
+    private const float PotRevealRetryPassVerticalSearch = 8f;
+    private const float PotRevealRetryPassMaxVerticalDelta = 8f;
+    private const float PotRevealRetryPassMinimumForwardDistance = 0.5f;
+    private const float PotRevealMinimumValidY = -400f;
+    private const float PotRevealMaximumValidY = 500f;
+    private const float PotRevealSentinelY = -500f;
+    private const float PotRevealSentinelTolerance = 0.5f;
     private const int RequiredMissingConfirmations = 2;
     private const int MaxInteractionAttempts = 3;
     private const int MaxLockOnReleaseAttempts = 3;
     private static readonly TimeSpan ConfirmationTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan PotRevealLockOnSettleDuration = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan PotRevealRetryMovementTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan LockOnReleaseRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan HiddenDismountTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HiddenDismountRequestInterval = TimeSpan.FromSeconds(1);
@@ -77,6 +87,8 @@ public sealed class CofferInteractionController : IDisposable
     private DateTimeOffset potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
     private DateTimeOffset potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
     private int potRevealLockOnReleaseAttemptCount;
+    private bool potRevealRetryMovementStarted;
+    private DateTimeOffset potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
     private readonly HashSet<string> treasureFlagReadFailureLoggedPhases = new(StringComparer.Ordinal);
     private DateTimeOffset hiddenDismountStartedAt = DateTimeOffset.MinValue;
     private DateTimeOffset hiddenDismountRequestAvailableAt = DateTimeOffset.MinValue;
@@ -234,6 +246,8 @@ public sealed class CofferInteractionController : IDisposable
             potRevealInteractionAvailableAt = DateTimeOffset.MinValue;
             potRevealLockOnReleaseRetryAt = DateTimeOffset.MinValue;
             potRevealLockOnReleaseAttemptCount = 0;
+            potRevealRetryMovementStarted = false;
+            potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
             treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
             lastError = string.Empty;
@@ -295,6 +309,8 @@ public sealed class CofferInteractionController : IDisposable
             {
                 potRevealLockOnReleaseAttemptCount = 0;
             }
+            potRevealRetryMovementStarted = false;
+            potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
             treasureFlagReadFailureLoggedPhases.Clear();
             ResetHiddenApproachReadiness();
         }
@@ -357,6 +373,12 @@ public sealed class CofferInteractionController : IDisposable
                 break;
             case CofferInteractionState.WaitingForOpenConfirmation:
                 TickConfirmation();
+                break;
+            case CofferInteractionState.RepositioningPastCoffer:
+                TickRepositioningPastCoffer();
+                break;
+            case CofferInteractionState.ReturningToCoffer:
+                TickReturningToCoffer();
                 break;
         }
     }
@@ -662,7 +684,14 @@ public sealed class CofferInteractionController : IDisposable
                 interactionAttemptCount++;
             }
 
-            TransitionTo(CofferInteractionState.TargetingCoffer, $"Retrying coffer interaction attempt {interactionAttemptCount + 1} of {MaxInteractionAttempts}.");
+            if (ActiveMatch?.Flow == CofferInteractionFlow.PotReveal)
+            {
+                BeginPotRevealRetry("Interaction dispatch failed; changing the approach side before retrying.");
+            }
+            else
+            {
+                TransitionTo(CofferInteractionState.TargetingCoffer, $"Retrying coffer interaction attempt {interactionAttemptCount + 1} of {MaxInteractionAttempts}.");
+            }
             return;
         }
 
@@ -674,6 +703,320 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         TransitionTo(CofferInteractionState.WaitingForOpenConfirmation, $"Interaction attempt {interactionAttemptCount} started; waiting for coffer open confirmation.");
+    }
+
+    private void BeginPotRevealRetry(string reason)
+    {
+        lock (gate)
+        {
+            potRevealRetryMovementStarted = false;
+            potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
+        }
+
+        TransitionTo(CofferInteractionState.RepositioningPastCoffer, reason);
+    }
+
+    private void TickRepositioningPastCoffer()
+    {
+        if (!TryReleasePotRevealLockOn("before retry repositioning"))
+        {
+            return;
+        }
+
+        if (!potRevealRetryMovementStarted)
+        {
+            var liveObject = ResolveActiveObject();
+            var playerPosition = objectTable.LocalPlayer?.Position;
+            if (liveObject == null)
+            {
+                TransitionTo(CofferInteractionState.LostCoffer, "Matched coffer disappeared before retry repositioning.", result: CofferInteractionResult.LostCoffer);
+                return;
+            }
+
+            if (playerPosition == null)
+            {
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason=player-position-unavailable");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass-point movement was unavailable; retrying from the current position.");
+                return;
+            }
+
+            if (!TryBuildPotRevealPassPoint(liveObject, playerPosition.Value, out var passPoint, out var reason))
+            {
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason={reason}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass-point movement was unavailable; retrying from the current position.");
+                return;
+            }
+
+            if (!movementController.StartDirectMove(
+                    $"Pass coffer {liveObject.Name.TextValue} for interaction retry",
+                    passPoint,
+                    arrivalTolerance: 1.5f,
+                    shouldMountBeforeStep: true,
+                    destinationAlreadyResolved: true))
+            {
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason=movement-start-failed error={movementController.LastError}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass movement could not start; retrying from the current position.");
+                return;
+            }
+
+            lock (gate)
+            {
+                potRevealRetryMovementStarted = true;
+                potRevealRetryMovementDeadlineAt = DateTimeOffset.UtcNow + PotRevealRetryMovementTimeout;
+            }
+
+            logger.Info($"{BuildLogTag()} op=pot-reveal-pass-movement-start candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} attempt={interactionAttemptCount + 1} destination=<{passPoint.X:0.0}, {passPoint.Y:0.0}, {passPoint.Z:0.0}> requestedDistance={PotRevealRetryPassDistance:0.0}y");
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow >= potRevealRetryMovementDeadlineAt)
+        {
+            StopRetryMovement("pass movement timed out");
+            logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason=movement-timeout");
+            TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass movement timed out; retrying from the current position.");
+            return;
+        }
+
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Reached retry pass point.");
+                lock (gate)
+                {
+                    potRevealRetryMovementStarted = false;
+                    potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
+                }
+
+                logger.Info($"{BuildLogTag()} op=pot-reveal-pass-movement-arrived candidate={DescribeActiveCandidate()} attempt={interactionAttemptCount + 1}");
+                TransitionTo(CofferInteractionState.ReturningToCoffer, "Reached the retry pass point; returning toward the coffer from the opposite side.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                StopRetryMovement($"pass movement ended in {movementController.State}");
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason=movement-{movementController.State.ToString().ToLowerInvariant()} error={movementController.LastError}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass movement failed; retrying from the current position.");
+                return;
+        }
+    }
+
+    private void TickReturningToCoffer()
+    {
+        if (!potRevealRetryMovementStarted)
+        {
+            var liveObject = ResolveActiveObject();
+            var playerPosition = objectTable.LocalPlayer?.Position;
+            if (liveObject == null)
+            {
+                TransitionTo(CofferInteractionState.LostCoffer, "Matched coffer disappeared while returning from retry repositioning.", result: CofferInteractionResult.LostCoffer);
+                return;
+            }
+
+            if (playerPosition == null)
+            {
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Player position was unavailable while returning from retry repositioning.");
+                return;
+            }
+
+            var interactionPosition = GetInteractionPosition(liveObject);
+            var distance = CalculateFlatDistance(playerPosition.Value, interactionPosition);
+            if (distance <= PreferredOpenDistance)
+            {
+                TransitionTo(CofferInteractionState.TargetingCoffer, $"Already within coffer interaction range after retry repositioning ({distance:0.0}y).");
+                return;
+            }
+
+            var returnPoint = movementController.FindNearestNavigablePoint(interactionPosition, halfExtentXZ: 3f, halfExtentY: 3f);
+            if (!returnPoint.HasValue || !IsPlausiblePotRevealPosition(returnPoint.Value, interactionPosition.Y, PotRevealRetryPassMaxVerticalDelta))
+            {
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=return reason=invalid-return-point point={(returnPoint.HasValue ? $"<{returnPoint.Value.X:0.0}, {returnPoint.Value.Y:0.0}, {returnPoint.Value.Z:0.0}>" : "none")}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry return point was unavailable; retrying from the current position.");
+                return;
+            }
+
+            if (!movementController.StartDirectMove(
+                    $"Return to coffer {liveObject.Name.TextValue} after retry reposition",
+                    returnPoint.Value,
+                    PreferredOpenDistance,
+                    shouldMountBeforeStep: true,
+                    destinationAlreadyResolved: true))
+            {
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=return reason=movement-start-failed error={movementController.LastError}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry return movement could not start; retrying from the current position.");
+                return;
+            }
+
+            lock (gate)
+            {
+                potRevealRetryMovementStarted = true;
+                potRevealRetryMovementDeadlineAt = DateTimeOffset.UtcNow + PotRevealRetryMovementTimeout;
+            }
+
+            logger.Info($"{BuildLogTag()} op=pot-reveal-return-movement-start candidate={DescribeActiveCandidate()} objectId={liveObject.GameObjectId:X} attempt={interactionAttemptCount + 1} destination=<{returnPoint.Value.X:0.0}, {returnPoint.Value.Y:0.0}, {returnPoint.Value.Z:0.0}> arrivalTolerance={PreferredOpenDistance:0.0}");
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow >= potRevealRetryMovementDeadlineAt)
+        {
+            StopRetryMovement("return movement timed out");
+            logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=return reason=movement-timeout");
+            TransitionTo(CofferInteractionState.TargetingCoffer, "Retry return movement timed out; retrying from the current position.");
+            return;
+        }
+
+        switch (movementController.State)
+        {
+            case MovementState.Arrived:
+                movementController.Stop("Reached coffer range after retry reposition.");
+                lock (gate)
+                {
+                    potRevealRetryMovementStarted = false;
+                    potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
+                }
+
+                logger.Info($"{BuildLogTag()} op=pot-reveal-return-movement-arrived candidate={DescribeActiveCandidate()} attempt={interactionAttemptCount + 1}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Returned to coffer range from the opposite side; retargeting for retry.");
+                return;
+            case MovementState.Failed:
+            case MovementState.TimedOut:
+                StopRetryMovement($"return movement ended in {movementController.State}");
+                logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=return reason=movement-{movementController.State.ToString().ToLowerInvariant()} error={movementController.LastError}");
+                TransitionTo(CofferInteractionState.TargetingCoffer, "Retry return movement failed; retrying from the current position.");
+                return;
+        }
+    }
+
+    private bool TryBuildPotRevealPassPoint(IGameObject liveObject, Vector3 playerPosition, out Vector3 passPoint, out string? reason)
+    {
+        passPoint = default;
+        reason = null;
+
+        var cofferPosition = GetInteractionPosition(liveObject);
+        var delta = new Vector2(cofferPosition.X - playerPosition.X, cofferPosition.Z - playerPosition.Z);
+        var distance = delta.Length();
+        if (distance <= float.Epsilon)
+        {
+            reason = "player-and-coffer-horizontal-positions-overlap";
+            return false;
+        }
+
+        if (!TryGetReliablePotRevealElevation(liveObject, playerPosition.Y, out var elevation))
+        {
+            reason = "no-reliable-coffer-elevation";
+            return false;
+        }
+
+        var direction = delta / distance;
+        var requested = new Vector3(
+            cofferPosition.X + (direction.X * PotRevealRetryPassDistance),
+            elevation,
+            cofferPosition.Z + (direction.Y * PotRevealRetryPassDistance));
+
+        var nearestPoint = movementController.FindNearestNavigablePoint(
+            requested,
+            halfExtentXZ: PotRevealRetryPassSearchRadius,
+            halfExtentY: PotRevealRetryPassVerticalSearch);
+        if (TryAcceptPotRevealPassPoint(nearestPoint, cofferPosition, direction, elevation, out passPoint, out var nearestReason))
+        {
+            return true;
+        }
+
+        var floorPoint = movementController.FindPointOnFloor(requested, PotRevealRetryPassSearchRadius);
+        if (TryAcceptPotRevealPassPoint(floorPoint, cofferPosition, direction, elevation, out passPoint, out var floorReason))
+        {
+            return true;
+        }
+
+        reason = $"nearest={nearestReason}; floor={floorReason}; requested=<{requested.X:0.0}, {requested.Y:0.0}, {requested.Z:0.0}>";
+        return false;
+    }
+
+    private bool TryAcceptPotRevealPassPoint(Vector3? candidate, Vector3 cofferPosition, Vector2 direction, float elevation, out Vector3 passPoint, out string reason)
+    {
+        passPoint = default;
+        if (!candidate.HasValue)
+        {
+            reason = "no-point";
+            return false;
+        }
+
+        var point = candidate.Value;
+        if (!IsPlausiblePotRevealPosition(point, elevation, PotRevealRetryPassMaxVerticalDelta))
+        {
+            reason = "invalid-or-vertically-distant-point";
+            logger.Debug($"{BuildLogTag()} op=pot-reveal-pass-point-rejected point=<{point.X:0.0}, {point.Y:0.0}, {point.Z:0.0}> referenceY={elevation:0.0} reason={reason}");
+            return false;
+        }
+
+        var forward = ((point.X - cofferPosition.X) * direction.X) + ((point.Z - cofferPosition.Z) * direction.Y);
+        if (forward < PotRevealRetryPassMinimumForwardDistance)
+        {
+            reason = $"point-not-beyond-coffer-forward={forward:0.0}y";
+            logger.Debug($"{BuildLogTag()} op=pot-reveal-pass-point-rejected point=<{point.X:0.0}, {point.Y:0.0}, {point.Z:0.0}> reason={reason}");
+            return false;
+        }
+
+        passPoint = point;
+        reason = string.Empty;
+        return true;
+    }
+
+    private bool TryGetReliablePotRevealElevation(IGameObject liveObject, float playerY, out float elevation)
+    {
+        var candidates = new[]
+        {
+            liveObject.Position.Y,
+            ActiveMatch?.Coffer.Position.Y ?? float.NaN,
+            playerY,
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (IsPlausiblePotRevealElevation(candidate))
+            {
+                elevation = candidate;
+                return true;
+            }
+        }
+
+        elevation = 0f;
+        return false;
+    }
+
+    private static bool IsPlausiblePotRevealElevation(float value)
+        => !float.IsNaN(value)
+            && !float.IsInfinity(value)
+            && MathF.Abs(value - PotRevealSentinelY) >= PotRevealSentinelTolerance
+            && value >= PotRevealMinimumValidY
+            && value <= PotRevealMaximumValidY;
+
+    private static bool IsPlausiblePotRevealPosition(Vector3 point, float referenceY, float maxVerticalDelta)
+        => !float.IsNaN(point.X)
+            && !float.IsNaN(point.Y)
+            && !float.IsNaN(point.Z)
+            && !float.IsInfinity(point.X)
+            && !float.IsInfinity(point.Y)
+            && !float.IsInfinity(point.Z)
+            && IsPlausiblePotRevealElevation(point.Y)
+            && !float.IsNaN(referenceY)
+            && !float.IsInfinity(referenceY)
+            && MathF.Abs(point.Y - referenceY) <= maxVerticalDelta;
+
+    private void StopRetryMovement(string reason)
+    {
+        if (movementController.State is not MovementState.Idle
+            and not MovementState.Stopped
+            and not MovementState.Arrived
+            and not MovementState.Failed
+            and not MovementState.TimedOut)
+        {
+            movementController.Stop(reason);
+        }
+
+        lock (gate)
+        {
+            potRevealRetryMovementStarted = false;
+            potRevealRetryMovementDeadlineAt = DateTimeOffset.MinValue;
+        }
     }
 
     private void TickConfirmation()
@@ -766,7 +1109,14 @@ public sealed class CofferInteractionController : IDisposable
                 return;
             }
 
-            TransitionTo(CofferInteractionState.TargetingCoffer, $"Coffer is still visible after interaction attempt {interactionAttemptCount}; retrying.");
+            if (active.Flow == CofferInteractionFlow.PotReveal)
+            {
+                BeginPotRevealRetry($"Coffer is still visible after interaction attempt {interactionAttemptCount}; changing the approach side before retrying.");
+            }
+            else
+            {
+                TransitionTo(CofferInteractionState.TargetingCoffer, $"Coffer is still visible after interaction attempt {interactionAttemptCount}; retrying.");
+            }
             return;
         }
 
@@ -947,13 +1297,23 @@ public sealed class CofferInteractionController : IDisposable
 
     private Vector3 GetInteractionPosition(IGameObject liveObject)
     {
-        if (ActiveMatch?.Flow != CofferInteractionFlow.PotReveal
-            || MathF.Abs(liveObject.Position.Y + 500f) >= 0.5f)
+        if (ActiveMatch?.Flow != CofferInteractionFlow.PotReveal)
         {
             return liveObject.Position;
         }
 
-        return ActiveMatch.Coffer.Position;
+        var elevation = liveObject.Position.Y;
+        if (!IsPlausiblePotRevealElevation(elevation))
+        {
+            elevation = ActiveMatch.Coffer.Position.Y;
+        }
+
+        if (!IsPlausiblePotRevealElevation(elevation))
+        {
+            elevation = objectTable.LocalPlayer?.Position.Y ?? liveObject.Position.Y;
+        }
+
+        return new Vector3(liveObject.Position.X, elevation, liveObject.Position.Z);
     }
 
     private IGameObject? ResolveObject(ulong gameObjectId)

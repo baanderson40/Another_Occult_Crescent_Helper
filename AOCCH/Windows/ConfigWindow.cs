@@ -774,7 +774,7 @@ public class ConfigWindow : Window, IDisposable
         DrawSettingTooltip("Automatically applies job and foray buff actions during combat and route travel.");
 
         var enablePostActivityRevival = configuration.EnablePostActivityRevival;
-        if (ImGui.Checkbox("Revive Player with Phantom Actions", ref enablePostActivityRevival))
+        if (ImGui.Checkbox("Revive Dead Players with Phantom Actions", ref enablePostActivityRevival))
         {
             logger.Info($"[Config] op=setting-change key=EnablePostActivityRevival old={configuration.EnablePostActivityRevival} new={enablePostActivityRevival}");
             configuration.EnablePostActivityRevival = enablePostActivityRevival;
