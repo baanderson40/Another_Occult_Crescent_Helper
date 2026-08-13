@@ -403,10 +403,6 @@
       {
         "Track": "Destination",
         "Option": "Pathfind"
-      },
-      {
-        "Track": "ForbiddenZoneCushion",
-        "Option": "Medium"
       }
     ]
   }

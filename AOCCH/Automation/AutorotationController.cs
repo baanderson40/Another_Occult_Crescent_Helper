@@ -520,6 +520,22 @@ public sealed class AutorotationController : IDisposable
             }
 
             rangeSetting["Option"] = range.ToString("0.##", CultureInfo.InvariantCulture);
+            var normalMovement = modules["BossMod.Autorotation.MiscAI.NormalMovement"]?.AsArray()
+                ?? throw new JsonException("Preset has no NormalMovement module.");
+            ApplyMovementSetting(normalMovement, "ForbiddenZoneCushion", configuration.OverdodgeAoeCushion switch
+            {
+                OverdodgeAoeSetting.Small => "Small",
+                OverdodgeAoeSetting.Medium => "Medium",
+                OverdodgeAoeSetting.Large => "Large",
+                _ => null,
+            });
+            ApplyMovementSetting(normalMovement, "DelayMovement", configuration.DelayedMovement switch
+            {
+                DelayedMovementSetting.Short => "Short",
+                DelayedMovementSetting.Long => "Long",
+                _ => null,
+            });
+
             var serialized = root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
             if (!bossMod.CreatePreset(serialized, overwrite: true))
             {
@@ -540,6 +556,26 @@ public sealed class AutorotationController : IDisposable
         {
             SetError($"Failed to prepare managed autorotation: {ex.Message}", warning: true);
             return false;
+        }
+    }
+
+    private static void ApplyMovementSetting(JsonArray movement, string track, string? option)
+    {
+        for (var index = movement.Count - 1; index >= 0; index--)
+        {
+            if (string.Equals(movement[index]?.AsObject()["Track"]?.GetValue<string>(), track, StringComparison.Ordinal))
+            {
+                movement.RemoveAt(index);
+            }
+        }
+
+        if (option != null)
+        {
+            movement.Add(new JsonObject
+            {
+                ["Track"] = track,
+                ["Option"] = option,
+            });
         }
     }
 

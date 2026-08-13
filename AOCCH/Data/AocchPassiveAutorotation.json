@@ -28,10 +28,6 @@
       {
         "Track": "Destination",
         "Option": "Pathfind"
-      },
-      {
-        "Track": "ForbiddenZoneCushion",
-        "Option": "Small"
       }
     ]
   }
