@@ -131,7 +131,8 @@ body:
 
         Please attach logs if possible:
         1. Reproduce the issue, then open `/aocch log` or open the Log window from AOCCH
-        2. Use **Copy Mode** to select the relevant entries, then paste them below
+        2. Change the log level to **Verbose**
+        3. Right-click the **Copy Mode** button to copy all of the logs for review, then paste them below
 
   - type: textarea
     id: logs
