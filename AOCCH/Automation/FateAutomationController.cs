@@ -222,6 +222,8 @@ public sealed class FateAutomationController : IDisposable
             and not FateAutomationState.Completed
             and not FateAutomationState.Failed;
 
+    public bool IsPausedForRevival => pausedForRevival;
+
     public bool PauseForRevival(string reason)
     {
         if (State != FateAutomationState.Participating)
@@ -267,6 +269,42 @@ public sealed class FateAutomationController : IDisposable
         return true;
     }
 
+    public bool ResumeAfterRaise(FateRunTarget target, FateRunCompletionBehavior completionBehavior, string reason)
+    {
+        if (!IsRunning)
+        {
+            return Start(target, completionBehavior, resumeAfterRaise: true);
+        }
+
+        if (State != FateAutomationState.Participating
+            || TargetFateId != target.Id
+            || TargetIsPot != target.IsPotTarget
+            || !IsFateActive(target))
+        {
+            logger.Warning(
+                $"{BuildLogTag()} op=resume-after-raise-rejected state={State} "
+                + $"currentTarget=\"{TargetFateName}\" ({TargetFateId}) pot={TargetIsPot} "
+                + $"requestedTarget=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} reason={reason}");
+            return false;
+        }
+
+        pausedForRevival = false;
+        lock (gate)
+        {
+            this.completionBehavior = completionBehavior;
+            lastCombatSeenAt = DateTimeOffset.UtcNow;
+        }
+
+        movementController.Stop("Resuming active FATE after raise; participation is already in progress.");
+        combatTargetController.MaintainFateTarget(target);
+        EnsureAutorotationApplied(target);
+        TransitionTo(FateAutomationState.Participating, reason);
+        logger.Info(
+            $"{BuildLogTag()} op=resume-after-raise target=\"{target.Name}\" ({target.Id}) "
+            + $"pot={target.IsPotTarget} reason={reason}");
+        return true;
+    }
+
     public AutomationRunResult LastResult
     {
         get
@@ -298,9 +336,18 @@ public sealed class FateAutomationController : IDisposable
 
     public bool Start(FateRunTarget? target, FateRunCompletionBehavior completionBehavior = FateRunCompletionBehavior.RecoverToBase, Vector3? initialDestinationOverride = null, float? initialArrivalToleranceOverride = null, bool resumeAfterRaise = false)
     {
+        if (resumeAfterRaise && IsRunning)
+        {
+            return target != null
+                && ResumeAfterRaise(target, completionBehavior, $"Resuming active FATE {target.Name} ({target.Id}) after raise.");
+        }
+
         if (IsRunning)
         {
-            SetFailure("FATE automation is already running.");
+            logger.Warning(
+                $"{BuildLogTag()} op=start-rejected reason=already-running state={State} "
+                + $"currentTarget=\"{TargetFateName}\" ({TargetFateId}) pot={TargetIsPot} "
+                + $"requestedTarget=\"{target?.Name ?? string.Empty}\" ({target?.Id ?? 0}) pot={target?.IsPotTarget ?? false}");
             return false;
         }
 
