@@ -26,6 +26,8 @@ public class ConfigWindow : Window, IDisposable
     }
 
     private static readonly string[] FatePriorityLabels = ["Lowest Progress", "Nearest"];
+    private static readonly string[] OverdodgeAoeCushionLabels = ["Do not overdodge", "0.5 yalms", "1.5 yalms", "3.0 yalms"];
+    private static readonly string[] DelayedMovementLabels = ["Do not delay", "0.5 second", "1.0 second"];
     private static readonly TimeSpan SettingTextLogInterval = TimeSpan.FromSeconds(10);
     private const float PotsNumericInputWidth = 60f;
     private const float SettingsNumericInputWidth = 60f;
@@ -755,6 +757,32 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("(?)");
         DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
         ImGui.EndDisabled();
+
+        var overdodgeAoeCushion = (int)configuration.OverdodgeAoeCushion;
+        ImGui.BeginDisabled(automationRunning);
+        ImGui.SetNextItemWidth(presetWidth);
+        if (ImGui.Combo("Overdodge AoE", ref overdodgeAoeCushion, OverdodgeAoeCushionLabels, OverdodgeAoeCushionLabels.Length))
+        {
+            var selected = (OverdodgeAoeSetting)overdodgeAoeCushion;
+            logger.Info($"[Config] op=setting-change key=OverdodgeAoeCushion old={configuration.OverdodgeAoeCushion} new={selected}");
+            configuration.OverdodgeAoeCushion = selected;
+            configuration.Save();
+        }
+        ImGui.EndDisabled();
+        DrawSettingTooltip("Controls the ForbiddenZoneCushion used by AOCCH-managed active and passive BossMod rotations.");
+
+        var delayedMovement = (int)configuration.DelayedMovement;
+        ImGui.BeginDisabled(automationRunning);
+        ImGui.SetNextItemWidth(presetWidth);
+        if (ImGui.Combo("Delayed Movement", ref delayedMovement, DelayedMovementLabels, DelayedMovementLabels.Length))
+        {
+            var selected = (DelayedMovementSetting)delayedMovement;
+            logger.Info($"[Config] op=setting-change key=DelayedMovement old={configuration.DelayedMovement} new={selected}");
+            configuration.DelayedMovement = selected;
+            configuration.Save();
+        }
+        ImGui.EndDisabled();
+        DrawSettingTooltip("Delays movement in AOCCH-managed active and passive BossMod rotations. Override presets are not changed.");
 
         DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
         DrawSettingTooltip("Max targeting range for melee jobs before engaging (1.1 to 30 yalms).");

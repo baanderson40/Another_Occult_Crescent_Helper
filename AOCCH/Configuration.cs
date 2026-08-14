@@ -23,6 +23,21 @@ public enum StartingPotFateMode
     PleadingPots,
 }
 
+public enum OverdodgeAoeSetting
+{
+    None,
+    Small,
+    Medium,
+    Large,
+}
+
+public enum DelayedMovementSetting
+{
+    None,
+    Short,
+    Long,
+}
+
 [Serializable]
 public sealed class CurrencyShopReserveSetting
 {
@@ -99,6 +114,8 @@ public class Configuration : IPluginConfiguration
     public AutorotationProvider AutorotationProvider { get; set; } = AutorotationProvider.BossMod;
     public bool AutorotationProviderUserSelected { get; set; }
     public string AutorotationPresetName { get; set; } = string.Empty;
+    public OverdodgeAoeSetting OverdodgeAoeCushion { get; set; } = OverdodgeAoeSetting.Medium;
+    public DelayedMovementSetting DelayedMovement { get; set; } = DelayedMovementSetting.None;
     public decimal MeleeTargetRange { get; set; } = 3;
     public decimal RangedTargetRange { get; set; } = 25;
     public bool EnableCriticalEngagementFarming { get; set; } = true;

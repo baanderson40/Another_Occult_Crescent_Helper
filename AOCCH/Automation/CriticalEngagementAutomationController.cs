@@ -215,7 +215,10 @@ public sealed class CriticalEngagementAutomationController : IDisposable
     {
         if (IsRunning)
         {
-            SetFailure("Critical Engagement automation is already running.");
+            logger.Warning(
+                $"{BuildLogTag()} op=start-rejected reason=already-running state={State} "
+                + $"currentTarget=\"{TargetCeName}\" ({TargetCeId}) "
+                + $"requestedTarget=\"{target?.Name ?? string.Empty}\" ({target?.Id ?? 0})");
             return false;
         }
 

@@ -1044,6 +1044,10 @@ public sealed class DebugWindow : Window, IDisposable
         if (DrawDependencyAwareStartButton("Start FATE Automation", canStart, dependencyBlocked))
         {
             plugin.Logger.Info("[DebugWindow] op=ui-action action=start-fate-automation");
+            plugin.Logger.Info(
+                $"[DebugWindow] op=fate-start-request fateState={fateAutomationController.State} "
+                + $"pausedForRevival={fateAutomationController.IsPausedForRevival} "
+                + $"target=\"{snapshot.EffectiveTarget.Fate?.Name ?? string.Empty}\" ({snapshot.EffectiveTarget.Fate?.Id ?? 0})");
             fateAutomationController.Start();
         }
 

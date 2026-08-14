@@ -2,6 +2,8 @@
 
 Another Occult Crescent Helper (AOCCH) is a Dalamud plugin for automating and monitoring activities in Final Fantasy XIV's Occult Crescent. It combines FATE and Critical Engagement farming with pot treasure, treasure coffer, movement, combat, recovery, and currency-shopping tools.
 
+Join the [Discord community](https://discord.gg/4zDjRUsd8x) for support, updates, and discussion.
+
 ## Features
 
 - Unified farm sessions for Critical Engagements and FATEs.

@@ -1747,6 +1747,16 @@ public sealed class PotFarmController : IDisposable
 
     private bool StartActivePotFate(ActivePotFate activePotFate)
     {
+        if (fateAutomationController.IsRunning)
+        {
+            logger.Warning(
+                $"{BuildLogTag()} op=pot-fate-start-skipped pot=\"{activePotFate.Name}\" ({activePotFate.Id}) "
+                + $"reason=fate-controller-already-running state={fateAutomationController.State} "
+                + $"currentTarget=\"{fateAutomationController.TargetFateName}\" ({fateAutomationController.TargetFateId}) "
+                + $"currentPot={fateAutomationController.TargetIsPot} pausedForRevival={fateAutomationController.IsPausedForRevival}");
+            return false;
+        }
+
         if (!TryVerifyPotFateInventory(out var inventoryBlockReason))
         {
             logger.DebugThrottled(
@@ -1788,6 +1798,9 @@ public sealed class PotFarmController : IDisposable
             logger.Info($"{BuildLogTag()} op=pot-fate-start-location pot=\"{activePotFate.Name}\" ({activePotFate.Id}) source=wait-point destination=<{initialDestinationOverride.Value.X:0.000}, {initialDestinationOverride.Value.Y:0.000}, {initialDestinationOverride.Value.Z:0.000}> tolerance={initialArrivalToleranceOverride:0.0}");
         }
 
+        logger.Info(
+            $"{BuildLogTag()} op=pot-fate-start-request pot=\"{activePotFate.Name}\" ({activePotFate.Id}) "
+            + $"fateState={fateAutomationController.State} pausedForRevival={fateAutomationController.IsPausedForRevival}");
         if (!fateAutomationController.Start(activePotFate, initialDestinationOverride, initialArrivalToleranceOverride, FateRunCompletionBehavior.CompleteInPlace))
         {
             SetFailure(fateAutomationController.LastError.Length == 0

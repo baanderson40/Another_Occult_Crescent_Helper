@@ -871,6 +871,11 @@ public sealed class FarmSessionController : IDisposable
                     return;
                 }
 
+                logger.Info(
+                    $"{BuildLogTag()} op=fate-start-request caller=FarmSession.TickSelectingTarget "
+                    + $"target=\"{snapshot.EffectiveTarget.Fate.Name}\" ({snapshot.EffectiveTarget.Fate.Id}) "
+                    + $"pot=false fateState={fateAutomationController.State} "
+                    + $"pausedForRevival={fateAutomationController.IsPausedForRevival}");
                 if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate, FateRunCompletionBehavior.CompleteInPlace))
                 {
                     SetFailure(fateAutomationController.LastError.Length == 0
@@ -1533,7 +1538,10 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (!fateAutomationController.Start(fateTarget, completionBehavior, resumeAfterRaise: true))
+        if (!fateAutomationController.ResumeAfterRaise(
+                fateTarget,
+                completionBehavior,
+                $"Resuming {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise."))
         {
             SetFailure(fateAutomationController.LastError.Length == 0
                 ? $"Failed to resume {activityLabel} {fateTarget.Name} ({fateTarget.Id}) after raise."
