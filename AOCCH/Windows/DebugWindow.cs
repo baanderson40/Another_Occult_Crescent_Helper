@@ -928,6 +928,7 @@ public sealed class DebugWindow : Window, IDisposable
         var canStart = snapshot.IsInSupportedTerritory
             && snapshot.CanFarmCriticalEncounters
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
+            && !string.Equals(snapshot.EffectiveTarget.CriticalEncounter?.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase)
             && !otherAutomationRunning
             && !configuration.ScannerOnlyMode
             && !dependencyBlocked;
@@ -959,7 +960,9 @@ public sealed class DebugWindow : Window, IDisposable
         }
         else if (!canStart)
         {
-            ImGui.TextUnformatted(snapshot.IsInSupportedTerritory && !snapshot.CanFarmCriticalEncounters
+            ImGui.TextUnformatted(string.Equals(snapshot.EffectiveTarget.CriticalEncounter?.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase)
+                ? "Forked Tower uses its dedicated configuration and unified farm staging flow."
+                : snapshot.IsInSupportedTerritory && !snapshot.CanFarmCriticalEncounters
                 ? $"CE data is unavailable in {snapshot.TerritoryDisplayName}."
                 : "Start CE Automation requires a CE-capable territory and a CE effective target.");
         }
