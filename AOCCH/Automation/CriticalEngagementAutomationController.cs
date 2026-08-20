@@ -300,6 +300,44 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         logger.Info($"{BuildLogTag()} op=stop state={State} target=\"{targetName}\" ({targetId}) reason={reason}");
     }
 
+    private bool CanBePreempted
+        => State is CriticalEngagementAutomationState.PlanningRoute
+            or CriticalEngagementAutomationState.TravelingToStaging
+            or CriticalEngagementAutomationState.WaitingForEngage;
+
+    private bool IsHigherPriorityActivityAvailable(ScannerSnapshot snapshot)
+    {
+        var effectiveTarget = snapshot.EffectiveTarget;
+        if (effectiveTarget.Kind == SelectedTargetKind.None)
+        {
+            return false;
+        }
+
+        if (effectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
+            && effectiveTarget.CriticalEncounter?.Id == TargetCeId)
+        {
+            return false;
+        }
+
+        var candidatePriority = effectiveTarget.Kind == SelectedTargetKind.Fate
+            ? configuration.GetAutomationPriority(FarmActivityKind.Fates)
+            : string.Equals(effectiveTarget.CriticalEncounter?.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase)
+                ? configuration.GetAutomationPriority(FarmActivityKind.ForkedTower)
+                : configuration.GetAutomationPriority(FarmActivityKind.CriticalEngagements);
+        return candidatePriority < configuration.GetAutomationPriority(FarmActivityKind.CriticalEngagements);
+    }
+
+    private void Preempt(string reason)
+    {
+        var targetId = TargetCeId;
+        var targetName = TargetCeName;
+        autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
+        movementController.Stop(reason);
+        TransitionTo(CriticalEngagementAutomationState.Stopped, reason, clearTarget: true, error: reason, result: AutomationRunResult.Preempted);
+        logger.Info($"{BuildLogTag()} op=preempt state={State} target=\"{targetName}\" ({targetId}) reason={reason}");
+    }
+
     public void ResetInstanceState(string reason)
     {
         lock (gate)
@@ -358,6 +396,11 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         var target = snapshot.FindCriticalEncounter(TargetCeId);
+        if (CanBePreempted && IsHigherPriorityActivityAvailable(snapshot))
+        {
+            Preempt("A higher-priority activity became available before CE combat.");
+            return;
+        }
         switch (currentState)
         {
             case CriticalEngagementAutomationState.PlanningRoute:

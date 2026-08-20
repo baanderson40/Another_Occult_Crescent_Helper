@@ -94,7 +94,8 @@ public class ConfigWindow : Window, IDisposable
             ImGui.EndTabItem();
         }
 
-        if (BeginConfigTabItem("Forked Tower", ConfigTab.ForkedTower))
+        if (string.Equals(plugin.Scanner.ActiveTerritoryData?.Key, "northHorn", StringComparison.OrdinalIgnoreCase)
+            && BeginConfigTabItem("Forked Tower", ConfigTab.ForkedTower))
         {
             DrawForkedTowerTab();
             ImGui.EndTabItem();

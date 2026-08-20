@@ -2334,6 +2334,7 @@
         }
       ],
       "criticalEncounters": [
+        { "id": 64, "name": "Forked Tower: Magic", "automationKind": "ForkedTower", "preferredAethernet": "SuspendedMasonry", "priority": 100, "engageRadius": 18, "stagingPoint": { "x": -319.514, "y": 11.500, "z": 421.769 } },
         { "id": 49, "name": "Many Mouths to Feed", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -870.0, "y": 20.0, "z": -560.0 } },
         { "id": 50, "name": "Doubled Trouble", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -215.0, "y": 18.0, "z": -65.0 } },
         { "id": 51, "name": "Quarried Away", "priority": 100, "engageRadius": 20, "stagingPoint": { "x": -519.0, "y": 48.0, "z": -641.0 } },

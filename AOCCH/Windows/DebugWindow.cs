@@ -35,6 +35,7 @@ public sealed class DebugWindow : Window, IDisposable
         ShopInspector,
         Movement,
         CriticalEngagements,
+        ForkedTower,
         Fates,
         Territory,
     }
@@ -59,6 +60,8 @@ public sealed class DebugWindow : Window, IDisposable
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
+    private string forkedTowerLgbBaseId = "2015189";
+    private string forkedTowerLgbLayerKey = string.Empty;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -144,6 +147,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
         DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
         DrawSectionButton(DebugSection.Territory, "Territory");
+        DrawSectionButton(DebugSection.ForkedTower, "Forked Tower");
     }
 
     private void DrawSectionButton(DebugSection section, string label)
@@ -212,6 +216,9 @@ public sealed class DebugWindow : Window, IDisposable
                 break;
             case DebugSection.CriticalEngagements:
                 DrawCriticalEncounters(snapshot);
+                break;
+            case DebugSection.ForkedTower:
+                DrawForkedTower(snapshot);
                 break;
             case DebugSection.Fates:
                 DrawFates(snapshot);
@@ -570,6 +577,57 @@ public sealed class DebugWindow : Window, IDisposable
                 ImGui.TextWrapped($"- {encounter.Name} ({encounter.Id})");
                 ImGui.TextWrapped($"  {details}");
             }
+        }
+    }
+
+    private void DrawForkedTower(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Forked Tower");
+        ImGui.TextUnformatted($"Territory: {snapshot.TerritoryDisplayName} ({snapshot.TerritoryTypeId})");
+        ImGui.TextUnformatted($"Current CE: {snapshot.CurrentCriticalEncounterId} | State: {snapshot.CurrentCriticalEncounter?.State ?? "none"}");
+
+        var staging = plugin.ForkedTowerStagingController;
+        ImGui.TextUnformatted($"Staging State: {staging.State}");
+        ImGui.TextWrapped($"Last Transition: {staging.LastTransition}");
+
+        if (ImGui.Button("Dump Forked Tower Target"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-forked-tower-target");
+            DumpCeEntityMetadata(snapshot);
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Loaded LGB inspection");
+        ImGui.SetNextItemWidth(140f);
+        ImGui.InputText("EventObject BaseId", ref forkedTowerLgbBaseId, 20);
+        ImGui.SetNextItemWidth(140f);
+        ImGui.InputText("LayerKey", ref forkedTowerLgbLayerKey, 20);
+        var hasBaseId = uint.TryParse(forkedTowerLgbBaseId, out var baseId);
+        var hasLayerKey = uint.TryParse(forkedTowerLgbLayerKey, out var layerKey);
+        var validFilters = (string.IsNullOrWhiteSpace(forkedTowerLgbBaseId) || hasBaseId)
+            && (string.IsNullOrWhiteSpace(forkedTowerLgbLayerKey) || hasLayerKey);
+        ImGui.BeginDisabled(!validFilters);
+        if (ImGui.Button("Dump LGB EventObject"))
+        {
+            uint? baseIdFilter = string.IsNullOrWhiteSpace(forkedTowerLgbBaseId) ? null : baseId;
+            uint? layerKeyFilter = string.IsNullOrWhiteSpace(forkedTowerLgbLayerKey) ? null : layerKey;
+            plugin.Logger.Info(
+                $"[DebugWindow] op=ui-action action=dump-lgb-event-object " +
+                $"baseId={(baseIdFilter?.ToString() ?? "any")} layerKey={(layerKeyFilter?.ToString() ?? "any")}");
+            plugin.LogLoadedLgbEventObjectsDebug(baseIdFilter, layerKeyFilter);
+        }
+        ImGui.EndDisabled();
+
+        if (!validFilters)
+        {
+            ImGui.TextUnformatted("BaseId and LayerKey must be unsigned integers or empty.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump LGB EventRanges"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-lgb-event-ranges");
+            plugin.LogLoadedLgbEventRangesDebug();
         }
     }
 

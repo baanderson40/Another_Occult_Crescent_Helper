@@ -6,6 +6,7 @@ public sealed class ActiveCriticalEncounter
 {
     public uint Id { get; init; }
     public string Name { get; init; } = string.Empty;
+    public string AutomationKind { get; init; } = string.Empty;
     public string State { get; init; } = string.Empty;
     public int StateCode { get; init; }
     public byte Progress { get; init; }
