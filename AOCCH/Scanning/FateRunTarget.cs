@@ -55,5 +55,9 @@ public static class FateRunTargetExtensions
             Position = fate.Position,
             PreferredAethernet = fate.PreferredAethernet,
             IsPotTarget = true,
+            HasLiveTarget = fate.HasLiveTarget,
+            LiveTargetObjectId = fate.LiveTargetObjectId,
+            LiveTargetName = fate.LiveTargetName,
+            LiveTargetPosition = fate.LiveTargetPosition,
         };
 }

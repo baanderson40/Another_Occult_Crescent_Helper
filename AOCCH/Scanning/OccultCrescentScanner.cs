@@ -476,6 +476,10 @@ public sealed class OccultCrescentScanner : IDisposable
                     PreferredAethernet = potMetadata?.PreferredAethernet ?? string.Empty,
                     CenterPosition = potMetadata?.CenterPosition.ToVector3() ?? fateLocation,
                     StagingPosition = potMetadata?.StagingPosition?.ToVector3(),
+                    HasLiveTarget = liveTarget != null,
+                    LiveTargetObjectId = liveTarget?.ObjectId ?? 0,
+                    LiveTargetName = liveTarget?.Name ?? string.Empty,
+                    LiveTargetPosition = liveTarget?.Position ?? Vector3.Zero,
                 };
 
                 potFates.Add(activePot);
@@ -1263,6 +1267,7 @@ public sealed class OccultCrescentScanner : IDisposable
         if (!gameObject.IsValid()
             || gameObject.GameObjectId == 0
             || gameObject.BaseId == 0
+            || FateTargetPolicy.IsExcludedObjectiveBaseId(gameObject.BaseId)
             || gameObject is not IBattleNpc
             || gameObject is not ICharacter character
             || character.CurrentHp <= 0
