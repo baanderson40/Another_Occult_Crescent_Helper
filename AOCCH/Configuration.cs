@@ -109,15 +109,15 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 17;
+    public int Version { get; set; } = 18;
 
     public bool EnableForkedTowerAutomation { get; set; }
     public List<FarmActivityKind> AutomationPriority { get; set; } =
     [
+        FarmActivityKind.ForkedTower,
         FarmActivityKind.Pots,
         FarmActivityKind.CriticalEngagements,
         FarmActivityKind.Fates,
-        FarmActivityKind.ForkedTower,
     ];
 
     public AutorotationProvider AutorotationProvider { get; set; } = AutorotationProvider.BossMod;
@@ -159,6 +159,10 @@ public class Configuration : IPluginConfiguration
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public bool EnableOverworldTreasureGuide { get; set; }
     public bool EnableCofferObservationSubmission { get; set; }
+    public bool AlwaysShowFarmStatus { get; set; }
+    public bool AlwaysShowPotStatus { get; set; }
+    public bool AlwaysShowCofferStatus { get; set; }
+    public bool AlwaysShowForkedTowerStatus { get; set; }
     public bool EnableNorthHornSecondChanceCoffers { get; set; }
     public int NorthHornStatusDismissedRevision { get; set; }
     public int AutomaticTreasureCofferSilverThreshold { get; set; }
@@ -448,7 +452,7 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 17)
+        if (Version >= 18)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
             return priorityChanged;
@@ -619,10 +623,17 @@ public class Configuration : IPluginConfiguration
             logger?.Info($"[Configuration] op=migration-automation-priority order={string.Join(',', AutomationPriority)}");
         }
 
+        if (Version < 18)
+        {
+            MoveActivityBefore(FarmActivityKind.ForkedTower, FarmActivityKind.Pots);
+            MoveActivityBefore(FarmActivityKind.Pots, FarmActivityKind.CriticalEngagements);
+            logger?.Info($"[Configuration] op=migration-automation-priority order={string.Join(',', AutomationPriority)} reason=forked-tower-special-priority");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 17;
-        logger?.Info("[Configuration] op=migration-complete version=17");
+        Version = 18;
+        logger?.Info("[Configuration] op=migration-complete version=18");
         return true;
     }
 

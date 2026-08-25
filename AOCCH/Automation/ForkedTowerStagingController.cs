@@ -178,6 +178,11 @@ public sealed class ForkedTowerStagingController : IDisposable
         switch (State)
         {
             case ForkedTowerStagingState.TravelingToStaging:
+                if (HandleBattleStateBeforeSelection())
+                {
+                    return;
+                }
+
                 if (IsHigherPriorityActivityAvailable())
                 {
                     Preempt("A higher-priority activity became available before Forked Tower entry.");
@@ -201,6 +206,11 @@ public sealed class ForkedTowerStagingController : IDisposable
 
                 break;
             case ForkedTowerStagingState.WaitingForSelection:
+                if (HandleBattleStateBeforeSelection())
+                {
+                    return;
+                }
+
                 if (IsHigherPriorityActivityAvailable())
                 {
                     Preempt("A higher-priority activity became available while waiting for Forked Tower selection.");
@@ -210,6 +220,30 @@ public sealed class ForkedTowerStagingController : IDisposable
                 logger.DebugThrottled("forked-tower-selection", WaitLogInterval, $"Waiting for Forked Tower selection/instance entry. currentCeId={scanner.Snapshot.CurrentCriticalEncounterId} state={scanner.Snapshot.CurrentCriticalEncounter?.State ?? "none"}.");
                 break;
         }
+    }
+
+    private bool HandleBattleStateBeforeSelection()
+    {
+        var snapshot = scanner.Snapshot;
+        var tower = snapshot.FindCriticalEncounter(ForkedTowerCeId);
+        if (tower == null || !tower.IsBattle)
+        {
+            return false;
+        }
+
+        if (snapshot.CurrentCriticalEncounterId != ForkedTowerCeId)
+        {
+            Preempt(
+                $"Forked Tower entered battle before the player joined. " +
+                $"currentCeId={snapshot.CurrentCriticalEncounterId} towerState={tower.State}({tower.StateCode}).");
+            return true;
+        }
+
+        movementController.Stop("Forked Tower entered battle after the player joined; stopping staging movement.");
+        TransitionTo(
+            ForkedTowerStagingState.WaitingForSelection,
+            $"Forked Tower battle detected for the joined player; staging movement stopped. currentCeId={snapshot.CurrentCriticalEncounterId}.");
+        return true;
     }
 
     private bool TrySelectWaitPoint(ActiveCriticalEncounter target, Vector3 playerPosition, out Vector3 selectedPoint)

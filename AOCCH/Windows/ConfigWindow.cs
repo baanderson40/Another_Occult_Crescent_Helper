@@ -180,42 +180,14 @@ public class ConfigWindow : Window, IDisposable
         }
 
         var enabled = configuration.EnableForkedTowerAutomation;
-        if (ImGui.Checkbox("Enable Forked Tower Automation", ref enabled))
+        if (ImGui.Checkbox("Enable Forked Tower Staging Movement", ref enabled))
         {
             logger.Info($"[Config] op=setting-change key=EnableForkedTowerAutomation old={configuration.EnableForkedTowerAutomation} new={enabled}");
             configuration.EnableForkedTowerAutomation = enabled;
             configuration.Save();
         }
 
-        DrawSettingTooltip("Enables the initial Forked Tower staging flow. Instance entry, combat, chests, and exit handling are not implemented yet.");
-        ImGui.Separator();
-        ImGui.TextUnformatted("Staging Data");
-
-        var encounter = territory.CriticalEncounters.FirstOrDefault(entry => entry.Id == 64);
-        if (encounter == null)
-        {
-            ImGui.TextUnformatted("Forked Tower CE data is unavailable.");
-            return;
-        }
-
-        ImGui.TextWrapped($"CE: {encounter.Name} ({encounter.Id})");
-        ImGui.TextWrapped($"Preferred Aethernet: {encounter.PreferredAethernet}");
-        ImGui.TextWrapped($"Staging Point: <{encounter.StagingPoint.X:0.000}, {encounter.StagingPoint.Y:0.000}, {encounter.StagingPoint.Z:0.000}>");
-        ImGui.TextWrapped($"Staging Radius: {encounter.EngageRadius:0.0} yalms (random wait points use the existing CE safety buffer)");
-
-        var staging = plugin.ForkedTowerStagingController;
-        ImGui.Separator();
-        ImGui.TextWrapped($"Controller State: {staging.State}");
-        ImGui.TextWrapped($"Last Transition: {staging.LastTransition}");
-        if (staging.WaitPoint != Vector3.Zero)
-        {
-            ImGui.TextWrapped($"Current Wait Point: <{staging.WaitPoint.X:0.000}, {staging.WaitPoint.Y:0.000}, {staging.WaitPoint.Z:0.000}>");
-        }
-
-        if (!string.IsNullOrWhiteSpace(staging.LastError))
-        {
-            ImGui.TextWrapped($"Last Error: {staging.LastError}");
-        }
+        DrawSettingTooltip("Moves to and waits at the Forked Tower staging point. Does not enter the instance, fight, loot, or exit.");
     }
 
     private void DrawFatesTab()
@@ -904,7 +876,27 @@ public class ConfigWindow : Window, IDisposable
                 configuration.Save();
             }
             DrawSettingTooltip("Shows helpful descriptions when you hover over settings and interface buttons.");
+
+            ImGui.Separator();
+            ImGui.TextUnformatted("Main Window Status Lines");
+            DrawAlwaysShowStatusSetting("Always Show Farm Status", () => configuration.AlwaysShowFarmStatus, value => configuration.AlwaysShowFarmStatus = value, "Keeps the Farm status line visible even when normal CE and FATE farming are disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Pot Status", () => configuration.AlwaysShowPotStatus, value => configuration.AlwaysShowPotStatus = value, "Keeps the Pot status line visible even when pot farming is disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Coffer Status", () => configuration.AlwaysShowCofferStatus, value => configuration.AlwaysShowCofferStatus = value, "Keeps the Coffers status line visible even when automatic coffer routing is disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Forked Tower Status", () => configuration.AlwaysShowForkedTowerStatus, value => configuration.AlwaysShowForkedTowerStatus = value, "Keeps the Forked Tower status line visible even when staging movement is disabled.");
         }
+    }
+
+    private void DrawAlwaysShowStatusSetting(string label, Func<bool> getValue, Action<bool> setValue, string tooltip)
+    {
+        var value = getValue();
+        if (ImGui.Checkbox(label, ref value))
+        {
+            setValue(value);
+            logger.Info($"[Config] op=setting-change key={label.Replace(" ", string.Empty)} value={value}");
+            configuration.Save();
+        }
+
+        DrawSettingTooltip(tooltip);
     }
 
     private void DrawAutomationPrioritySection()

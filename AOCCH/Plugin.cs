@@ -78,6 +78,8 @@ public sealed class Plugin : IDalamudPlugin
     public PostActivityRevivalController PostActivityRevivalController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
     public ForkedTowerStagingController ForkedTowerStagingController { get; init; }
+    public ForkedTowerRouteProbeController ForkedTowerRouteProbeController { get; init; }
+    public ForkedTowerTracker ForkedTowerTracker { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
     public InstancedContentController InstancedContentController { get; init; }
@@ -144,6 +146,8 @@ public sealed class Plugin : IDalamudPlugin
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
         ForkedTowerStagingController = new ForkedTowerStagingController(Framework, Scanner, MovementController, Configuration, Logger);
+        ForkedTowerRouteProbeController = new ForkedTowerRouteProbeController(Framework, Condition, ObjectTable, Scanner, MovementController, Logger);
+        ForkedTowerTracker = new ForkedTowerTracker(Framework, Scanner, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, AutorotationController, CombatTargetController, PotCycleTracker, PotFallbackWindowEvaluator, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(Logger);
@@ -250,6 +254,8 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
+        ForkedTowerTracker.Dispose();
+        ForkedTowerRouteProbeController.Dispose();
         CriticalEngagementAutomationController.Dispose();
         ForkedTowerStagingController.Dispose();
         BuffRotationController.Dispose();
@@ -1574,6 +1580,14 @@ public sealed class Plugin : IDalamudPlugin
             ForkedTowerStagingController.Stop(reason);
         }
 
+        if (ForkedTowerRouteProbeController.State is not ForkedTowerRouteProbeState.Idle
+            and not ForkedTowerRouteProbeState.Stopped
+            and not ForkedTowerRouteProbeState.Completed
+            and not ForkedTowerRouteProbeState.Failed)
+        {
+            ForkedTowerRouteProbeController.Stop(reason);
+        }
+
         if (FateAutomationController.IsRunning)
         {
             FateAutomationController.Stop(reason);
@@ -1617,6 +1631,8 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker.ResetInstanceState(reason);
         DeathRecoveryController.ResetInstanceState(reason);
         FateAutomationController.ResetInstanceState(reason);
+        ForkedTowerTracker.ResetInstanceState(reason);
+        ForkedTowerRouteProbeController.ResetInstanceState(reason);
         CriticalEngagementAutomationController.ResetInstanceState(reason);
         ForkedTowerStagingController.ResetInstanceState(reason);
         BuffRotationController.ResetInstanceState(reason);

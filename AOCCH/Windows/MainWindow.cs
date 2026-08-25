@@ -70,24 +70,31 @@ public sealed class MainWindow : Window, IDisposable
     {
         var snapshot = scanner.Snapshot;
         var potCycleSnapshot = plugin.PotCycleTracker.Snapshot;
-        var treasureSnapshot = plugin.TreasureHintTracker.Snapshot;
         var cofferSurveySnapshot = plugin.TreasureHintTracker.CofferSurveySnapshot;
         var automaticCofferStatus = farmSessionController.AutomaticTreasureCofferStatus;
-        var instanceTimeDecision = plugin.PotFarmController.LastInstanceTimeDecision;
         var statusTextScale = configuration.MainWindowStatusTextScalePercent / 100f;
 
         ImGui.SetWindowFontScale(statusTextScale);
-        ImGui.TextWrapped($"Farm: {GetFarmSummary(snapshot, potCycleSnapshot, treasureSnapshot, cofferSurveySnapshot, automaticCofferStatus)}");
-        var potSummary = GetPotSummary(snapshot, potCycleSnapshot);
-        if (potSummary != null)
+        if (ShouldShowFarmStatus())
         {
-            ImGui.TextWrapped($"Pot: {potSummary}");
+            ImGui.TextWrapped($"Farm: {GetFarmSummary(snapshot)}");
         }
 
-        if (plugin.PotFarmController.IsLeavePending || (instanceTimeDecision.ManageInstanceTimeEnabled && instanceTimeDecision.IsContentTimerAvailable && !instanceTimeDecision.AllowNextPotCycle))
+        if (ShouldShowPotStatus())
         {
-            ImGui.TextWrapped($"Instance: {FormatValue(instanceTimeDecision.Reason)}");
+            ImGui.TextWrapped($"Pot: {GetPotSummary(snapshot, potCycleSnapshot) ?? "No estimate"}");
         }
+
+        if (ShouldShowCofferStatus())
+        {
+            ImGui.TextWrapped($"Coffers: {GetCofferSummary(cofferSurveySnapshot, automaticCofferStatus)}");
+        }
+
+        if (ShouldShowForkedTowerStatus())
+        {
+            ImGui.TextWrapped($"Forked Tower: {GetForkedTowerSummary()}");
+        }
+
         ImGui.SetWindowFontScale(1f);
 
         var farmStartBlocker = GetFarmStartBlocker();
@@ -273,33 +280,12 @@ public sealed class MainWindow : Window, IDisposable
     }
 
     private string GetFarmSummary(
-        ScannerSnapshot snapshot,
-        PotCycleSnapshot potCycleSnapshot,
-        TreasureHintSnapshot treasureSnapshot,
-        TreasureCofferSurveySnapshot cofferSurveySnapshot,
-        TreasureCofferAutomaticModeStatus automaticCofferStatus)
+        ScannerSnapshot snapshot)
     {
-        if (treasureCofferFarmController.IsRunning)
-        {
-            return $"Overworld coffer route | {GetVisibleCofferSummary()}";
-        }
-
-        var treasureSearchSummary = GetTreasureSearchSummary(treasureSnapshot);
-        if (treasureSearchSummary != null)
-        {
-            return treasureSearchSummary;
-        }
-
         var baseActivity = GetFriendlyFarmActivity();
         if (IsPotFlowActivity(baseActivity))
         {
             return baseActivity;
-        }
-
-        var pendingPotDepartureSummary = GetPendingPotDepartureSummary(baseActivity, potCycleSnapshot);
-        if (pendingPotDepartureSummary != null)
-        {
-            return pendingPotDepartureSummary;
         }
 
         var targetSummary = GetActivityTargetSummary(snapshot);
@@ -308,16 +294,69 @@ public sealed class MainWindow : Window, IDisposable
             return targetSummary;
         }
 
-        var idleAutoCofferSummary = GetIdleAutoCofferSummary(cofferSurveySnapshot, automaticCofferStatus);
-        if (idleAutoCofferSummary != null)
-        {
-            return idleAutoCofferSummary;
-        }
-
         var fallbackDetail = GetFarmFallbackDetail();
         return fallbackDetail == null
             ? baseActivity
             : $"{baseActivity} | {fallbackDetail}";
+    }
+
+    private bool ShouldShowFarmStatus()
+        => configuration.AlwaysShowFarmStatus
+            || configuration.EnableCriticalEngagementFarming
+            || configuration.EnableFateFarming;
+
+    private bool ShouldShowPotStatus()
+        => configuration.AlwaysShowPotStatus
+            || configuration.IsPotFarmingEnabled(scanner.Snapshot.TerritoryKey);
+
+    private bool ShouldShowCofferStatus()
+        => configuration.AlwaysShowCofferStatus
+            || configuration.EnableAutomaticTreasureCofferRoute;
+
+    private bool ShouldShowForkedTowerStatus()
+        => configuration.AlwaysShowForkedTowerStatus
+            || configuration.EnableForkedTowerAutomation;
+
+    private string GetCofferSummary(
+        TreasureCofferSurveySnapshot cofferSurveySnapshot,
+        TreasureCofferAutomaticModeStatus automaticCofferStatus)
+    {
+        if (treasureCofferFarmController.IsRunning)
+        {
+            var routeEntry = treasureCofferFarmController.ActiveRouteEntry;
+            return routeEntry == null
+                ? "Active"
+                : string.IsNullOrWhiteSpace(routeEntry.Label) ? routeEntry.Area : routeEntry.Label;
+        }
+
+        return GetIdleAutoCofferSummary(cofferSurveySnapshot, automaticCofferStatus) ?? "No estimate";
+    }
+
+    private string GetForkedTowerSummary()
+    {
+        var staging = plugin.ForkedTowerStagingController;
+        if (staging.IsRunning)
+        {
+            return staging.State switch
+            {
+                ForkedTowerStagingState.TravelingToStaging => "Moving to staging point",
+                ForkedTowerStagingState.WaitingForSelection => "Waiting for selection",
+                _ => staging.State.ToString(),
+            };
+        }
+
+        var tracker = plugin.ForkedTowerTracker.Snapshot;
+        if (tracker.TowerActive)
+        {
+            return "Active";
+        }
+
+        if (!tracker.HasKnownBaseline)
+        {
+            return "No estimate";
+        }
+
+        return $"Estimated in {FormatDuration(tracker.EstimatedNextTowerAt - DateTimeOffset.UtcNow)}";
     }
 
     private string? GetActivityTargetSummary(ScannerSnapshot snapshot)
@@ -429,32 +468,29 @@ public sealed class MainWindow : Window, IDisposable
 
     private string? GetIdleAutoCofferSummary(TreasureCofferSurveySnapshot cofferSurveySnapshot, TreasureCofferAutomaticModeStatus automaticCofferStatus)
     {
-        var activity = GetFriendlyFarmActivity();
-        if (!IsIdleLikeFarmActivity(activity)
-            || !configuration.EnableAutomaticTreasureCofferRoute
-            || automaticCofferStatus.DisabledForCurrentRun)
+        if (automaticCofferStatus.DisabledForCurrentRun)
         {
             return null;
         }
 
-        var rotationEntries = new System.Collections.Generic.List<string> { activity };
+        var rotationEntries = new System.Collections.Generic.List<string>();
         if (cofferSurveySnapshot.HasSurvey)
         {
-            rotationEntries.Add($"Auto coffers | last scan silver {cofferSurveySnapshot.SilverCount} bronze {cofferSurveySnapshot.BronzeCount}");
+            rotationEntries.Add($"Last scan silver {cofferSurveySnapshot.SilverCount} bronze {cofferSurveySnapshot.BronzeCount}");
         }
 
         if (automaticCofferStatus.RemainingSilverCompletionsUntilRescan == 0
             && automaticCofferStatus.RemainingBronzeCompletionsUntilRescan == 0)
         {
-            rotationEntries.Add("Auto coffers | ready");
+            rotationEntries.Add("Ready");
         }
         else if (automaticCofferStatus.RemainingSilverCompletionsUntilRescan > 0
             || automaticCofferStatus.RemainingBronzeCompletionsUntilRescan > 0)
         {
-            rotationEntries.Add($"Auto coffers | next scan {automaticCofferStatus.RemainingSilverCompletionsUntilRescan + automaticCofferStatus.RemainingBronzeCompletionsUntilRescan}");
+            rotationEntries.Add($"Next scan {automaticCofferStatus.RemainingSilverCompletionsUntilRescan + automaticCofferStatus.RemainingBronzeCompletionsUntilRescan}");
         }
 
-        if (rotationEntries.Count == 1)
+        if (rotationEntries.Count == 0)
         {
             return null;
         }
@@ -494,6 +530,18 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         return null;
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero)
+        {
+            return "due";
+        }
+
+        return duration.TotalHours >= 1
+            ? $"{(int)duration.TotalHours}h {duration.Minutes}m"
+            : $"{Math.Max(1, (int)Math.Ceiling(duration.TotalMinutes))}m";
     }
 
     private static string FormatValue(string? value)

@@ -880,11 +880,19 @@ public sealed class FarmSessionController : IDisposable
 
     private bool TryStartCriticalEncounter(ActiveCriticalEncounter criticalEncounter, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
     {
-        var startDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, scanner.Snapshot.CanRunPotTreasure, scanner.Snapshot.TerritoryKey);
-        if (!startDecision.AllowStart)
+        var forkedTower = string.Equals(criticalEncounter.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase);
+        if (forkedTower)
         {
-            logger.DebugThrottled("farm-priority-ce-blocked", WaitLogInterval, $"CE activity skipped by pot fallback policy: {startDecision.Reason}");
-            return false;
+            logger.Info($"{BuildLogTag()} op=forked-tower-cutoff-bypass reason=Forked Tower has priority over Pots.");
+        }
+        else
+        {
+            var startDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, scanner.Snapshot.CanRunPotTreasure, scanner.Snapshot.TerritoryKey);
+            if (!startDecision.AllowStart)
+            {
+                logger.DebugThrottled("farm-priority-ce-blocked", WaitLogInterval, $"CE activity skipped by pot fallback policy: {startDecision.Reason}");
+                return false;
+            }
         }
 
         if (TryHandlePendingReturnFateGearsetRestore($"starting CE {criticalEncounter.Name}", "CE automation"))
@@ -892,7 +900,6 @@ public sealed class FarmSessionController : IDisposable
             return true;
         }
 
-        var forkedTower = string.Equals(criticalEncounter.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase);
         if (forkedTower && !forkedTowerStagingController.Start(criticalEncounter))
         {
             SetFailure(forkedTowerStagingController.LastError.Length == 0
@@ -967,7 +974,7 @@ public sealed class FarmSessionController : IDisposable
 
         if (forkedTowerStagingController.LastResult == AutomationRunResult.Preempted)
         {
-            TransitionTo(FarmSessionState.SelectingTarget, forkedTowerStagingController.LastTransition, "Selecting target");
+            StartRecoveryToBase("Forked Tower staging was preempted; returning to Base Camp before selecting another activity.");
             return;
         }
 
