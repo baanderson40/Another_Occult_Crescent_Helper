@@ -10,6 +10,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace AOCCH.Windows;
 
@@ -35,6 +36,7 @@ public sealed class DebugWindow : Window, IDisposable
         ShopInspector,
         Movement,
         CriticalEngagements,
+        ForkedTower,
         Fates,
         Territory,
     }
@@ -59,6 +61,8 @@ public sealed class DebugWindow : Window, IDisposable
     private int shopMenuIndex;
     private int shopTestPurchaseQuantity = 2;
     private int selectedVisibleCofferRouteStartIndex;
+    private string forkedTowerLgbBaseId = "2015189";
+    private string forkedTowerLgbLayerKey = string.Empty;
 
     // We give this window a hidden ID using ##.
     // The user will see "Another Occult Crescent Helper" as window title,
@@ -144,6 +148,7 @@ public sealed class DebugWindow : Window, IDisposable
         DrawSectionButton(DebugSection.SelectedTarget, "Selected Target");
         DrawSectionButton(DebugSection.ShopInspector, "Shop Inspector");
         DrawSectionButton(DebugSection.Territory, "Territory");
+        DrawSectionButton(DebugSection.ForkedTower, "Forked Tower");
     }
 
     private void DrawSectionButton(DebugSection section, string label)
@@ -212,6 +217,9 @@ public sealed class DebugWindow : Window, IDisposable
                 break;
             case DebugSection.CriticalEngagements:
                 DrawCriticalEncounters(snapshot);
+                break;
+            case DebugSection.ForkedTower:
+                DrawForkedTower(snapshot);
                 break;
             case DebugSection.Fates:
                 DrawFates(snapshot);
@@ -573,6 +581,125 @@ public sealed class DebugWindow : Window, IDisposable
         }
     }
 
+    private void DrawForkedTower(ScannerSnapshot snapshot)
+    {
+        ImGui.TextUnformatted("Forked Tower");
+        ImGui.TextUnformatted($"Territory: {snapshot.TerritoryDisplayName} ({snapshot.TerritoryTypeId})");
+        ImGui.TextUnformatted($"Current CE: {snapshot.CurrentCriticalEncounterId} | State: {snapshot.CurrentCriticalEncounter?.State ?? "none"}");
+
+        var staging = plugin.ForkedTowerStagingController;
+        ImGui.TextUnformatted($"Staging State: {staging.State}");
+        ImGui.TextWrapped($"Last Transition: {staging.LastTransition}");
+
+        var routeProbe = plugin.ForkedTowerRouteProbeController;
+        ImGui.TextUnformatted($"Route Probe: {routeProbe.State} | Step {routeProbe.StepIndex + 1}/{routeProbe.StepCount}");
+        ImGui.TextWrapped($"Route Step: {routeProbe.CurrentStepDescription}");
+        ImGui.TextWrapped($"Route Transition: {routeProbe.LastTransition}");
+        if (!string.IsNullOrWhiteSpace(routeProbe.LastError))
+        {
+            ImGui.TextWrapped($"Route Error: {routeProbe.LastError}");
+        }
+
+        if (ImGui.Button("Start Route Probe"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=start-forked-tower-route-probe");
+            routeProbe.Start();
+        }
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(routeProbe.State != ForkedTowerRouteProbeState.WaitingForManualAdvance);
+        if (ImGui.Button("Advance Route Probe"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=advance-forked-tower-route-probe");
+            routeProbe.Advance();
+        }
+        ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(routeProbe.State is ForkedTowerRouteProbeState.Idle
+            or ForkedTowerRouteProbeState.Stopped
+            or ForkedTowerRouteProbeState.Completed
+            or ForkedTowerRouteProbeState.Failed);
+        if (ImGui.Button("Stop Route Probe"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=stop-forked-tower-route-probe");
+            routeProbe.Stop("Stopped from Forked Tower debug window.");
+        }
+        ImGui.EndDisabled();
+
+        var tracker = plugin.ForkedTowerTracker.Snapshot;
+        ImGui.Separator();
+        ImGui.TextUnformatted("Estimated Tower Tracker");
+        ImGui.TextUnformatted($"Observed Tower: {(tracker.HasObservedTower ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Tower Active: {(tracker.TowerActive ? "Yes" : "No")}");
+        ImGui.TextUnformatted($"Baseline: {(tracker.HasKnownBaseline ? FormatTimestamp(tracker.LastTowerCompletedAt) : "Uncalibrated")}");
+        ImGui.TextUnformatted($"Estimated Next Tower: {(tracker.HasKnownBaseline ? FormatTimestamp(tracker.EstimatedNextTowerAt) : "Unavailable")}");
+        ImGui.TextUnformatted($"Reductions: CE={tracker.CriticalEncounterReductionCount} FATE={tracker.FateReductionCount} minutes={tracker.TotalReductionMinutes}");
+        ImGui.TextWrapped($"Tracker Transition: {tracker.LastTransition}");
+        if (!string.IsNullOrWhiteSpace(tracker.LastCompletion))
+        {
+            ImGui.TextWrapped($"Last Completion: {tracker.LastCompletion}");
+        }
+
+        if (ImGui.Button("Dump Forked Tower Target"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-forked-tower-target");
+            DumpCeEntityMetadata(snapshot);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Log Player Position"))
+        {
+            var player = Plugin.ObjectTable.LocalPlayer;
+            if (player == null)
+            {
+                plugin.Logger.Warning("[DebugWindow] op=player-position territory=" + snapshot.TerritoryTypeId + " available=false reason=player-unavailable");
+            }
+            else
+            {
+                var position = player.Position;
+                plugin.Logger.Info(
+                    $"[DebugWindow] op=player-position territory={snapshot.TerritoryTypeId} " +
+                    $"territoryKey={snapshot.TerritoryKey} currentCeId={snapshot.CurrentCriticalEncounterId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Loaded LGB inspection");
+        ImGui.SetNextItemWidth(140f);
+        ImGui.InputText("EventObject BaseId", ref forkedTowerLgbBaseId, 20);
+        ImGui.SetNextItemWidth(140f);
+        ImGui.InputText("LayerKey", ref forkedTowerLgbLayerKey, 20);
+        var hasBaseId = uint.TryParse(forkedTowerLgbBaseId, out var baseId);
+        var hasLayerKey = uint.TryParse(forkedTowerLgbLayerKey, out var layerKey);
+        var validFilters = (string.IsNullOrWhiteSpace(forkedTowerLgbBaseId) || hasBaseId)
+            && (string.IsNullOrWhiteSpace(forkedTowerLgbLayerKey) || hasLayerKey);
+        ImGui.BeginDisabled(!validFilters);
+        if (ImGui.Button("Dump LGB EventObject"))
+        {
+            uint? baseIdFilter = string.IsNullOrWhiteSpace(forkedTowerLgbBaseId) ? null : baseId;
+            uint? layerKeyFilter = string.IsNullOrWhiteSpace(forkedTowerLgbLayerKey) ? null : layerKey;
+            plugin.Logger.Info(
+                $"[DebugWindow] op=ui-action action=dump-lgb-event-object " +
+                $"baseId={(baseIdFilter?.ToString() ?? "any")} layerKey={(layerKeyFilter?.ToString() ?? "any")}");
+            plugin.LogLoadedLgbEventObjectsDebug(baseIdFilter, layerKeyFilter);
+        }
+        ImGui.EndDisabled();
+
+        if (!validFilters)
+        {
+            ImGui.TextUnformatted("BaseId and LayerKey must be unsigned integers or empty.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Dump LGB EventRanges"))
+        {
+            plugin.Logger.Info("[DebugWindow] op=ui-action action=dump-lgb-event-ranges");
+            plugin.LogLoadedLgbEventRangesDebug();
+        }
+    }
+
     private unsafe void DumpCeBossCandidates(ScannerSnapshot snapshot)
     {
         var currentCe = snapshot.CurrentCriticalEncounter;
@@ -617,7 +744,7 @@ public sealed class DebugWindow : Window, IDisposable
         Plugin.ChatGui.Print($"CE boss candidate dump logged ({candidates.Length} nearby candidates).");
     }
 
-    private void DumpLiveCeStates(ScannerSnapshot snapshot)
+    private unsafe void DumpLiveCeStates(ScannerSnapshot snapshot)
     {
         var selectedCeId = snapshot.SelectedCriticalEncounter?.Id ?? 0;
         var encounters = snapshot.CriticalEncounters
@@ -625,9 +752,16 @@ public sealed class DebugWindow : Window, IDisposable
             .OrderBy(encounter => encounter.Id)
             .ThenBy(encounter => encounter.Name, StringComparer.Ordinal);
 
+        var instance = PublicContentOccultCrescent.GetInstance();
+        var currentEventId = instance == null ? 0u : instance->DynamicEventContainer.CurrentEventId;
+        var currentEventIndex = instance == null ? (sbyte)-1 : instance->DynamicEventContainer.CurrentEventIndex;
+        var currentEvent = instance == null ? null : instance->DynamicEventContainer.GetCurrentEvent();
+
         plugin.Logger.Info(
             $"[DebugWindow] op=live-ce-state-dump territory={snapshot.TerritoryTypeId} " +
             $"snapshotAt={snapshot.LastUpdated:O} currentCeId={snapshot.CurrentCriticalEncounterId} " +
+            $"rawCurrentEventId={currentEventId} rawCurrentEventIndex={currentEventIndex} " +
+            $"rawCurrentEventAvailable={currentEvent != null} " +
             $"automationState={criticalEngagementAutomationController.State} " +
             $"lockedCeId={criticalEngagementAutomationController.TargetCeId}");
 
@@ -635,12 +769,55 @@ public sealed class DebugWindow : Window, IDisposable
         foreach (var encounter in encounters)
         {
             count++;
+            var rawEventFound = false;
+            var rawState = "unavailable";
+            var rawStateCode = -1;
+            var rawParticipants = -1;
+            var rawMaxParticipants = -1;
+            var rawMaxParticipants2 = -1;
+            var rawProgress = -1;
+            var rawStartTimestamp = 0;
+            var rawSecondsLeft = 0u;
+            var rawSecondsDuration = 0u;
+            var rawEventType = -1;
+            var rawDynamicEventType = -1;
+
+            if (instance != null)
+            {
+                foreach (var dynamicEvent in instance->DynamicEventContainer.Events.ToArray())
+                {
+                    if (dynamicEvent.DynamicEventId != encounter.Id)
+                    {
+                        continue;
+                    }
+
+                    rawEventFound = true;
+                    rawState = dynamicEvent.State.ToString();
+                    rawStateCode = (int)dynamicEvent.State;
+                    rawParticipants = dynamicEvent.Participants;
+                    rawMaxParticipants = dynamicEvent.MaxParticipants;
+                    rawMaxParticipants2 = dynamicEvent.MaxParticipants2;
+                    rawProgress = dynamicEvent.Progress;
+                    rawStartTimestamp = dynamicEvent.StartTimestamp;
+                    rawSecondsLeft = dynamicEvent.SecondsLeft;
+                    rawSecondsDuration = dynamicEvent.SecondsDuration;
+                    rawEventType = dynamicEvent.EventType;
+                    rawDynamicEventType = dynamicEvent.DynamicEventType;
+                    break;
+                }
+            }
+
             plugin.Logger.Info(
                 $"[DebugWindow] op=live-ce-state-dump-entry id={encounter.Id} " +
                 $"name=\"{encounter.Name}\" state=\"{encounter.State}\" stateCode={encounter.StateCode} " +
                 $"progress={encounter.Progress} candidate={encounter.IsCandidate} " +
                 $"knownMetadata={encounter.HasKnownMetadata} current={encounter.Id == snapshot.CurrentCriticalEncounterId} " +
-                $"selected={encounter.Id == selectedCeId}");
+                $"selected={encounter.Id == selectedCeId} rawEventFound={rawEventFound} " +
+                $"rawState=\"{rawState}\" rawStateCode={rawStateCode} " +
+                $"participants={rawParticipants} maxParticipants={rawMaxParticipants} maxParticipants2={rawMaxParticipants2} " +
+                $"rawProgress={rawProgress} startTimestamp={rawStartTimestamp} " +
+                $"secondsLeft={rawSecondsLeft} secondsDuration={rawSecondsDuration} " +
+                $"eventType={rawEventType} dynamicEventType={rawDynamicEventType}");
         }
 
         if (count == 0)
@@ -928,6 +1105,7 @@ public sealed class DebugWindow : Window, IDisposable
         var canStart = snapshot.IsInSupportedTerritory
             && snapshot.CanFarmCriticalEncounters
             && snapshot.EffectiveTarget.Kind == SelectedTargetKind.CriticalEncounter
+            && !string.Equals(snapshot.EffectiveTarget.CriticalEncounter?.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase)
             && !otherAutomationRunning
             && !configuration.ScannerOnlyMode
             && !dependencyBlocked;
@@ -959,7 +1137,9 @@ public sealed class DebugWindow : Window, IDisposable
         }
         else if (!canStart)
         {
-            ImGui.TextUnformatted(snapshot.IsInSupportedTerritory && !snapshot.CanFarmCriticalEncounters
+            ImGui.TextUnformatted(string.Equals(snapshot.EffectiveTarget.CriticalEncounter?.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase)
+                ? "Forked Tower uses its dedicated configuration and unified farm staging flow."
+                : snapshot.IsInSupportedTerritory && !snapshot.CanFarmCriticalEncounters
                 ? $"CE data is unavailable in {snapshot.TerritoryDisplayName}."
                 : "Start CE Automation requires a CE-capable territory and a CE effective target.");
         }

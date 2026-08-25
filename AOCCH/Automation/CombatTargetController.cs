@@ -27,7 +27,7 @@ public sealed class CombatTargetController
 
     public bool MaintainFateTarget(FateRunTarget target)
     {
-        if (target.IsPotTarget || !target.HasLiveTarget || target.LiveTargetObjectId == 0)
+        if (!target.HasLiveTarget || target.LiveTargetObjectId == 0)
         {
             return false;
         }
@@ -98,6 +98,7 @@ public sealed class CombatTargetController
         => gameObject is IBattleNpc
             && gameObject is ICharacter character
             && character.IsValid()
+            && !FateTargetPolicy.IsExcludedObjectiveBaseId(gameObject.BaseId)
             && character.IsTargetable
             && character.CurrentHp > 0
             && !IsPet(gameObject)

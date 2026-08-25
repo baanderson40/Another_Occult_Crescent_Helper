@@ -26,6 +26,7 @@ public sealed class ScannerSnapshot
     public IReadOnlyList<ActivePotFate> PotFates { get; init; } = [];
     public ActiveCriticalEncounter? CurrentCriticalEncounter { get; init; }
     public ActiveCriticalEncounter? SelectedCriticalEncounter { get; init; }
+    public ActiveCriticalEncounter? SelectedForkedTower { get; init; }
     public ActiveFate? SelectedFate { get; init; }
     public ActivePotFate? ActivePotFate { get; init; }
     public bool HasTreasureBuff { get; init; }

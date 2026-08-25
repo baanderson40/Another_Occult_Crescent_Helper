@@ -42,6 +42,7 @@ public sealed class FarmSessionController : IDisposable
     private readonly AutorotationController autorotationController;
     private readonly BuffRotationController buffRotationController;
     private readonly CriticalEngagementAutomationController criticalEngagementAutomationController;
+    private readonly ForkedTowerStagingController forkedTowerStagingController;
     private readonly FateAutomationController fateAutomationController;
     private readonly PostActivityRevivalController postActivityRevivalController;
     private readonly DeathRecoveryController deathRecoveryController;
@@ -95,6 +96,7 @@ public sealed class FarmSessionController : IDisposable
         AutorotationController autorotationController,
         BuffRotationController buffRotationController,
         CriticalEngagementAutomationController criticalEngagementAutomationController,
+        ForkedTowerStagingController forkedTowerStagingController,
         FateAutomationController fateAutomationController,
         PostActivityRevivalController postActivityRevivalController,
         DeathRecoveryController deathRecoveryController,
@@ -116,6 +118,7 @@ public sealed class FarmSessionController : IDisposable
         this.autorotationController = autorotationController;
         this.buffRotationController = buffRotationController;
         this.criticalEngagementAutomationController = criticalEngagementAutomationController;
+        this.forkedTowerStagingController = forkedTowerStagingController;
         this.fateAutomationController = fateAutomationController;
         this.postActivityRevivalController = postActivityRevivalController;
         this.deathRecoveryController = deathRecoveryController;
@@ -274,7 +277,7 @@ public sealed class FarmSessionController : IDisposable
             postActivityContinuation = null;
         }
 
-        logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
+        logger.Info($"{BuildLogTag()} op=start ceFarming={configuration.EnableCriticalEngagementFarming} fateFarming={configuration.EnableFateFarming} automationPriority={string.Join(',', configuration.AutomationPriority)} fatePriority={configuration.FatePriority} useReturn={configuration.UseReturn} enableBuffRotation={configuration.EnableBuffRotation} scannerOnlyMode={configuration.ScannerOnlyMode} minimumMountingRange={configuration.MinimumMountingRange}.");
         TransitionTo(FarmSessionState.Starting, "Starting unified CE/FATE farm session.", "Startup");
         return true;
     }
@@ -308,6 +311,11 @@ public sealed class FarmSessionController : IDisposable
         if (criticalEngagementAutomationController.IsRunning)
         {
             criticalEngagementAutomationController.Stop(reason);
+        }
+
+        if (forkedTowerStagingController.IsRunning)
+        {
+            forkedTowerStagingController.Stop(reason);
         }
 
         if (fateAutomationController.IsRunning)
@@ -816,85 +824,160 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (TryStartOrResumePotControl(now))
-        {
-            return;
-        }
-
-        if (TryStartCurrencyShopping(now))
-        {
-            return;
-        }
-
         if (TryHandlePendingReturnFateGearsetRestore("farm target selection", "target selection"))
         {
             return;
         }
 
-        switch (snapshot.EffectiveTarget.Kind)
+        if (TryStartNextPriorityActivity(snapshot, potCycleSnapshot, now))
         {
-            case SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null:
-                var ceStartDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
-                if (!ceStartDecision.AllowStart)
-                {
-                    TransitionTo(FarmSessionState.IdleWaiting, ceStartDecision.Reason, "Idle waiting");
-                    return;
-                }
-
-                if (TryHandlePendingReturnFateGearsetRestore($"starting CE {snapshot.EffectiveTarget.CriticalEncounter.Name}", "CE automation"))
-                {
-                    return;
-                }
-
-                if (!criticalEngagementAutomationController.Start(snapshot.EffectiveTarget.CriticalEncounter, completeInPlace: true))
-                {
-                    SetFailure(criticalEngagementAutomationController.LastError.Length == 0
-                        ? "Failed to start CE automation."
-                        : criticalEngagementAutomationController.LastError);
-                    return;
-                }
-
-                TransitionTo(FarmSessionState.RunningCe,
-                    $"Running CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).",
-                    "Critical Engagement");
-                return;
-            case SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null:
-                var fateStartDecision = potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey);
-                if (!fateStartDecision.AllowStart)
-                {
-                    TransitionTo(FarmSessionState.IdleWaiting, fateStartDecision.Reason, "Idle waiting");
-                    return;
-                }
-
-                if (TryHandlePendingReturnFateGearsetRestore($"starting FATE {snapshot.EffectiveTarget.Fate.Name}", "FATE automation"))
-                {
-                    return;
-                }
-
-                logger.Info(
-                    $"{BuildLogTag()} op=fate-start-request caller=FarmSession.TickSelectingTarget "
-                    + $"target=\"{snapshot.EffectiveTarget.Fate.Name}\" ({snapshot.EffectiveTarget.Fate.Id}) "
-                    + $"pot=false fateState={fateAutomationController.State} "
-                    + $"pausedForRevival={fateAutomationController.IsPausedForRevival}");
-                if (!fateAutomationController.Start(snapshot.EffectiveTarget.Fate, FateRunCompletionBehavior.CompleteInPlace))
-                {
-                    SetFailure(fateAutomationController.LastError.Length == 0
-                        ? "Failed to start FATE automation."
-                        : fateAutomationController.LastError);
-                    return;
-                }
-
-                TransitionTo(FarmSessionState.RunningFate,
-                    $"Running FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).",
-                    "FATE");
-                return;
+            return;
         }
 
         TransitionTo(FarmSessionState.IdleWaiting, "No eligible CE/FATE target selected.", "Idle waiting");
     }
 
+    private bool TryStartNextPriorityActivity(ScannerSnapshot snapshot, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+    {
+        configuration.NormalizeAutomationPriority();
+        foreach (var activity in configuration.AutomationPriority)
+        {
+            switch (activity)
+            {
+                case FarmActivityKind.Pots:
+                    if (TryStartOrResumePotControl(now))
+                    {
+                        return true;
+                    }
+
+                    break;
+                case FarmActivityKind.CriticalEngagements:
+                    if (snapshot.SelectedCriticalEncounter is { } selectedCriticalEncounter)
+                    {
+                        return TryStartCriticalEncounter(selectedCriticalEncounter, potCycleSnapshot, now);
+                    }
+
+                    break;
+                case FarmActivityKind.ForkedTower:
+                    if (snapshot.SelectedForkedTower is { } selectedForkedTower)
+                    {
+                        return TryStartCriticalEncounter(selectedForkedTower, potCycleSnapshot, now);
+                    }
+
+                    break;
+                case FarmActivityKind.Fates:
+                    if (snapshot.SelectedFate is { } selectedFate)
+                    {
+                        return TryStartFate(selectedFate, potCycleSnapshot, now);
+                    }
+
+                    break;
+            }
+        }
+
+        return TryStartCurrencyShopping(now);
+    }
+
+    private bool TryStartCriticalEncounter(ActiveCriticalEncounter criticalEncounter, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+    {
+        var forkedTower = string.Equals(criticalEncounter.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase);
+        if (forkedTower)
+        {
+            logger.Info($"{BuildLogTag()} op=forked-tower-cutoff-bypass reason=Forked Tower has priority over Pots.");
+        }
+        else
+        {
+            var startDecision = potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, scanner.Snapshot.CanRunPotTreasure, scanner.Snapshot.TerritoryKey);
+            if (!startDecision.AllowStart)
+            {
+                logger.DebugThrottled("farm-priority-ce-blocked", WaitLogInterval, $"CE activity skipped by pot fallback policy: {startDecision.Reason}");
+                return false;
+            }
+        }
+
+        if (TryHandlePendingReturnFateGearsetRestore($"starting CE {criticalEncounter.Name}", "CE automation"))
+        {
+            return true;
+        }
+
+        if (forkedTower && !forkedTowerStagingController.Start(criticalEncounter))
+        {
+            SetFailure(forkedTowerStagingController.LastError.Length == 0
+                ? "Failed to start Forked Tower staging automation."
+                : forkedTowerStagingController.LastError);
+            return true;
+        }
+
+        if (!forkedTower && !criticalEngagementAutomationController.Start(criticalEncounter, completeInPlace: true))
+        {
+            SetFailure(criticalEngagementAutomationController.LastError.Length == 0
+                ? "Failed to start CE automation."
+                : criticalEngagementAutomationController.LastError);
+            return true;
+        }
+
+        TransitionTo(FarmSessionState.RunningCe,
+            forkedTower
+                ? $"Staging for Forked Tower {criticalEncounter.Name} ({criticalEncounter.Id})."
+                : $"Running CE {criticalEngagementAutomationController.TargetCeName} ({criticalEngagementAutomationController.TargetCeId}).",
+            "Critical Engagement");
+        return true;
+    }
+
+    private bool TryStartFate(ActiveFate fate, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
+    {
+        var startDecision = potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, scanner.Snapshot.CanRunPotTreasure, scanner.Snapshot.TerritoryKey);
+        if (!startDecision.AllowStart)
+        {
+            logger.DebugThrottled("farm-priority-fate-blocked", WaitLogInterval, $"FATE activity skipped by pot fallback policy: {startDecision.Reason}");
+            return false;
+        }
+
+        if (TryHandlePendingReturnFateGearsetRestore($"starting FATE {fate.Name}", "FATE automation"))
+        {
+            return true;
+        }
+
+        logger.Info(
+            $"{BuildLogTag()} op=fate-start-request caller=FarmSession.TryStartNextPriorityActivity "
+            + $"target=\"{fate.Name}\" ({fate.Id}) pot=false fateState={fateAutomationController.State} "
+            + $"pausedForRevival={fateAutomationController.IsPausedForRevival}");
+        if (!fateAutomationController.Start(fate, FateRunCompletionBehavior.CompleteInPlace))
+        {
+            SetFailure(fateAutomationController.LastError.Length == 0
+                ? "Failed to start FATE automation."
+                : fateAutomationController.LastError);
+            return true;
+        }
+
+        TransitionTo(FarmSessionState.RunningFate,
+            $"Running FATE {fateAutomationController.TargetFateName} ({fateAutomationController.TargetFateId}).",
+            "FATE");
+        return true;
+    }
+
     private void TickCeRun()
     {
+        if (forkedTowerStagingController.IsRunning)
+        {
+            logger.DebugThrottled("farm-running-forked-tower-staging", WaitLogInterval, $"Forked Tower staging is active. state={forkedTowerStagingController.State} transition=\"{forkedTowerStagingController.LastTransition}\".");
+            return;
+        }
+
+        if (forkedTowerStagingController.State == ForkedTowerStagingState.Failed)
+        {
+            SetFailure(forkedTowerStagingController.LastError.Length == 0
+                ? "Forked Tower staging failed."
+                : forkedTowerStagingController.LastError);
+            return;
+        }
+
+        if (forkedTowerStagingController.LastResult == AutomationRunResult.Preempted)
+        {
+            StartRecoveryToBase("Forked Tower staging was preempted; returning to Base Camp before selecting another activity.");
+            return;
+        }
+
         if (criticalEngagementAutomationController.IsRunning)
         {
             if (TryStartActiveRevival(ActiveRevivalActivityKind.Ce, "active CE revival"))
@@ -1137,34 +1220,15 @@ public sealed class FarmSessionController : IDisposable
             return;
         }
 
-        if (TryStartOrResumePotControl(now))
-        {
-            logger.ResetThrottle("farm-idle-waiting");
-            return;
-        }
-
-        if (TryStartCurrencyShopping(now))
-        {
-            logger.ResetThrottle("farm-idle-waiting");
-            return;
-        }
-
         if (TryHandlePendingReturnFateGearsetRestore("farm idle waiting", "idle farm loop"))
         {
             return;
         }
 
-        var startDecision = EvaluateEffectiveTargetStart(snapshot, potCycleSnapshot, now);
-        if (startDecision?.AllowStart == true)
+        if (TryStartNextPriorityActivity(snapshot, potCycleSnapshot, now))
         {
             logger.ResetThrottle("farm-idle-waiting");
-            TransitionTo(FarmSessionState.SelectingTarget, "Target became available while idle waiting.", "Selecting target");
             return;
-        }
-
-        if (startDecision is { AllowStart: false } && !string.Equals(LastTransition, startDecision.Reason, StringComparison.Ordinal))
-        {
-            TransitionTo(FarmSessionState.IdleWaiting, startDecision.Reason, "Idle waiting");
         }
 
         if (now - lastIdleScanAt >= IdleRescanInterval)
@@ -1174,7 +1238,7 @@ public sealed class FarmSessionController : IDisposable
                 lastIdleScanAt = now;
             }
 
-            logger.DebugThrottled("farm-idle-waiting", WaitLogInterval, startDecision?.Reason ?? "Farm session is idle waiting for a new CE or FATE target.");
+            logger.DebugThrottled("farm-idle-waiting", WaitLogInterval, "Farm session is idle waiting for an eligible prioritized activity.");
         }
     }
 
@@ -1214,16 +1278,6 @@ public sealed class FarmSessionController : IDisposable
             TransitionTo(mappedState, potFarmController.LastTransition, MapPotFarmActivity(mappedState));
         }
     }
-
-    private PotFallbackStartDecision? EvaluateEffectiveTargetStart(ScannerSnapshot snapshot, PotCycleSnapshot potCycleSnapshot, DateTimeOffset now)
-        => snapshot.EffectiveTarget.Kind switch
-        {
-            SelectedTargetKind.CriticalEncounter when snapshot.EffectiveTarget.CriticalEncounter != null
-                => potFallbackWindowEvaluator.EvaluateCeStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey),
-            SelectedTargetKind.Fate when snapshot.EffectiveTarget.Fate != null
-                => potFallbackWindowEvaluator.EvaluateFateStart(potCycleSnapshot, now, snapshot.CanRunPotTreasure, snapshot.TerritoryKey),
-            _ => null,
-        };
 
     private bool TryStartCurrencyShopping(DateTimeOffset now)
     {
@@ -2215,6 +2269,11 @@ public sealed class FarmSessionController : IDisposable
         if (treasureCofferFarmController.IsRunning)
         {
             treasureCofferFarmController.Stop(reason);
+        }
+
+        if (forkedTowerStagingController.IsRunning)
+        {
+            forkedTowerStagingController.Stop(reason);
         }
 
         movementController.Stop(reason);

@@ -109,7 +109,16 @@ public class Configuration : IPluginConfiguration
     private int ninjaGearsetNumber;
     private int visibleCofferNinjaGearsetNumber;
 
-    public int Version { get; set; } = 15;
+    public int Version { get; set; } = 18;
+
+    public bool EnableForkedTowerAutomation { get; set; }
+    public List<FarmActivityKind> AutomationPriority { get; set; } =
+    [
+        FarmActivityKind.ForkedTower,
+        FarmActivityKind.Pots,
+        FarmActivityKind.CriticalEngagements,
+        FarmActivityKind.Fates,
+    ];
 
     public AutorotationProvider AutorotationProvider { get; set; } = AutorotationProvider.BossMod;
     public bool AutorotationProviderUserSelected { get; set; }
@@ -120,7 +129,6 @@ public class Configuration : IPluginConfiguration
     public decimal RangedTargetRange { get; set; } = 25;
     public bool EnableCriticalEngagementFarming { get; set; } = true;
     public bool EnableFateFarming { get; set; } = true;
-    public bool PrioritizeCe { get; set; } = true;
     public FatePriority FatePriority { get; set; } = FatePriority.LowestProgress;
     public List<uint> DisabledCriticalEncounterIds { get; set; } = [];
     public List<uint> DisabledFateIds { get; set; } = [];
@@ -151,6 +159,10 @@ public class Configuration : IPluginConfiguration
     public bool EnableAutomaticTreasureCofferRoute { get; set; }
     public bool EnableOverworldTreasureGuide { get; set; }
     public bool EnableCofferObservationSubmission { get; set; }
+    public bool AlwaysShowFarmStatus { get; set; }
+    public bool AlwaysShowPotStatus { get; set; }
+    public bool AlwaysShowCofferStatus { get; set; }
+    public bool AlwaysShowForkedTowerStatus { get; set; }
     public bool EnableNorthHornSecondChanceCoffers { get; set; }
     public int NorthHornStatusDismissedRevision { get; set; }
     public int AutomaticTreasureCofferSilverThreshold { get; set; }
@@ -189,6 +201,11 @@ public class Configuration : IPluginConfiguration
     public List<CurrencyShopReserveSetting> CurrencyShopReserves { get; set; } = [];
     public List<CurrencyShopThresholdSetting> CurrencyShopThresholds { get; set; } = [];
     public List<CurrencyShopTarget> CurrencyShopTargets { get; set; } = [];
+
+    // Read only for migration from the former CE/FATE precedence toggle.
+    [JsonPropertyName("PrioritizeCe")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyPrioritizeCe { get; set; }
 
     [JsonPropertyName("VisibleTreasureCofferMaximumAggroLevel")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -406,6 +423,7 @@ public class Configuration : IPluginConfiguration
     public void Save()
     {
         NormalizeTerritorySettings();
+        NormalizeAutomationPriority();
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
         ClampPotTreasureAggroSettings();
@@ -422,6 +440,7 @@ public class Configuration : IPluginConfiguration
     public bool Migrate(OccultCrescentDataCatalog catalog)
     {
         NormalizeTerritorySettings();
+        var priorityChanged = NormalizeAutomationPriority();
         var southHorn = catalog.GetTerritoryOrNull("southHorn");
         AutomaticTreasureCofferSilverThreshold = Math.Clamp(AutomaticTreasureCofferSilverThreshold, 0, 8);
         AutomaticTreasureCofferBronzeThreshold = Math.Clamp(AutomaticTreasureCofferBronzeThreshold, 0, 30);
@@ -433,10 +452,10 @@ public class Configuration : IPluginConfiguration
         ClampKnowledgeThreatSettings();
         ClampCurrencyShopSettings();
 
-        if (Version >= 15)
+        if (Version >= 18)
         {
             logger?.Debug($"Configuration migration skipped because version {Version} is current.");
-            return false;
+            return priorityChanged;
         }
 
         logger?.Info($"[Configuration] op=migration-start version={Version}");
@@ -592,11 +611,81 @@ public class Configuration : IPluginConfiguration
             logger?.Info("[Configuration] op=migration-scope-visible-coffer-safety territoryKey=northHorn skipHighLevelCavernsDuringAshkin=true");
         }
 
+        if (Version < 17)
+        {
+            if (LegacyPrioritizeCe == false)
+            {
+                MoveActivityBefore(FarmActivityKind.Fates, FarmActivityKind.CriticalEngagements);
+                MoveActivityBefore(FarmActivityKind.Fates, FarmActivityKind.ForkedTower);
+            }
+
+            LegacyPrioritizeCe = null;
+            logger?.Info($"[Configuration] op=migration-automation-priority order={string.Join(',', AutomationPriority)}");
+        }
+
+        if (Version < 18)
+        {
+            MoveActivityBefore(FarmActivityKind.ForkedTower, FarmActivityKind.Pots);
+            MoveActivityBefore(FarmActivityKind.Pots, FarmActivityKind.CriticalEngagements);
+            logger?.Info($"[Configuration] op=migration-automation-priority order={string.Join(',', AutomationPriority)} reason=forked-tower-special-priority");
+        }
+
         LegacyFarmingMode = null;
         LegacyExcludedFates = null;
-        Version = 15;
-        logger?.Info("[Configuration] op=migration-complete version=15");
+        Version = 18;
+        logger?.Info("[Configuration] op=migration-complete version=18");
         return true;
+    }
+
+    public bool NormalizeAutomationPriority()
+    {
+        AutomationPriority ??= [];
+        var normalized = new List<FarmActivityKind>();
+        foreach (var activity in AutomationPriority)
+        {
+            if (!Enum.IsDefined(activity) || normalized.Contains(activity))
+            {
+                continue;
+            }
+
+            normalized.Add(activity);
+        }
+
+        foreach (var activity in Enum.GetValues<FarmActivityKind>())
+        {
+            if (!normalized.Contains(activity))
+            {
+                normalized.Add(activity);
+            }
+        }
+
+        if (AutomationPriority.SequenceEqual(normalized))
+        {
+            return false;
+        }
+
+        AutomationPriority = normalized;
+        return true;
+    }
+
+    public int GetAutomationPriority(FarmActivityKind activity)
+    {
+        NormalizeAutomationPriority();
+        return AutomationPriority.IndexOf(activity);
+    }
+
+    private void MoveActivityBefore(FarmActivityKind activity, FarmActivityKind before)
+    {
+        var activityIndex = AutomationPriority.IndexOf(activity);
+        var beforeIndex = AutomationPriority.IndexOf(before);
+        if (activityIndex < 0 || beforeIndex < 0 || activityIndex < beforeIndex)
+        {
+            return;
+        }
+
+        AutomationPriority.RemoveAt(activityIndex);
+        beforeIndex = AutomationPriority.IndexOf(before);
+        AutomationPriority.Insert(beforeIndex, activity);
     }
 
     private static decimal ClampTargetRange(decimal value)

@@ -77,6 +77,9 @@ public sealed class Plugin : IDalamudPlugin
     public BuffRotationController BuffRotationController { get; init; }
     public PostActivityRevivalController PostActivityRevivalController { get; init; }
     public CriticalEngagementAutomationController CriticalEngagementAutomationController { get; init; }
+    public ForkedTowerStagingController ForkedTowerStagingController { get; init; }
+    public ForkedTowerRouteProbeController ForkedTowerRouteProbeController { get; init; }
+    public ForkedTowerTracker ForkedTowerTracker { get; init; }
     public FateAutomationController FateAutomationController { get; init; }
     public DeathRecoveryController DeathRecoveryController { get; init; }
     public InstancedContentController InstancedContentController { get; init; }
@@ -142,6 +145,9 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker = new PotCycleTracker(Framework, Scanner, Logger);
         PotFallbackWindowEvaluator = new PotFallbackWindowEvaluator(Configuration, Logger);
         CriticalEngagementAutomationController = new CriticalEngagementAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, AutorotationController, CombatTargetController, Configuration, Logger);
+        ForkedTowerStagingController = new ForkedTowerStagingController(Framework, Scanner, MovementController, Configuration, Logger);
+        ForkedTowerRouteProbeController = new ForkedTowerRouteProbeController(Framework, Condition, ObjectTable, Scanner, MovementController, Logger);
+        ForkedTowerTracker = new ForkedTowerTracker(Framework, Scanner, Logger);
         FateAutomationController = new FateAutomationController(Framework, Condition, ObjectTable, Scanner, MovementController, GameActionController, AutorotationController, CombatTargetController, PotCycleTracker, PotFallbackWindowEvaluator, Configuration, Logger);
         DeathRecoveryController = new DeathRecoveryController(Framework, ObjectTable, GameGui, MovementController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, Logger);
         InstancedContentController = new InstancedContentController(Logger);
@@ -160,7 +166,7 @@ public sealed class Plugin : IDalamudPlugin
         ShopPurchaseController = new ShopPurchaseController(Framework, ChatGui, GameGui, Logger);
         CurrentCurrencyShopPageMatcher = new CurrentCurrencyShopPageMatcher();
         ManualCurrencyShoppingController = new ManualCurrencyShoppingController(Framework, GameGui, Condition, Scanner, Configuration, GameActionController, MovementController, ShopInspectorController, ShopPurchaseController, CurrentCurrencyShopPageMatcher, CriticalEngagementAutomationController, FateAutomationController, BuffRotationController, PotFarmController, TreasureCofferFarmController, Logger);
-        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, FateAutomationController, PostActivityRevivalController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
+        FarmSessionController = new FarmSessionController(Framework, Scanner, VNavmesh, MovementController, GameActionController, AutorotationController, BuffRotationController, CriticalEngagementAutomationController, ForkedTowerStagingController, FateAutomationController, PostActivityRevivalController, DeathRecoveryController, DangerousTreasureTravelController, PotCycleTracker, PotFallbackWindowEvaluator, PotFarmController, TreasureHintTracker, TreasureCofferFarmController, ManualCurrencyShoppingController, Configuration, Logger);
 
         ConfigWindow = new ConfigWindow(this, Configuration, OccultCrescentNameResolver, Logger);
         LogWindow = new LogWindow(this);
@@ -248,7 +254,10 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker.Dispose();
         DeathRecoveryController.Dispose();
         FateAutomationController.Dispose();
+        ForkedTowerTracker.Dispose();
+        ForkedTowerRouteProbeController.Dispose();
         CriticalEngagementAutomationController.Dispose();
+        ForkedTowerStagingController.Dispose();
         BuffRotationController.Dispose();
         BossMod.Dispose();
         AutorotationController.Dispose();
@@ -1225,6 +1234,70 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print($"Loaded LGB EventObject scan complete: {eventObjectCount} entries logged.");
     }
 
+    internal unsafe void LogLoadedLgbEventObjectsDebug(uint? baseId, uint? layerKey)
+    {
+        Logger.Info(
+            $"[Plugin] op=debug-lgb-event-objects-filtered territory={ClientState.TerritoryType} " +
+            $"baseId={(baseId?.ToString() ?? "any")} layerKey={(layerKey?.ToString() ?? "any")} scan-start");
+
+        var layoutWorld = LayoutWorld.Instance();
+        if (layoutWorld == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-by-base-id-result available=false reason=layout-world-unavailable");
+            return;
+        }
+
+        var activeLayout = layoutWorld->ActiveLayout;
+        if (activeLayout == null)
+        {
+            Logger.Warning("[Plugin] op=debug-lgb-event-objects-by-base-id-result available=false reason=active-layout-unavailable");
+            return;
+        }
+
+        var matchCount = 0;
+        foreach (var layer in activeLayout->Layers.Values)
+        {
+            if (layer.IsNull)
+            {
+                continue;
+            }
+
+            foreach (var pair in layer.Value->Instances)
+            {
+                var instance = pair.Item2.Value;
+                if (instance == null || instance->Id.Type != InstanceType.EventObject)
+                {
+                    continue;
+                }
+
+                var gameObjectInstance = (GameObjectLayoutInstance*)instance;
+                if (baseId.HasValue && gameObjectInstance->BaseId != baseId.Value)
+                {
+                    continue;
+                }
+
+                if (layerKey.HasValue && instance->Id.LayerKey != layerKey.Value)
+                {
+                    continue;
+                }
+
+                var position = instance->GetTransformImpl()->Translation;
+                matchCount++;
+                Logger.Info(
+                    $"[Plugin] op=debug-lgb-event-object-filtered instanceKey={pair.Item1} " +
+                    $"layerKey={instance->Id.LayerKey} baseId={gameObjectInstance->BaseId} " +
+                    $"position=<{position.X:0.000},{position.Y:0.000},{position.Z:0.000}>");
+            }
+        }
+
+        Logger.Info(
+            $"[Plugin] op=debug-lgb-event-objects-filtered-result available=true " +
+            $"baseId={(baseId?.ToString() ?? "any")} layerKey={(layerKey?.ToString() ?? "any")} count={matchCount}");
+        ChatGui.Print(
+            $"Loaded LGB EventObject scan complete: BaseId {(baseId?.ToString() ?? "any")}, " +
+            $"LayerKey {(layerKey?.ToString() ?? "any")}, matches {matchCount}.");
+    }
+
     internal void GenerateEventDataDebug()
     {
         var snapshot = Scanner.Snapshot;
@@ -1254,6 +1327,7 @@ public sealed class Plugin : IDalamudPlugin
                 {
                     id = encounter.Id,
                     name = encounter.Name,
+                    automationKind = metadata?.AutomationKind ?? string.Empty,
                     preferredAethernet = metadata?.PreferredAethernet ?? string.Empty,
                     priority = metadata?.Priority > 0 ? metadata.Priority : 100,
                     engageRadius = metadata?.EngageRadius > 0 ? metadata.EngageRadius : 20f,
@@ -1501,6 +1575,19 @@ public sealed class Plugin : IDalamudPlugin
             CriticalEngagementAutomationController.Stop(reason);
         }
 
+        if (ForkedTowerStagingController.IsRunning)
+        {
+            ForkedTowerStagingController.Stop(reason);
+        }
+
+        if (ForkedTowerRouteProbeController.State is not ForkedTowerRouteProbeState.Idle
+            and not ForkedTowerRouteProbeState.Stopped
+            and not ForkedTowerRouteProbeState.Completed
+            and not ForkedTowerRouteProbeState.Failed)
+        {
+            ForkedTowerRouteProbeController.Stop(reason);
+        }
+
         if (FateAutomationController.IsRunning)
         {
             FateAutomationController.Stop(reason);
@@ -1544,7 +1631,10 @@ public sealed class Plugin : IDalamudPlugin
         PotCycleTracker.ResetInstanceState(reason);
         DeathRecoveryController.ResetInstanceState(reason);
         FateAutomationController.ResetInstanceState(reason);
+        ForkedTowerTracker.ResetInstanceState(reason);
+        ForkedTowerRouteProbeController.ResetInstanceState(reason);
         CriticalEngagementAutomationController.ResetInstanceState(reason);
+        ForkedTowerStagingController.ResetInstanceState(reason);
         BuffRotationController.ResetInstanceState(reason);
         AutorotationController.ResetInstanceState(reason);
         MovementController.ResetInstanceState(reason);

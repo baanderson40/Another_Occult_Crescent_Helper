@@ -16,4 +16,8 @@ public sealed class ActivePotFate
     public string PreferredAethernet { get; init; } = string.Empty;
     public Vector3 CenterPosition { get; init; }
     public Vector3? StagingPosition { get; init; }
+    public bool HasLiveTarget { get; init; }
+    public ulong LiveTargetObjectId { get; init; }
+    public string LiveTargetName { get; init; } = string.Empty;
+    public Vector3 LiveTargetPosition { get; init; }
 }

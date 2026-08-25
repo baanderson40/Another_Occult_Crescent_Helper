@@ -135,6 +135,7 @@ public sealed class CriticalEncounterData
 {
     public uint Id { get; init; }
     public string Name { get; init; } = string.Empty;
+    public string AutomationKind { get; init; } = string.Empty;
     public string PreferredAethernet { get; init; } = string.Empty;
     public int Priority { get; init; }
     public float EngageRadius { get; init; }

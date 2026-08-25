@@ -18,6 +18,7 @@ public class ConfigWindow : Window, IDisposable
     private enum ConfigTab
     {
         CriticalEngagements,
+        ForkedTower,
         Fates,
         Pots,
         TreasureCoffers,
@@ -93,6 +94,13 @@ public class ConfigWindow : Window, IDisposable
             ImGui.EndTabItem();
         }
 
+        if (string.Equals(plugin.Scanner.ActiveTerritoryData?.Key, "northHorn", StringComparison.OrdinalIgnoreCase)
+            && BeginConfigTabItem("Forked Tower", ConfigTab.ForkedTower))
+        {
+            DrawForkedTowerTab();
+            ImGui.EndTabItem();
+        }
+
         if (BeginConfigTabItem("FATEs", ConfigTab.Fates))
         {
             DrawFatesTab();
@@ -154,21 +162,32 @@ public class ConfigWindow : Window, IDisposable
         }
         DrawSettingTooltip("Automatically joins and runs Critical Engagements during farm sessions. Turn this off to skip CEs entirely.");
 
-        var prioritizeCe = configuration.PrioritizeCe;
-        if (ImGui.Checkbox("Prioritize CE", ref prioritizeCe))
-        {
-            logger.Info($"[Config] op=setting-change key=PrioritizeCe old={configuration.PrioritizeCe} new={prioritizeCe}");
-            configuration.PrioritizeCe = prioritizeCe;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Prioritizes available CEs over running FATEs or other activities.");
-
         ImGui.Separator();
         ImGui.TextUnformatted("Enabled Critical Engagements");
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
         DrawSettingTooltip("Pick which CEs to join in this zone. Unchecked CEs will be ignored.");
         DrawCriticalEncounterCheckboxList();
+    }
+
+    private void DrawForkedTowerTab()
+    {
+        var territory = plugin.Scanner.ActiveTerritoryData;
+        if (territory == null || !string.Equals(territory.Key, "northHorn", StringComparison.OrdinalIgnoreCase))
+        {
+            ImGui.TextUnformatted("Forked Tower automation is currently available in North Horn only.");
+            return;
+        }
+
+        var enabled = configuration.EnableForkedTowerAutomation;
+        if (ImGui.Checkbox("Enable Forked Tower Staging Movement", ref enabled))
+        {
+            logger.Info($"[Config] op=setting-change key=EnableForkedTowerAutomation old={configuration.EnableForkedTowerAutomation} new={enabled}");
+            configuration.EnableForkedTowerAutomation = enabled;
+            configuration.Save();
+        }
+
+        DrawSettingTooltip("Moves to and waits at the Forked Tower staging point. Does not enter the instance, fight, loot, or exit.");
     }
 
     private void DrawFatesTab()
@@ -702,160 +721,263 @@ public class ConfigWindow : Window, IDisposable
 
     private void DrawSettingsTab()
     {
-        ImGui.TextUnformatted("Coffer Observations");
-
-        var enableCofferObservationSubmission = configuration.EnableCofferObservationSubmission;
-        if (ImGui.Checkbox("Share Confirmed Coffer Observations", ref enableCofferObservationSubmission))
+        if (ImGui.CollapsingHeader("Coffer Observations", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            logger.Info($"[Config] op=setting-change key=EnableCofferObservationSubmission old={configuration.EnableCofferObservationSubmission} new={enableCofferObservationSubmission}");
-            configuration.EnableCofferObservationSubmission = enableCofferObservationSubmission;
+            var enableCofferObservationSubmission = configuration.EnableCofferObservationSubmission;
+            if (ImGui.Checkbox("Share Confirmed Coffer Observations", ref enableCofferObservationSubmission))
+            {
+                logger.Info($"[Config] op=setting-change key=EnableCofferObservationSubmission old={configuration.EnableCofferObservationSubmission} new={enableCofferObservationSubmission}");
+                configuration.EnableCofferObservationSubmission = enableCofferObservationSubmission;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Anonymously sends confirmed coffer locations to help map out spawn points for the community. No character or account data is ever sent.");
+        }
+
+        if (ImGui.CollapsingHeader("Combat", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            var providers = AutorotationProviderDiscovery.GetAvailable();
+            var provider = configuration.AutorotationProviderUserSelected && providers.Contains(configuration.AutorotationProvider)
+                ? configuration.AutorotationProvider
+                : AutorotationProviderDiscovery.GetDefault(providers) ?? configuration.AutorotationProvider;
+            var providerIndex = Math.Max(0, providers.ToList().IndexOf(provider));
+            var providerLabels = providers.Select(AutorotationProviderDiscovery.GetDisplayName).ToArray();
+            var automationRunning = plugin.FarmSessionController.IsRunning
+                || plugin.CriticalEngagementAutomationController.IsRunning
+                || plugin.FateAutomationController.IsRunning
+                || plugin.PotFarmController.IsRunning
+                || plugin.TreasureCofferFarmController.IsRunning;
+            var autorotationPresetName = configuration.AutorotationPresetName;
+            var presetWidth = CombatRotationControlWidth;
+            ImGui.BeginDisabled(automationRunning || providers.Count == 0);
+            ImGui.SetNextItemWidth(presetWidth);
+            if (ImGui.Combo("Autorotation Provider", ref providerIndex, providerLabels, providerLabels.Length))
+            {
+                var selectedProvider = providers[providerIndex];
+                logger.Info($"[Config] op=setting-change key=AutorotationProvider old={configuration.AutorotationProvider} new={selectedProvider}");
+                configuration.AutorotationProvider = selectedProvider;
+                configuration.AutorotationProviderUserSelected = true;
+                configuration.Save();
+            }
+            ImGui.EndDisabled();
+            DrawSettingTooltip(automationRunning
+                ? "Stop automation before changing the autorotation provider."
+                : "Only enabled and loaded rotation plugins are listed. BossMod or BossModReborn is required for dodging.");
+
+            var bossModProvider = provider is AutorotationProvider.BossMod or AutorotationProvider.BossModReborn;
+            ImGui.BeginDisabled(!bossModProvider);
+            ImGui.SetNextItemWidth(presetWidth);
+            if (ImGui.InputText("Autorotation Override Preset Name", ref autorotationPresetName, 120))
+            {
+                logger.InfoThrottled("setting-autorotation-preset-name", SettingTextLogInterval, $"Setting changed: AutorotationPresetName: '{configuration.AutorotationPresetName}' -> '{autorotationPresetName}'.");
+                configuration.AutorotationPresetName = autorotationPresetName;
+                configuration.Save();
+            }
+            ImGui.SameLine();
+            ImGui.TextDisabled("(?)");
+            DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
+            ImGui.EndDisabled();
+
+            var overdodgeAoeCushion = (int)configuration.OverdodgeAoeCushion;
+            ImGui.BeginDisabled(automationRunning);
+            ImGui.SetNextItemWidth(presetWidth);
+            if (ImGui.Combo("Overdodge AoE", ref overdodgeAoeCushion, OverdodgeAoeCushionLabels, OverdodgeAoeCushionLabels.Length))
+            {
+                var selected = (OverdodgeAoeSetting)overdodgeAoeCushion;
+                logger.Info($"[Config] op=setting-change key=OverdodgeAoeCushion old={configuration.OverdodgeAoeCushion} new={selected}");
+                configuration.OverdodgeAoeCushion = selected;
+                configuration.Save();
+            }
+            ImGui.EndDisabled();
+            DrawSettingTooltip("Controls the ForbiddenZoneCushion used by AOCCH-managed active and passive BossMod rotations.");
+
+            var delayedMovement = (int)configuration.DelayedMovement;
+            ImGui.BeginDisabled(automationRunning);
+            ImGui.SetNextItemWidth(presetWidth);
+            if (ImGui.Combo("Delayed Movement", ref delayedMovement, DelayedMovementLabels, DelayedMovementLabels.Length))
+            {
+                var selected = (DelayedMovementSetting)delayedMovement;
+                logger.Info($"[Config] op=setting-change key=DelayedMovement old={configuration.DelayedMovement} new={selected}");
+                configuration.DelayedMovement = selected;
+                configuration.Save();
+            }
+            ImGui.EndDisabled();
+            DrawSettingTooltip("Delays movement in AOCCH-managed active and passive BossMod rotations. Override presets are not changed.");
+
+            DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
+            DrawSettingTooltip("Max targeting range for melee jobs before engaging (1.1 to 30 yalms).");
+            DrawTargetRangeSetting("Ranged Target Range", configuration.RangedTargetRange, value => configuration.RangedTargetRange = value, nameof(configuration.RangedTargetRange));
+            DrawSettingTooltip("Max targeting range for ranged and caster jobs before engaging (1.1 to 30 yalms).");
+        }
+
+        DrawAutomationPrioritySection();
+
+        if (ImGui.CollapsingHeader("Automation Actions", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            var enableBuffRotation = configuration.EnableBuffRotation;
+            if (ImGui.Checkbox("Enable Buff Rotation", ref enableBuffRotation))
+            {
+                logger.Info($"[Config] op=setting-change key=EnableBuffRotation old={configuration.EnableBuffRotation} new={enableBuffRotation}");
+                configuration.EnableBuffRotation = enableBuffRotation;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Automatically applies job and foray buff actions during combat and route travel.");
+
+            var enablePostActivityRevival = configuration.EnablePostActivityRevival;
+            if (ImGui.Checkbox("Revive Dead Players with Phantom Actions", ref enablePostActivityRevival))
+            {
+                logger.Info($"[Config] op=setting-change key=EnablePostActivityRevival old={configuration.EnablePostActivityRevival} new={enablePostActivityRevival}");
+                configuration.EnablePostActivityRevival = enablePostActivityRevival;
+                configuration.Save();
+            }
+            DrawSettingTooltip("After CE or FATE completion, searches for dead players, uses Chemist or White Mage to raise them, then returns to Base Camp.");
+        }
+
+        if (ImGui.CollapsingHeader("Movement", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            var useReturn = configuration.UseReturn;
+            if (ImGui.Checkbox("Use Return", ref useReturn))
+            {
+                logger.Info($"[Config] op=setting-change key=UseReturn old={configuration.UseReturn} new={useReturn}");
+                configuration.UseReturn = useReturn;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Uses the Return spell to quickly teleport back to base camp when needed.");
+
+            var minimumMountingRange = configuration.MinimumMountingRange;
+            ImGui.SetNextItemWidth(SettingsNumericInputWidth);
+            if (ImGui.InputInt("Minimum Mounting Range", ref minimumMountingRange))
+            {
+                var nextValue = Math.Clamp(minimumMountingRange, 0, 100);
+                logger.InfoThrottled("setting-minimum-mounting-range", SettingTextLogInterval, $"Setting changed: MinimumMountingRange: {configuration.MinimumMountingRange} -> {nextValue}.");
+                configuration.MinimumMountingRange = nextValue;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Only mounts up if your destination is further away than this distance. Walks instead for shorter distances.");
+        }
+
+        if (ImGui.CollapsingHeader("Interface", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            var mainWindowStatusTextScalePercent = configuration.MainWindowStatusTextScalePercent;
+            ImGui.SetNextItemWidth(CombatRotationControlWidth);
+            if (ImGui.SliderInt("Main Window Status Text Size", ref mainWindowStatusTextScalePercent, 85, 150, "%d%%"))
+            {
+                var nextValue = Math.Clamp(mainWindowStatusTextScalePercent, 85, 150);
+                logger.Info($"[Config] op=setting-change key=MainWindowStatusTextScalePercent old={configuration.MainWindowStatusTextScalePercent} new={nextValue}");
+                configuration.MainWindowStatusTextScalePercent = nextValue;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Adjusts the status font size in the main window (85% to 150%).");
+
+            var showTooltips = configuration.ShowTooltips;
+            if (ImGui.Checkbox("Show Tooltips", ref showTooltips))
+            {
+                logger.Info($"[Config] op=setting-change key=ShowTooltips old={configuration.ShowTooltips} new={showTooltips}");
+                configuration.ShowTooltips = showTooltips;
+                configuration.Save();
+            }
+            DrawSettingTooltip("Shows helpful descriptions when you hover over settings and interface buttons.");
+
+            ImGui.Separator();
+            ImGui.TextUnformatted("Main Window Status Lines");
+            DrawAlwaysShowStatusSetting("Always Show Farm Status", () => configuration.AlwaysShowFarmStatus, value => configuration.AlwaysShowFarmStatus = value, "Keeps the Farm status line visible even when normal CE and FATE farming are disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Pot Status", () => configuration.AlwaysShowPotStatus, value => configuration.AlwaysShowPotStatus = value, "Keeps the Pot status line visible even when pot farming is disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Coffer Status", () => configuration.AlwaysShowCofferStatus, value => configuration.AlwaysShowCofferStatus = value, "Keeps the Coffers status line visible even when automatic coffer routing is disabled.");
+            DrawAlwaysShowStatusSetting("Always Show Forked Tower Status", () => configuration.AlwaysShowForkedTowerStatus, value => configuration.AlwaysShowForkedTowerStatus = value, "Keeps the Forked Tower status line visible even when staging movement is disabled.");
+        }
+    }
+
+    private void DrawAlwaysShowStatusSetting(string label, Func<bool> getValue, Action<bool> setValue, string tooltip)
+    {
+        var value = getValue();
+        if (ImGui.Checkbox(label, ref value))
+        {
+            setValue(value);
+            logger.Info($"[Config] op=setting-change key={label.Replace(" ", string.Empty)} value={value}");
             configuration.Save();
         }
-        DrawSettingTooltip("Anonymously sends confirmed coffer locations to help map out spawn points for the community. No character or account data is ever sent.");
 
-        ImGui.Separator();
-        ImGui.TextUnformatted("Combat");
+        DrawSettingTooltip(tooltip);
+    }
 
-        var providers = AutorotationProviderDiscovery.GetAvailable();
-        var provider = configuration.AutorotationProviderUserSelected && providers.Contains(configuration.AutorotationProvider)
-            ? configuration.AutorotationProvider
-            : AutorotationProviderDiscovery.GetDefault(providers) ?? configuration.AutorotationProvider;
-        var providerIndex = Math.Max(0, providers.ToList().IndexOf(provider));
-        var providerLabels = providers.Select(AutorotationProviderDiscovery.GetDisplayName).ToArray();
-        var automationRunning = plugin.FarmSessionController.IsRunning
-            || plugin.CriticalEngagementAutomationController.IsRunning
-            || plugin.FateAutomationController.IsRunning
-            || plugin.PotFarmController.IsRunning
-            || plugin.TreasureCofferFarmController.IsRunning;
-        var autorotationPresetName = configuration.AutorotationPresetName;
-        var presetWidth = CombatRotationControlWidth;
-        ImGui.BeginDisabled(automationRunning || providers.Count == 0);
-        ImGui.SetNextItemWidth(presetWidth);
-        if (ImGui.Combo("Autorotation Provider", ref providerIndex, providerLabels, providerLabels.Length))
+    private void DrawAutomationPrioritySection()
+    {
+        if (!ImGui.CollapsingHeader("Automation Priority", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            var selectedProvider = providers[providerIndex];
-            logger.Info($"[Config] op=setting-change key=AutorotationProvider old={configuration.AutorotationProvider} new={selectedProvider}");
-            configuration.AutorotationProvider = selectedProvider;
-            configuration.AutorotationProviderUserSelected = true;
-            configuration.Save();
+            return;
         }
-        ImGui.EndDisabled();
-        DrawSettingTooltip(automationRunning
-            ? "Stop automation before changing the autorotation provider."
-            : "Only enabled and loaded rotation plugins are listed. BossMod or BossModReborn is required for dodging.");
 
-        var bossModProvider = provider is AutorotationProvider.BossMod or AutorotationProvider.BossModReborn;
-        ImGui.BeginDisabled(!bossModProvider);
-        ImGui.SetNextItemWidth(presetWidth);
-        if (ImGui.InputText("Autorotation Override Preset Name", ref autorotationPresetName, 120))
-        {
-            logger.InfoThrottled("setting-autorotation-preset-name", SettingTextLogInterval, $"Setting changed: AutorotationPresetName: '{configuration.AutorotationPresetName}' -> '{autorotationPresetName}'.");
-            configuration.AutorotationPresetName = autorotationPresetName;
-            configuration.Save();
-        }
+        ImGui.TextWrapped("Activities are evaluated from top to bottom between runs while the player is at Base Camp. Higher-priority activities may preempt FATE or CE travel, but never combat.");
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        DrawSettingTooltip("Leave the override blank to use the AOCCH-managed BossMod rotation. A configured override is used unchanged when available; failures fall back to the managed rotation.");
-        ImGui.EndDisabled();
+        DrawSettingTooltip("Rank 1 is the highest priority. Activities that are unavailable or disabled are skipped.");
 
-        var overdodgeAoeCushion = (int)configuration.OverdodgeAoeCushion;
-        ImGui.BeginDisabled(automationRunning);
-        ImGui.SetNextItemWidth(presetWidth);
-        if (ImGui.Combo("Overdodge AoE", ref overdodgeAoeCushion, OverdodgeAoeCushionLabels, OverdodgeAoeCushionLabels.Length))
+        configuration.NormalizeAutomationPriority();
+        var priorities = configuration.AutomationPriority;
+        var visibleIndices = priorities
+            .Select((activity, index) => (activity, index))
+            .Where(entry => IsAutomationPriorityVisible(entry.activity))
+            .Select(entry => entry.index)
+            .ToList();
+        if (visibleIndices.Count == 0)
         {
-            var selected = (OverdodgeAoeSetting)overdodgeAoeCushion;
-            logger.Info($"[Config] op=setting-change key=OverdodgeAoeCushion old={configuration.OverdodgeAoeCushion} new={selected}");
-            configuration.OverdodgeAoeCushion = selected;
-            configuration.Save();
+            ImGui.TextUnformatted("No automation activities are currently enabled.");
+            return;
         }
-        ImGui.EndDisabled();
-        DrawSettingTooltip("Controls the ForbiddenZoneCushion used by AOCCH-managed active and passive BossMod rotations.");
 
-        var delayedMovement = (int)configuration.DelayedMovement;
-        ImGui.BeginDisabled(automationRunning);
-        ImGui.SetNextItemWidth(presetWidth);
-        if (ImGui.Combo("Delayed Movement", ref delayedMovement, DelayedMovementLabels, DelayedMovementLabels.Length))
+        for (var displayIndex = 0; displayIndex < visibleIndices.Count; displayIndex++)
         {
-            var selected = (DelayedMovementSetting)delayedMovement;
-            logger.Info($"[Config] op=setting-change key=DelayedMovement old={configuration.DelayedMovement} new={selected}");
-            configuration.DelayedMovement = selected;
-            configuration.Save();
+            var priorityIndex = visibleIndices[displayIndex];
+            var activity = priorities[priorityIndex];
+            ImGui.PushID($"automation-priority-{activity}");
+
+            var iconButtonSize = new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight());
+            if (DrawIconButton(FontAwesomeIcon.AngleUp, "up", "Move Up", displayIndex > 0, iconButtonSize) && displayIndex > 0)
+            {
+                var previousPriorityIndex = visibleIndices[displayIndex - 1];
+                (priorities[previousPriorityIndex], priorities[priorityIndex]) = (priorities[priorityIndex], priorities[previousPriorityIndex]);
+                configuration.Save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.SameLine();
+            if (DrawIconButton(FontAwesomeIcon.AngleDown, "down", "Move Down", displayIndex < visibleIndices.Count - 1, iconButtonSize) && displayIndex < visibleIndices.Count - 1)
+            {
+                var nextPriorityIndex = visibleIndices[displayIndex + 1];
+                (priorities[nextPriorityIndex], priorities[priorityIndex]) = (priorities[priorityIndex], priorities[nextPriorityIndex]);
+                configuration.Save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{displayIndex + 1}. {GetFarmActivityLabel(activity)}");
+            ImGui.PopID();
         }
-        ImGui.EndDisabled();
-        DrawSettingTooltip("Delays movement in AOCCH-managed active and passive BossMod rotations. Override presets are not changed.");
-
-        DrawTargetRangeSetting("Melee Target Range", configuration.MeleeTargetRange, value => configuration.MeleeTargetRange = value, nameof(configuration.MeleeTargetRange));
-        DrawSettingTooltip("Max targeting range for melee jobs before engaging (1.1 to 30 yalms).");
-        DrawTargetRangeSetting("Ranged Target Range", configuration.RangedTargetRange, value => configuration.RangedTargetRange = value, nameof(configuration.RangedTargetRange));
-        DrawSettingTooltip("Max targeting range for ranged and caster jobs before engaging (1.1 to 30 yalms).");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Automation");
-
-        var enableBuffRotation = configuration.EnableBuffRotation;
-        if (ImGui.Checkbox("Enable Buff Rotation", ref enableBuffRotation))
-        {
-            logger.Info($"[Config] op=setting-change key=EnableBuffRotation old={configuration.EnableBuffRotation} new={enableBuffRotation}");
-            configuration.EnableBuffRotation = enableBuffRotation;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Automatically applies job and foray buff actions during combat and route travel.");
-
-        var enablePostActivityRevival = configuration.EnablePostActivityRevival;
-        if (ImGui.Checkbox("Revive Dead Players with Phantom Actions", ref enablePostActivityRevival))
-        {
-            logger.Info($"[Config] op=setting-change key=EnablePostActivityRevival old={configuration.EnablePostActivityRevival} new={enablePostActivityRevival}");
-            configuration.EnablePostActivityRevival = enablePostActivityRevival;
-            configuration.Save();
-        }
-        DrawSettingTooltip("After CE or FATE completion, searches for dead players, uses Chemist or White Mage to raise them, then returns to Base Camp.");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Movement");
-
-        var useReturn = configuration.UseReturn;
-        if (ImGui.Checkbox("Use Return", ref useReturn))
-        {
-            logger.Info($"[Config] op=setting-change key=UseReturn old={configuration.UseReturn} new={useReturn}");
-            configuration.UseReturn = useReturn;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Uses the Return spell to quickly teleport back to base camp when needed.");
-
-        var minimumMountingRange = configuration.MinimumMountingRange;
-        ImGui.SetNextItemWidth(SettingsNumericInputWidth);
-        if (ImGui.InputInt("Minimum Mounting Range", ref minimumMountingRange))
-        {
-            var nextValue = Math.Clamp(minimumMountingRange, 0, 100);
-            logger.InfoThrottled("setting-minimum-mounting-range", SettingTextLogInterval, $"Setting changed: MinimumMountingRange: {configuration.MinimumMountingRange} -> {nextValue}.");
-            configuration.MinimumMountingRange = nextValue;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Only mounts up if your destination is further away than this distance. Walks instead for shorter distances.");
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Interface");
-
-        var mainWindowStatusTextScalePercent = configuration.MainWindowStatusTextScalePercent;
-        ImGui.SetNextItemWidth(CombatRotationControlWidth);
-        if (ImGui.SliderInt("Main Window Status Text Size", ref mainWindowStatusTextScalePercent, 85, 150, "%d%%"))
-        {
-            var nextValue = Math.Clamp(mainWindowStatusTextScalePercent, 85, 150);
-            logger.Info($"[Config] op=setting-change key=MainWindowStatusTextScalePercent old={configuration.MainWindowStatusTextScalePercent} new={nextValue}");
-            configuration.MainWindowStatusTextScalePercent = nextValue;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Adjusts the status font size in the main window (85% to 150%).");
-
-        var showTooltips = configuration.ShowTooltips;
-        if (ImGui.Checkbox("Show Tooltips", ref showTooltips))
-        {
-            logger.Info($"[Config] op=setting-change key=ShowTooltips old={configuration.ShowTooltips} new={showTooltips}");
-            configuration.ShowTooltips = showTooltips;
-            configuration.Save();
-        }
-        DrawSettingTooltip("Shows helpful descriptions when you hover over settings and interface buttons.");
     }
+
+    private bool IsAutomationPriorityVisible(FarmActivityKind activity)
+    {
+        var territoryKey = plugin.Scanner.ActiveTerritoryData?.Key ?? string.Empty;
+        return activity switch
+        {
+            FarmActivityKind.CriticalEngagements => configuration.EnableCriticalEngagementFarming,
+            FarmActivityKind.Fates => configuration.EnableFateFarming,
+            FarmActivityKind.Pots => !string.IsNullOrWhiteSpace(territoryKey) && configuration.IsPotFarmingEnabled(territoryKey),
+            FarmActivityKind.ForkedTower => configuration.EnableForkedTowerAutomation,
+            _ => false,
+        };
+    }
+
+    private static string GetFarmActivityLabel(FarmActivityKind activity)
+        => activity switch
+        {
+            FarmActivityKind.CriticalEngagements => "Critical Engagements",
+            FarmActivityKind.Fates => "FATEs",
+            FarmActivityKind.Pots => "Pots",
+            FarmActivityKind.ForkedTower => "Forked Tower",
+            _ => activity.ToString(),
+        };
 
     private void DrawTargetRangeSetting(string label, decimal currentValue, Action<decimal> setter, string key)
     {
@@ -1335,6 +1457,7 @@ public class ConfigWindow : Window, IDisposable
 
     private List<(uint Id, string Label)> GetCriticalEncounterEntries()
         => (plugin.Scanner.ActiveTerritoryData?.CriticalEncounters ?? [])
+            .Where(criticalEncounter => !string.Equals(criticalEncounter.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase))
             .Select(criticalEncounter => (
                 criticalEncounter.Id,
                 nameResolver.GetCriticalEncounterName(plugin.Scanner.Snapshot.TerritoryTypeId, criticalEncounter.Id, criticalEncounter.Name)))

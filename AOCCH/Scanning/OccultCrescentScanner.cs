@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using AOCCH.Automation;
 using AOCCH.Data;
 using AOCCH.Logging;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -223,6 +224,7 @@ public sealed class OccultCrescentScanner : IDisposable
             uint currentCriticalEncounterId = 0;
             ActiveCriticalEncounter? currentCriticalEncounter = null;
             ActiveCriticalEncounter? selectedCriticalEncounter = null;
+            ActiveCriticalEncounter? selectedForkedTower = null;
             ActiveFate? selectedFate = null;
             ActivePotFate? activePotFate = null;
             var hasTreasureBuff = false;
@@ -244,12 +246,17 @@ public sealed class OccultCrescentScanner : IDisposable
                 currentCriticalEncounterId = ScanCriticalEncounters(territory!, canFarmCriticalEncounters, criticalEncounters, unknownCriticalEncounters);
                 currentCriticalEncounter = criticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId)
                     ?? unknownCriticalEncounters.FirstOrDefault(encounter => encounter.Id == currentCriticalEncounterId);
-                selectedCriticalEncounter = canFarmCriticalEncounters ? SelectCriticalEncounter(criticalEncounters) : null;
+                selectedCriticalEncounter = canFarmCriticalEncounters
+                    ? SelectCriticalEncounter(criticalEncounters.Where(encounter => !IsForkedTower(encounter)))
+                    : null;
+                selectedForkedTower = canFarmCriticalEncounters && configuration.EnableForkedTowerAutomation
+                    ? SelectCriticalEncounter(criticalEncounters.Where(IsForkedTower))
+                    : null;
 
                 ScanFates(territory!, canFarmFates, canTrackPotCycle, fates, potFates, out activePotFate);
                 selectedFate = canFarmFates ? SelectFate(fates) : null;
 
-                effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedFate);
+                effectiveTarget = SelectEffectiveTarget(selectedCriticalEncounter, selectedForkedTower, selectedFate);
                 LogUnknownActiveMetadata(territory!, unknownCriticalEncounters, fates);
 
                 if (canRunPotTreasure)
@@ -308,6 +315,7 @@ public sealed class OccultCrescentScanner : IDisposable
                 PotFates = potFates,
                 CurrentCriticalEncounter = currentCriticalEncounter,
                 SelectedCriticalEncounter = selectedCriticalEncounter,
+                SelectedForkedTower = selectedForkedTower,
                 SelectedFate = selectedFate,
                 ActivePotFate = activePotFate,
                 HasTreasureBuff = hasTreasureBuff,
@@ -354,16 +362,18 @@ public sealed class OccultCrescentScanner : IDisposable
             }
 
             var metadata = territory.CriticalEncounters.FirstOrDefault(encounter => encounter.Id == dynamicEvent.DynamicEventId);
+            var isForkedTower = metadata != null && string.Equals(metadata.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase);
             var stateCode = (int)dynamicEvent.State;
             var isCandidate = metadata != null
                 && canFarmCriticalEncounters
-                && configuration.EnableCriticalEngagementFarming
+                && (isForkedTower ? configuration.EnableForkedTowerAutomation : configuration.EnableCriticalEngagementFarming)
                 && configuration.IsCriticalEncounterEnabled(territory.Key, dynamicEvent.DynamicEventId)
                 && ActiveCriticalEncounter.IsJoinableState(stateCode);
             var activeEncounter = new ActiveCriticalEncounter
             {
                 Id = dynamicEvent.DynamicEventId,
                 Name = dynamicEvent.Name.ToString(),
+                AutomationKind = metadata?.AutomationKind ?? string.Empty,
                 State = dynamicEvent.State.ToString(),
                 StateCode = stateCode,
                 Progress = dynamicEvent.Progress,
@@ -466,6 +476,10 @@ public sealed class OccultCrescentScanner : IDisposable
                     PreferredAethernet = potMetadata?.PreferredAethernet ?? string.Empty,
                     CenterPosition = potMetadata?.CenterPosition.ToVector3() ?? fateLocation,
                     StagingPosition = potMetadata?.StagingPosition?.ToVector3(),
+                    HasLiveTarget = liveTarget != null,
+                    LiveTargetObjectId = liveTarget?.ObjectId ?? 0,
+                    LiveTargetName = liveTarget?.Name ?? string.Empty,
+                    LiveTargetPosition = liveTarget?.Position ?? Vector3.Zero,
                 };
 
                 potFates.Add(activePot);
@@ -1004,7 +1018,7 @@ public sealed class OccultCrescentScanner : IDisposable
             $"[Scanner] op=fate-entity-diagnostics fate=\"{selectedFate.Name}\" ({selectedFate.Id}) playerDistance={playerDistanceToFate:0.0} radius={diagnosticRadius:0.0} selected={selected} candidates={details}");
     }
 
-    private ActiveCriticalEncounter? SelectCriticalEncounter(IReadOnlyList<ActiveCriticalEncounter> criticalEncounters)
+    private ActiveCriticalEncounter? SelectCriticalEncounter(IEnumerable<ActiveCriticalEncounter> criticalEncounters)
         => criticalEncounters
             .Where(encounter => encounter.IsCandidate)
             .OrderByDescending(encounter => encounter.Priority)
@@ -1032,66 +1046,57 @@ public sealed class OccultCrescentScanner : IDisposable
                 .FirstOrDefault();
     }
 
-    private TargetSelection SelectEffectiveTarget(ActiveCriticalEncounter? selectedCriticalEncounter, ActiveFate? selectedFate)
+    private TargetSelection SelectEffectiveTarget(
+        ActiveCriticalEncounter? selectedCriticalEncounter,
+        ActiveCriticalEncounter? selectedForkedTower,
+        ActiveFate? selectedFate)
     {
-        if (!configuration.EnableCriticalEngagementFarming && !configuration.EnableFateFarming)
+        var candidates = new List<(FarmActivityKind Kind, ActiveCriticalEncounter? CriticalEncounter, ActiveFate? Fate)>();
+        if (configuration.EnableCriticalEngagementFarming && selectedCriticalEncounter != null)
         {
-            return TargetSelection.None;
+            candidates.Add((FarmActivityKind.CriticalEngagements, selectedCriticalEncounter, null));
         }
 
-        if (configuration.EnableCriticalEngagementFarming && !configuration.EnableFateFarming && selectedCriticalEncounter != null)
+        if (configuration.EnableForkedTowerAutomation && selectedForkedTower != null)
         {
-            return new TargetSelection
-            {
-                Kind = SelectedTargetKind.CriticalEncounter,
-                CriticalEncounter = selectedCriticalEncounter,
-                Reason = "CE priority",
-            };
-        }
-
-        if (!configuration.EnableCriticalEngagementFarming && configuration.EnableFateFarming && selectedFate != null)
-        {
-            return new TargetSelection
-            {
-                Kind = SelectedTargetKind.Fate,
-                Fate = selectedFate,
-                Reason = configuration.FatePriority == FatePriority.Nearest ? "Nearest FATE" : "Lowest FATE progress",
-            };
-        }
-
-        if (configuration.EnableCriticalEngagementFarming && configuration.EnableFateFarming && selectedCriticalEncounter != null && configuration.PrioritizeCe)
-        {
-            return new TargetSelection
-            {
-                Kind = SelectedTargetKind.CriticalEncounter,
-                CriticalEncounter = selectedCriticalEncounter,
-                Reason = selectedFate != null ? "CE preempted FATE" : "CE priority",
-                WouldPreemptFate = selectedFate != null,
-            };
-        }
-
-        if (configuration.EnableCriticalEngagementFarming && selectedCriticalEncounter != null && selectedFate == null)
-        {
-            return new TargetSelection
-            {
-                Kind = SelectedTargetKind.CriticalEncounter,
-                CriticalEncounter = selectedCriticalEncounter,
-                Reason = "CE priority",
-            };
+            candidates.Add((FarmActivityKind.ForkedTower, selectedForkedTower, null));
         }
 
         if (configuration.EnableFateFarming && selectedFate != null)
         {
+            candidates.Add((FarmActivityKind.Fates, null, selectedFate));
+        }
+
+        var selected = candidates
+            .OrderBy(candidate => configuration.GetAutomationPriority(candidate.Kind))
+            .FirstOrDefault();
+        if (selected.CriticalEncounter != null)
+        {
+            return new TargetSelection
+            {
+                Kind = SelectedTargetKind.CriticalEncounter,
+                CriticalEncounter = selected.CriticalEncounter,
+                Reason = selected.Kind == FarmActivityKind.ForkedTower ? "Forked Tower priority" : "CE priority",
+                WouldPreemptFate = (selected.Kind is FarmActivityKind.CriticalEngagements or FarmActivityKind.ForkedTower)
+                    && configuration.GetAutomationPriority(selected.Kind) < configuration.GetAutomationPriority(FarmActivityKind.Fates),
+            };
+        }
+
+        if (selected.Fate != null)
+        {
             return new TargetSelection
             {
                 Kind = SelectedTargetKind.Fate,
-                Fate = selectedFate,
+                Fate = selected.Fate,
                 Reason = configuration.FatePriority == FatePriority.Nearest ? "Nearest FATE" : "Lowest FATE progress",
             };
         }
 
         return TargetSelection.None;
     }
+
+    private static bool IsForkedTower(ActiveCriticalEncounter encounter)
+        => string.Equals(encounter.AutomationKind, "ForkedTower", StringComparison.OrdinalIgnoreCase);
 
     private void LogTargetSelectionIfChanged(ScannerSnapshot snapshot)
     {
@@ -1187,7 +1192,7 @@ public sealed class OccultCrescentScanner : IDisposable
         };
 
         logger.Debug(
-            $"[Scanner] op=selection-competition effectiveTarget={target} reason={snapshot.EffectiveTarget.Reason} ceCandidates={snapshot.CriticalEncounters.Count(encounter => encounter.IsCandidate)} fateCandidates={snapshot.Fates.Count(fate => fate.IsCandidate)} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority} candidates={(string.IsNullOrEmpty(candidates) ? "none" : candidates)}");
+            $"[Scanner] op=selection-competition effectiveTarget={target} reason={snapshot.EffectiveTarget.Reason} ceCandidates={snapshot.CriticalEncounters.Count(encounter => encounter.IsCandidate)} forkedTowerCandidate={(snapshot.SelectedForkedTower != null)} fateCandidates={snapshot.Fates.Count(fate => fate.IsCandidate)} automationPriority={string.Join(',', configuration.AutomationPriority)} fatePriority={configuration.FatePriority} candidates={(string.IsNullOrEmpty(candidates) ? "none" : candidates)}");
     }
 
     private string BuildNoSelectionReason(ScannerSnapshot snapshot)
@@ -1231,7 +1236,7 @@ public sealed class OccultCrescentScanner : IDisposable
             return $"reason=no-fate-candidate ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates=0/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount}.";
         }
 
-        return $"reason=selection-resolved-none ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount} prioritizeCe={configuration.PrioritizeCe} fatePriority={configuration.FatePriority}.";
+        return $"reason=selection-resolved-none ceCandidates={ceCandidateCount}/{knownCeCount} unknownCes={unknownCeCount} nonCandidateCes={ceConfigDisabledCount} fateCandidates={fateCandidateCount}/{fateCount} excludedFates={fateExcludedCount} unknownFates={fateUnknownCount} automationPriority={string.Join(',', configuration.AutomationPriority)} fatePriority={configuration.FatePriority}.";
     }
 
     private LiveFateTargetCandidate? TrySelectLiveFateTarget(uint fateId, Vector3 fatePosition, Vector3? playerPosition)
@@ -1262,6 +1267,7 @@ public sealed class OccultCrescentScanner : IDisposable
         if (!gameObject.IsValid()
             || gameObject.GameObjectId == 0
             || gameObject.BaseId == 0
+            || FateTargetPolicy.IsExcludedObjectiveBaseId(gameObject.BaseId)
             || gameObject is not IBattleNpc
             || gameObject is not ICharacter character
             || character.CurrentHp <= 0
