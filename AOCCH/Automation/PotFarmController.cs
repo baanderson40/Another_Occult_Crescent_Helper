@@ -1504,7 +1504,8 @@ public sealed class PotFarmController : IDisposable
             area.Aethernet,
             aethernet.Destination.ToVector3(),
             aethernet.InteractDistanceMax,
-            forceAethernet: true))
+            forceAethernet: true,
+            enableStuckJumpMonitor: true))
         {
             AbandonSecondChance(movementController.LastError.Length == 0
                 ? $"Failed to plan travel to Second Chance area {area.DisplayName}."
@@ -1544,7 +1545,8 @@ public sealed class PotFarmController : IDisposable
                         $"Move to Second Chance Wind Current for {area.DisplayName}",
                         windCurrent.ToVector3(),
                         area.WindCurrentArrivalDistance,
-                        advanceOnJump: area.WindCurrentAdvanceOnJump))
+                        advanceOnJump: area.WindCurrentAdvanceOnJump,
+                        enableStuckJumpMonitor: true))
                     {
                         AbandonSecondChance(movementController.LastError.Length == 0
                             ? $"Failed to move to the Second Chance Wind Current for {area.DisplayName}."
@@ -1704,7 +1706,8 @@ public sealed class PotFarmController : IDisposable
             destination,
             arrivalTolerance,
             earlyDismountDistance: earlyDismountDistance,
-            earlyDismountTarget: destination))
+            earlyDismountTarget: destination,
+            enableStuckJumpMonitor: true))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to plan pot staging route for {potFate.Name}."
@@ -1926,7 +1929,7 @@ public sealed class PotFarmController : IDisposable
         }
 
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination.Value, TreasureCenterArrivalTolerance))
+        if (!movementController.StartDirectMove($"Move near completed FATE center for {CurrentPotName}", destination.Value, TreasureCenterArrivalTolerance, enableStuckJumpMonitor: true))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? $"Failed to start movement near the completed FATE center for {CurrentPotName}."

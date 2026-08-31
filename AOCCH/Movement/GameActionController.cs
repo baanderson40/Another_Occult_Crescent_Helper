@@ -35,6 +35,7 @@ public sealed class GameActionController
     public const uint ReturnActionId = 8;
     public const uint MountActionId = 9;
     public const uint DismountActionId = 23;
+    public const uint JumpActionId = 2;
     public const uint HideActionId = 2245;
     public const uint HiddenStatusId = 614;
     public const uint NinjaClassJobId = 30;

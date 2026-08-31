@@ -123,7 +123,8 @@ public sealed class ForkedTowerStagingController : IDisposable
                 selectedWaitPoint,
                 WaitPointArrivalTolerance,
                 allowReturn: true,
-                shouldMountBeforeStep: true))
+                shouldMountBeforeStep: true,
+                enableStuckJumpMonitor: true))
         {
             SetFailure($"Failed to plan Forked Tower staging route: {movementController.LastError}");
             return false;

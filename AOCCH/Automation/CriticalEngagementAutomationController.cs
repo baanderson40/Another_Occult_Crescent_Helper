@@ -468,7 +468,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             Reason = "CE automation lock",
         };
 
-        if (!movementController.PlanRoute(selection, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance))
+        if (!movementController.PlanRoute(selection, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance, enableStuckJumpMonitor: true))
         {
             SetFailure($"Failed to plan route to CE: {movementController.LastError}");
             return false;
@@ -532,6 +532,12 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             case MovementState.Failed:
             case MovementState.TimedOut:
                 logger.ResetThrottle("ce-traveling");
+                if (movementController.StuckJumpAttemptsExhausted)
+                {
+                    StartRecovery($"CE travel remained stuck after three jump attempts for {target.Name} ({target.Id}).");
+                    return;
+                }
+
                 if (TryHandleReturnTravelFallback(target))
                 {
                     return;
@@ -809,7 +815,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
             Reason = "CE automation lock fallback",
         };
 
-        if (!movementController.PlanRoute(selection, allowReturn: false, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance))
+        if (!movementController.PlanRoute(selection, allowReturn: false, finalDestinationOverride: routeDestination, finalArrivalToleranceOverride: arrivalTolerance, enableStuckJumpMonitor: true))
         {
             logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;
@@ -910,7 +916,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
                 ceWaitPointArrivalTolerance = WaitPointStopDistance;
             }
 
-            return movementController.StartDirectMove($"Reposition to CE wait point for {target.Name} ({target.Id})", waitPoint, WaitPointStopDistance);
+            return movementController.StartDirectMove($"Reposition to CE wait point for {target.Name} ({target.Id})", waitPoint, WaitPointStopDistance, enableStuckJumpMonitor: true);
         }
 
         var fallbackTolerance = MathF.Max(0.5f, target.EngageRadius - RepositionBuffer);
@@ -921,7 +927,7 @@ public sealed class CriticalEngagementAutomationController : IDisposable
         }
 
         logger.Warning($"{BuildLogTag()} op=wait-point-fallback target=\"{target.Name}\" ({target.Id}) reason=no-valid-wait-point fallback=staging-center");
-        return movementController.StartDirectMove($"Reposition inside CE radius for {target.Name} ({target.Id})", target.StagingPoint, fallbackTolerance);
+        return movementController.StartDirectMove($"Reposition inside CE radius for {target.Name} ({target.Id})", target.StagingPoint, fallbackTolerance, enableStuckJumpMonitor: true);
     }
 
     private bool TrySelectCeWaitPoint(ActiveCriticalEncounter target, Vector3 playerPosition, out Vector3 waitPoint)
