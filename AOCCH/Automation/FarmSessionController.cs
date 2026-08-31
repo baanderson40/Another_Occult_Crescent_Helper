@@ -966,6 +966,12 @@ public sealed class FarmSessionController : IDisposable
 
         if (forkedTowerStagingController.State == ForkedTowerStagingState.Failed)
         {
+            if (movementController.StuckJumpAttemptsExhausted)
+            {
+                StartRecoveryToBase("Forked Tower staging remained stuck after three jump attempts.");
+                return;
+            }
+
             SetFailure(forkedTowerStagingController.LastError.Length == 0
                 ? "Forked Tower staging failed."
                 : forkedTowerStagingController.LastError);

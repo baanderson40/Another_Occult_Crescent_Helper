@@ -574,7 +574,7 @@ public sealed class FateAutomationController : IDisposable
             : target;
         var arrivalTolerance = GetFateArrivalTolerance(target, initialArrivalToleranceOverride);
         logger.Info($"{BuildLogTag()} op=fate-arrival-tolerance target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} tolerance={arrivalTolerance:0.0} earlyDismountDistance={(GetEarlyDismountDistance(target)?.ToString("0.0") ?? "none")} override={(initialArrivalToleranceOverride.HasValue ? "true" : "false")}");
-        if (!movementController.PlanRoute(routeTarget, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        if (!movementController.PlanRoute(routeTarget, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target), enableStuckJumpMonitor: true))
         {
             SetFailure($"Failed to plan route to FATE: {movementController.LastError}");
             return false;
@@ -596,6 +596,12 @@ public sealed class FateAutomationController : IDisposable
         if (target == null)
         {
             FinishFate("Target FATE disappeared before arrival.");
+            return;
+        }
+
+        if (movementController.StuckJumpAttemptsExhausted)
+        {
+            StartStuckTravelRecovery(target);
             return;
         }
 
@@ -980,6 +986,28 @@ public sealed class FateAutomationController : IDisposable
         SetFailure(reason);
     }
 
+    private void StartStuckTravelRecovery(FateRunTarget target)
+    {
+        var reason = $"FATE travel remained stuck after three jump attempts for {target.Name} ({target.Id}); returning to Base Camp.";
+        autorotationController.ReleaseOwnership(reason);
+        combatTargetController.ReleaseOwnedTarget(reason);
+
+        if (movementController.RecoverToBaseCamp())
+        {
+            TransitionTo(FateAutomationState.Recovering, reason, clearTarget: true, clearAutorotationState: true);
+            return;
+        }
+
+        if (!returnRecoveryFallbackAttempted && movementController.RecoverToBaseCamp(allowReturn: false))
+        {
+            returnRecoveryFallbackAttempted = true;
+            TransitionTo(FateAutomationState.Recovering, $"{reason} Return fallback disabled.", clearTarget: true, clearAutorotationState: true);
+            return;
+        }
+
+        SetFailure($"{reason} Failed to start Base Camp recovery: {movementController.LastError}");
+    }
+
     private void SetFailure(string reason)
     {
         autorotationController.ReleaseOwnership(reason);
@@ -1089,7 +1117,7 @@ public sealed class FateAutomationController : IDisposable
         TransitionTo(FateAutomationState.PlanningRoute, $"Retrying route to FATE {target.Name} ({target.Id}) without Return.");
         var arrivalTolerance = GetFateArrivalTolerance(target, initialArrivalToleranceOverride);
         logger.Info($"{BuildLogTag()} op=fate-arrival-tolerance target=\"{target.Name}\" ({target.Id}) pot={target.IsPotTarget} tolerance={arrivalTolerance:0.0} earlyDismountDistance={(GetEarlyDismountDistance(target)?.ToString("0.0") ?? "none")} override={(initialArrivalToleranceOverride.HasValue ? "true" : "false")} fallback=without-return");
-        if (!movementController.PlanRoute(target, allowReturn: false, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target)))
+        if (!movementController.PlanRoute(target, allowReturn: false, finalDestinationOverride: initialDestinationOverride, finalArrivalToleranceOverride: arrivalTolerance, earlyDismountDistance: GetEarlyDismountDistance(target), enableStuckJumpMonitor: true))
         {
             logger.Warning($"{BuildLogTag()} op=fallback-plan-failed target=\"{target.Name}\" ({target.Id}) reason={movementController.LastError}");
             return false;

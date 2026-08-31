@@ -1343,7 +1343,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
     {
         logger.Info($"{BuildLogTag()} op=direct-travel-resume candidate={activeCandidateLabel} reason={reason} playerForayLevel={scanner.Snapshot.PlayerForayLevel?.ToString() ?? "unavailable"} destination={FormatVector(finalDestination)} exitRange={activeKnowledgeThreatPolicy?.ExitDistance:0.0}");
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true, destinationAlreadyResolved: finalDestinationAlreadyResolved))
+        if (!movementController.StartDirectMove($"Treasure travel after knowledge threat clear for {activeCandidateLabel}", finalDestination, arrivalTolerance, shouldMountBeforeStep: true, destinationAlreadyResolved: finalDestinationAlreadyResolved, enableStuckJumpMonitor: true))
         {
             SkipCandidate(movementController.LastError.Length == 0
                 ? $"Failed to resume direct travel after the knowledge threat cleared for {activeCandidateLabel}."
@@ -1711,7 +1711,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         }
 
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", resolvedThresholdPoint.Value, ThresholdArrivalTolerance, shouldMountBeforeStep: true))
+        if (!movementController.StartDirectMove($"Dangerous treasure threshold for {activeCandidateLabel}", resolvedThresholdPoint.Value, ThresholdArrivalTolerance, shouldMountBeforeStep: true, enableStuckJumpMonitor: true))
         {
             SkipCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start mounted travel to the hide threshold for dangerous treasure candidate {activeCandidateLabel}."
@@ -1734,7 +1734,7 @@ public sealed class DangerousTreasureTravelController : IDisposable
         movementController.SetLogOwner(currentRunId);
         logger.Info($"{BuildLogTag()} op=approach-move-start candidate={activeCandidateLabel} phase={phase} destination={FormatVector(destination)} arrivalTolerance={destinationArrivalTolerance:0.0} allowMount={allowMount} playerPos={FormatVector(objectTable.LocalPlayer?.Position)} stealthed={gameActionController.IsStealthed} mounted={condition[ConditionFlag.Mounted]} reason={reason}");
         var destinationAlreadyResolved = finalDestinationAlreadyResolved && phase == DangerousTreasureWalkingPhase.FinalApproach;
-        if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount, destinationAlreadyResolved: destinationAlreadyResolved))
+        if (!movementController.StartDirectMove(description, destination, destinationArrivalTolerance, shouldMountBeforeStep: allowMount, destinationAlreadyResolved: destinationAlreadyResolved, enableStuckJumpMonitor: true))
         {
             SkipCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start movement for dangerous treasure candidate {activeCandidateLabel}."

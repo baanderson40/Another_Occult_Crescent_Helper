@@ -721,7 +721,8 @@ public sealed class TreasureCofferFarmController : IDisposable
                         destinationAethernet.InteractDistanceMax,
                         allowReturn: false,
                         shouldMountBeforeStep: true,
-                        forceAethernet: territory.VisibleCofferRoutePolicy.ForceAethernetForAreaTransitions)
+                        forceAethernet: territory.VisibleCofferRoutePolicy.ForceAethernetForAreaTransitions,
+                        enableStuckJumpMonitor: true)
                     || !movementController.StartPlannedRoute())
                 {
                     SetFailure(movementController.LastError.Length == 0
@@ -811,7 +812,7 @@ public sealed class TreasureCofferFarmController : IDisposable
     private bool StartNormalTravelToActiveSpot(VisibleCofferFarmSpotData spot, Vector3 destination, float arrivalDistance, string context)
     {
         movementController.SetLogOwner(currentRunId);
-        if (movementController.StartDirectMove($"Move directly to overworld coffer route {spot.Label}", destination, arrivalDistance, advanceOnJump: spot.AdvanceOnJump))
+        if (movementController.StartDirectMove($"Move directly to overworld coffer route {spot.Label}", destination, arrivalDistance, advanceOnJump: spot.AdvanceOnJump, enableStuckJumpMonitor: true))
         {
             TransitionTo(TreasureCofferFarmState.TravelingToSpot, $"Traveling directly to overworld coffer route spot {spot.Area}:{spot.Label}. context={context}");
             return true;

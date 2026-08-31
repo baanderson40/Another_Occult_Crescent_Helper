@@ -261,7 +261,8 @@ public sealed class ForkedTowerRouteProbeController : IDisposable
                 step.Destination,
                 step.ArrivalTolerance,
                 shouldMountBeforeStep: false,
-                destinationAlreadyResolved: true))
+                destinationAlreadyResolved: true,
+                enableStuckJumpMonitor: true))
         {
             SetFailure($"Failed to start route probe movement: {movementController.LastError}");
             return;

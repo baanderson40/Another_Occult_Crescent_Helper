@@ -47,7 +47,10 @@ public sealed class MovementController : IDisposable
     private const int MaximumMountAttempts = 3;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan StuckJumpInterval = TimeSpan.FromSeconds(2);
     private const int MaxIdlePathResets = 5;
+    private const int MaximumStuckJumpAttempts = 3;
+    private const float StuckMovementThreshold = 1f;
     private const ConditionFlag WindCurrentJumpCondition = (ConditionFlag)61;
     private const float TransitionCompletionDistance = 25f;
     private const float AethernetInnerEdgeBias = 0.15f;
@@ -125,6 +128,11 @@ public sealed class MovementController : IDisposable
     private Vector3 meshPathDestination;
     private float? initialMeshDistance;
     private DateTimeOffset stallMeshPathStartedAt = DateTimeOffset.MinValue;
+    private Vector3 lastStuckObservedPosition;
+    private DateTimeOffset lastStuckMovementAt = DateTimeOffset.MinValue;
+    private int stuckJumpAttemptCount;
+    private bool stuckPositionObserved;
+    private bool enableStuckJumpMonitor;
 
     public MovementController(
         IFramework framework,
@@ -221,6 +229,8 @@ public sealed class MovementController : IDisposable
     public bool IsPathBusy
         => vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
 
+    public bool StuckJumpAttemptsExhausted { get; private set; }
+
     public bool IsEarlyDismountPending
     {
         get
@@ -278,6 +288,9 @@ public sealed class MovementController : IDisposable
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             currentMovementOperationId = string.Empty;
+            enableStuckJumpMonitor = false;
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
             state = MovementState.Idle;
         }
 
@@ -287,7 +300,7 @@ public sealed class MovementController : IDisposable
     public bool PlanRouteToSelectedTarget()
         => PlanRoute(scanner.Snapshot.EffectiveTarget);
 
-    public bool PlanRoute(FateRunTarget target, bool allowReturn = true, Vector3? finalDestinationOverride = null, float? finalArrivalToleranceOverride = null, float? earlyDismountDistance = null)
+    public bool PlanRoute(FateRunTarget target, bool allowReturn = true, Vector3? finalDestinationOverride = null, float? finalArrivalToleranceOverride = null, float? earlyDismountDistance = null, bool enableStuckJumpMonitor = false)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -310,7 +323,7 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        InitializePlannedRoute(route);
+        InitializePlannedRoute(route, enableStuckJumpMonitor);
         logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
@@ -324,7 +337,8 @@ public sealed class MovementController : IDisposable
         float? earlyDismountDistance = null,
         Vector3? earlyDismountTarget = null,
         bool shouldMountBeforeStep = true,
-        bool forceAethernet = false)
+        bool forceAethernet = false,
+        bool enableStuckJumpMonitor = false)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -347,7 +361,7 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        InitializePlannedRoute(route);
+        InitializePlannedRoute(route, enableStuckJumpMonitor);
         logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
@@ -356,7 +370,8 @@ public sealed class MovementController : IDisposable
         TargetSelection selection,
         bool allowReturn = true,
         Vector3? finalDestinationOverride = null,
-        float? finalArrivalToleranceOverride = null)
+        float? finalArrivalToleranceOverride = null,
+        bool enableStuckJumpMonitor = false)
     {
         var playerPosition = GetPlayerPosition();
         if (playerPosition == null)
@@ -379,7 +394,7 @@ public sealed class MovementController : IDisposable
             return false;
         }
 
-        InitializePlannedRoute(route);
+        InitializePlannedRoute(route, enableStuckJumpMonitor);
         logger.Info($"{BuildLogTag()} op=planned movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count}");
         return true;
     }
@@ -417,6 +432,8 @@ public sealed class MovementController : IDisposable
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
             state = plannedRoute.Steps[0].Kind == RouteStepKind.Return
                 ? MovementState.UsingReturn
                 : MovementState.Pathfinding;
@@ -471,17 +488,20 @@ public sealed class MovementController : IDisposable
             idlePathResetCount = 0;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
+            enableStuckJumpMonitor = false;
             lastError = string.Empty;
             state = route.Steps.Count > 0 && route.Steps[0].Kind == RouteStepKind.Return
                 ? MovementState.UsingReturn
                 : MovementState.Pathfinding;
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
         }
 
         logger.Info($"{BuildLogTag()} op=start movementOperation={DescribeMovementOperation()} routeType={route.RouteType} target=\"{route.TargetDescription}\" steps={route.Steps.Count} reason=RecoverToBaseCamp");
         return true;
     }
 
-    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true, bool destinationAlreadyResolved = false, bool advanceOnJump = false)
+    public bool StartDirectMove(string description, Vector3 destination, float arrivalTolerance = 1f, bool shouldMountBeforeStep = true, bool destinationAlreadyResolved = false, bool advanceOnJump = false, bool enableStuckJumpMonitor = false)
     {
         var resolvedDestination = destinationAlreadyResolved
             ? new Vector3?(destination)
@@ -536,6 +556,9 @@ public sealed class MovementController : IDisposable
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             state = MovementState.Pathfinding;
+            this.enableStuckJumpMonitor = enableStuckJumpMonitor;
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
         }
 
         logger.Info($"{BuildLogTag()} op=start-direct movementOperation={DescribeMovementOperation()} target=\"{description}\" requested={FormatVector(destination)} resolved={FormatVector(resolvedDestination.Value)} arrivalTolerance={arrivalTolerance:0.0}");
@@ -566,6 +589,8 @@ public sealed class MovementController : IDisposable
             idlePathResetCount = 0;
             ResetTransitionTracking();
             ResetReturnTracking(clearAttemptCount: true);
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
             lastError = reason;
             currentMovementOperationId = string.IsNullOrWhiteSpace(currentMovementOperationId)
                 ? NextMovementOperationId()
@@ -1062,6 +1087,11 @@ public sealed class MovementController : IDisposable
             return;
         }
 
+        if (enableStuckJumpMonitor && TryHandleStuckTravel(step, playerPosition))
+        {
+            return;
+        }
+
         ObserveInitialMeshPath(step);
         var pathBusy = vnavmesh.IsPathRunning() || vnavmesh.IsPathfindInProgress();
         if (progressDistance - distance >= ProgressThreshold)
@@ -1459,6 +1489,7 @@ public sealed class MovementController : IDisposable
     private void AdvanceStep()
     {
         ResetMeshPathTracking();
+        ResetStuckJumpTracking();
         lock (gate)
         {
             currentStepIndex++;
@@ -1495,6 +1526,7 @@ public sealed class MovementController : IDisposable
         vnavmesh.Stop();
         BeginStopVerification();
         ResetMeshPathTracking();
+        ResetStuckJumpTracking();
         lock (gate)
         {
             state = MovementState.Arrived;
@@ -1551,7 +1583,7 @@ public sealed class MovementController : IDisposable
         }
     }
 
-    private void InitializePlannedRoute(PlannedRoute route)
+    private void InitializePlannedRoute(PlannedRoute route, bool enableStuckJumpMonitor)
     {
         lock (gate)
         {
@@ -1574,6 +1606,9 @@ public sealed class MovementController : IDisposable
             ResetReturnTracking(clearAttemptCount: true);
             lastError = string.Empty;
             currentMovementOperationId = string.Empty;
+            this.enableStuckJumpMonitor = enableStuckJumpMonitor;
+            StuckJumpAttemptsExhausted = false;
+            ResetStuckJumpTracking();
             state = MovementState.Idle;
         }
     }
@@ -1857,6 +1892,88 @@ public sealed class MovementController : IDisposable
         meshPathDestination = Vector3.Zero;
         initialMeshDistance = null;
         stallMeshPathStartedAt = DateTimeOffset.MinValue;
+    }
+
+    private bool TryHandleStuckTravel(RouteStep step, Vector3 playerPosition)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (condition[ConditionFlag.BetweenAreas]
+            || condition[ConditionFlag.Casting]
+            || condition[ConditionFlag.OccupiedInQuestEvent]
+            || objectTable.LocalPlayer?.CurrentHp == 0)
+        {
+            lock (gate)
+            {
+                lastStuckMovementAt = now;
+                lastStuckObservedPosition = playerPosition;
+                stuckJumpAttemptCount = 0;
+                stuckPositionObserved = true;
+            }
+
+            return false;
+        }
+
+        DateTimeOffset lastMovementAt;
+        int jumpAttempts;
+        lock (gate)
+        {
+            if (!stuckPositionObserved)
+            {
+                lastStuckObservedPosition = playerPosition;
+                lastStuckMovementAt = now;
+                stuckPositionObserved = true;
+                return false;
+            }
+
+            if (CalculateFlatDistance(lastStuckObservedPosition, playerPosition) >= StuckMovementThreshold)
+            {
+                lastStuckObservedPosition = playerPosition;
+                lastStuckMovementAt = now;
+                stuckJumpAttemptCount = 0;
+            }
+
+            lastMovementAt = lastStuckMovementAt;
+            jumpAttempts = stuckJumpAttemptCount;
+        }
+
+        if (now - lastMovementAt < StuckJumpInterval)
+        {
+            return false;
+        }
+
+        if (jumpAttempts >= MaximumStuckJumpAttempts)
+        {
+            StuckJumpAttemptsExhausted = true;
+            SetFailure(
+                MovementState.TimedOut,
+                $"Movement remained stuck during step: {step.Description} after {MaximumStuckJumpAttempts} jump attempts.",
+                stopMovement: true);
+            return true;
+        }
+
+        var attempt = jumpAttempts + 1;
+        var stationaryFor = now - lastMovementAt;
+        lock (gate)
+        {
+            stuckJumpAttemptCount = attempt;
+            lastStuckMovementAt = now;
+        }
+
+        var jumped = gameActionController.TryExecuteGeneralAction(
+            GameActionController.JumpActionId,
+            $"Stuck movement assist {attempt}/{MaximumStuckJumpAttempts} for {step.Description}");
+        logger.Info(
+            $"{BuildLogTag()} op=stuck-jump-attempt attempt={attempt}/{MaximumStuckJumpAttempts} step=\"{step.Description}\" " +
+            $"actionId={GameActionController.JumpActionId} dispatched={jumped} stationaryFor={stationaryFor.TotalSeconds:0.0}s");
+        return true;
+    }
+
+    private void ResetStuckJumpTracking()
+    {
+        lastStuckObservedPosition = Vector3.Zero;
+        lastStuckMovementAt = DateTimeOffset.MinValue;
+        stuckJumpAttemptCount = 0;
+        stuckPositionObserved = false;
     }
 
     private void WaitForTransitionCompletion(

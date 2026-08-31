@@ -1819,7 +1819,7 @@ public sealed class TreasureSearchController : IDisposable
         var arrivalDistance = waypoint.ArrivalDistance ?? CandidateArrivalTolerance;
         candidateTravelTarget = destination.Value;
         logger.Info($"{BuildLogTag()} op=approach-waypoint-start candidate={candidate.Label} index={waypointIndex + 1}/{candidate.ApproachWaypoints.Count} canonical=<{canonicalPosition.X:0.0}, {canonicalPosition.Y:0.0}, {canonicalPosition.Z:0.0}> destination=<{destination.Value.X:0.0}, {destination.Value.Y:0.0}, {destination.Value.Z:0.0}> arrivalDistance={arrivalDistance:0.0}");
-        if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} approach waypoint {waypointIndex + 1}", destination.Value, arrivalDistance))
+        if (!movementController.StartDirectMove($"Treasure candidate {candidate.Label} approach waypoint {waypointIndex + 1}", destination.Value, arrivalDistance, enableStuckJumpMonitor: true))
         {
             logger.Warning($"{BuildLogTag()} op=approach-waypoint-start-failed candidate={candidate.Label} index={waypointIndex + 1}/{candidate.ApproachWaypoints.Count} error={movementController.LastError}");
             return false;
@@ -1903,7 +1903,7 @@ public sealed class TreasureSearchController : IDisposable
             return true;
         }
 
-        if (movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance, destinationAlreadyResolved: destinationAlreadyResolved))
+        if (movementController.StartDirectMove($"Treasure candidate {candidate.Label} for {activeFateName}", destination, CandidateArrivalTolerance, destinationAlreadyResolved: destinationAlreadyResolved, enableStuckJumpMonitor: true))
         {
             return true;
         }
@@ -2352,7 +2352,7 @@ public sealed class TreasureSearchController : IDisposable
                 return false;
             }
         }
-        else if (!movementController.StartDirectMove(description, resolvedDestination, arrivalTolerance, destinationAlreadyResolved: targetAlreadyResolved))
+        else if (!movementController.StartDirectMove(description, resolvedDestination, arrivalTolerance, destinationAlreadyResolved: targetAlreadyResolved, enableStuckJumpMonitor: true))
         {
             AdvanceCandidate(movementController.LastError.Length == 0
                 ? $"Failed to start local refinement movement for candidate {activeCandidate.Label}."

@@ -29,7 +29,6 @@ public sealed class CofferInteractionController : IDisposable
     private static int nextRunSequence;
     private const float MaxInteractRange = 4.5f;
     private const float PreferredOpenDistance = 3.25f;
-    private const uint JumpActionId = 2;
     private const float JumpAssistTriggerDistance = 10f;
     private const float PotRevealConfirmationFallbackRadius = 8f;
     private const float PotRevealRetryPassDistance = 10f;
@@ -432,7 +431,7 @@ public sealed class CofferInteractionController : IDisposable
 
         logger.Debug($"Coffer interaction moving toward {liveObject.Name.TextValue} ({liveObject.GameObjectId:X}). destination=<{destination.X:0.0}, {destination.Y:0.0}, {destination.Z:0.0}> reason={reason}");
         movementController.SetLogOwner(currentRunId);
-        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, PreferredOpenDistance, shouldMountBeforeStep: ActiveMatch?.MustStayHidden != true, destinationAlreadyResolved: destinationAlreadyResolved))
+        if (!movementController.StartDirectMove($"Approach coffer {liveObject.Name.TextValue}", destination, PreferredOpenDistance, shouldMountBeforeStep: ActiveMatch?.MustStayHidden != true, destinationAlreadyResolved: destinationAlreadyResolved, enableStuckJumpMonitor: true))
         {
             SetFailure(movementController.LastError.Length == 0
                 ? "Failed to begin movement into coffer interact range."
@@ -752,7 +751,8 @@ public sealed class CofferInteractionController : IDisposable
                     passPoint,
                     arrivalTolerance: 1.5f,
                     shouldMountBeforeStep: true,
-                    destinationAlreadyResolved: true))
+                    destinationAlreadyResolved: true,
+                    enableStuckJumpMonitor: true))
             {
                 logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=pass reason=movement-start-failed error={movementController.LastError}");
                 TransitionTo(CofferInteractionState.TargetingCoffer, "Retry pass movement could not start; retrying from the current position.");
@@ -838,7 +838,8 @@ public sealed class CofferInteractionController : IDisposable
                     returnPoint.Value,
                     PreferredOpenDistance,
                     shouldMountBeforeStep: true,
-                    destinationAlreadyResolved: true))
+                    destinationAlreadyResolved: true,
+                    enableStuckJumpMonitor: true))
             {
                 logger.Warning($"{BuildLogTag()} op=pot-reveal-retry-fallback phase=return reason=movement-start-failed error={movementController.LastError}");
                 TransitionTo(CofferInteractionState.TargetingCoffer, "Retry return movement could not start; retrying from the current position.");
@@ -1416,9 +1417,9 @@ public sealed class CofferInteractionController : IDisposable
         }
 
         logger.Info($"{BuildLogTag()} op=jump-assist candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y trigger={JumpAssistTriggerDistance:0.0}y");
-        if (!gameActionController.TryExecuteGeneralAction(JumpActionId, $"Jump assist for {DescribeActiveCandidate()}"))
+        if (!gameActionController.TryExecuteGeneralAction(GameActionController.JumpActionId, $"Jump assist for {DescribeActiveCandidate()}"))
         {
-            logger.Warning($"{BuildLogTag()} op=jump-assist-failed candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y actionId={JumpActionId}");
+            logger.Warning($"{BuildLogTag()} op=jump-assist-failed candidate={DescribeActiveCandidate()} coffer={DescribeActiveCoffer()} remaining={remaining:0.0}y actionId={GameActionController.JumpActionId}");
         }
     }
 
