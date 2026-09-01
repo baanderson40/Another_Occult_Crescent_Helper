@@ -44,7 +44,9 @@ public sealed class MovementController : IDisposable
     private static readonly TimeSpan AethernetAttemptTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan TransitionStableTime = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan NormalConditionSampleInterval = TimeSpan.FromMilliseconds(250);
     private const int MaximumMountAttempts = 3;
+    private const int RequiredNormalConditionSamples = 3;
     private static readonly TimeSpan WaitLogInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PathStartGrace = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan StuckJumpInterval = TimeSpan.FromSeconds(2);
@@ -91,6 +93,8 @@ public sealed class MovementController : IDisposable
     private DateTimeOffset mountReadyWaitStartedAt = DateTimeOffset.MinValue;
     private bool dismountAttempted;
     private DateTimeOffset dismountAttemptedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+    private int normalConditionSampleCount;
     private int stepAttemptCount;
     private int idlePathResetCount;
     private bool aethernetCallbackMode;
@@ -1274,7 +1278,7 @@ public sealed class MovementController : IDisposable
     {
         if (!condition[ConditionFlag.Mounted])
         {
-            return true;
+            return !dismountAttempted || WaitForDismountSettlement(step);
         }
 
         if (condition[ConditionFlag.InCombat]
@@ -1306,6 +1310,9 @@ public sealed class MovementController : IDisposable
             lock (gate)
             {
                 dismountAttempted = true;
+                dismountAttemptedAt = DateTimeOffset.UtcNow;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
@@ -1318,6 +1325,9 @@ public sealed class MovementController : IDisposable
             lock (gate)
             {
                 dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
@@ -1325,6 +1335,66 @@ public sealed class MovementController : IDisposable
         }
 
         return false;
+    }
+
+    private bool WaitForDismountSettlement(RouteStep step)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - stepStartedAt > MountTimeout)
+        {
+            lock (gate)
+            {
+                dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
+                stepStartedAt = now;
+            }
+
+            logger.Warning($"{BuildLogTag()} op=dismount-settle-timeout step=\"{step.Description}\" action=retry");
+            return false;
+        }
+
+        if (condition[ConditionFlag.Mounted])
+        {
+            return false;
+        }
+
+        if (!condition[ConditionFlag.NormalConditions])
+        {
+            if (normalConditionSampleCount > 0)
+            {
+                logger.Debug($"{BuildLogTag()} op=dismount-settle-reset step=\"{step.Description}\" reason=normal-conditions-cleared samples={normalConditionSampleCount}/{RequiredNormalConditionSamples}");
+            }
+
+            normalConditionSampleCount = 0;
+            nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+            return false;
+        }
+
+        if (nextNormalConditionSampleAt != DateTimeOffset.MinValue && now < nextNormalConditionSampleAt)
+        {
+            return false;
+        }
+
+        normalConditionSampleCount++;
+        nextNormalConditionSampleAt = now + NormalConditionSampleInterval;
+        logger.Debug($"{BuildLogTag()} op=dismount-settle-sample step=\"{step.Description}\" samples={normalConditionSampleCount}/{RequiredNormalConditionSamples}");
+        if (normalConditionSampleCount < RequiredNormalConditionSamples)
+        {
+            return false;
+        }
+
+        lock (gate)
+        {
+            dismountAttempted = false;
+            dismountAttemptedAt = DateTimeOffset.MinValue;
+            nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+            normalConditionSampleCount = 0;
+        }
+
+        logger.Info($"{BuildLogTag()} op=dismount-settled step=\"{step.Description}\" samples={RequiredNormalConditionSamples}");
+        return true;
     }
 
     private unsafe void WaitForAethernetCompletion(RouteStep step, Vector3 playerPosition, float distance)
@@ -2202,7 +2272,7 @@ public sealed class MovementController : IDisposable
 
         if (!condition[ConditionFlag.Mounted])
         {
-            return true;
+            return !dismountAttempted || WaitForDismountSettlement(step);
         }
 
         if (condition[ConditionFlag.InCombat]
@@ -2234,6 +2304,9 @@ public sealed class MovementController : IDisposable
             lock (gate)
             {
                 dismountAttempted = true;
+                dismountAttemptedAt = DateTimeOffset.UtcNow;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
@@ -2246,6 +2319,9 @@ public sealed class MovementController : IDisposable
             lock (gate)
             {
                 dismountAttempted = false;
+                dismountAttemptedAt = DateTimeOffset.MinValue;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
                 stepStartedAt = DateTimeOffset.UtcNow;
             }
 
@@ -2286,6 +2362,8 @@ public sealed class MovementController : IDisposable
                 {
                     dismountAttempted = false;
                     dismountAttemptedAt = DateTimeOffset.MinValue;
+                    nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                    normalConditionSampleCount = 0;
                 }
 
                 logger.Info($"{BuildLogTag()} op=early-dismount-complete step=\"{step.Description}\" distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} elapsed={elapsed.TotalMilliseconds:0}ms target={FormatVector(step.EarlyDismountTarget)}");
@@ -2321,6 +2399,8 @@ public sealed class MovementController : IDisposable
             {
                 dismountAttempted = true;
                 dismountAttemptedAt = DateTimeOffset.UtcNow;
+                nextNormalConditionSampleAt = DateTimeOffset.MinValue;
+                normalConditionSampleCount = 0;
             }
 
             logger.Info($"{BuildLogTag()} op=early-dismount-request step=\"{step.Description}\" distance={distanceToDismountTarget:0.0} threshold={step.EarlyDismountDistance:0.0} target={FormatVector(step.EarlyDismountTarget)}");
@@ -2645,7 +2725,7 @@ public sealed class MovementController : IDisposable
     private string DescribeTransitionConditions(bool includeOccupiedCondition)
     {
         var occupied = includeOccupiedCondition && condition[ConditionFlag.OccupiedInQuestEvent];
-        return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={occupied}";
+        return $"casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} normalConditions={condition[ConditionFlag.NormalConditions]} occupiedInQuestEvent={occupied}";
     }
 
     private bool IsReadyForReturn()
@@ -2656,7 +2736,7 @@ public sealed class MovementController : IDisposable
             && !condition[ConditionFlag.OccupiedInQuestEvent];
 
     private string DescribeReturnConditions()
-        => $"available={objectTable.LocalPlayer?.CurrentHp > 0} dead={objectTable.LocalPlayer?.CurrentHp == 0} combat={condition[ConditionFlag.InCombat]} mounted={condition[ConditionFlag.Mounted]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}";
+        => $"available={objectTable.LocalPlayer?.CurrentHp > 0} dead={objectTable.LocalPlayer?.CurrentHp == 0} combat={condition[ConditionFlag.InCombat]} mounted={condition[ConditionFlag.Mounted]} normalConditions={condition[ConditionFlag.NormalConditions]} casting={condition[ConditionFlag.Casting]} betweenAreas={condition[ConditionFlag.BetweenAreas]} occupiedInQuestEvent={condition[ConditionFlag.OccupiedInQuestEvent]} pathRunning={vnavmesh.IsPathRunning()} pathfinding={vnavmesh.IsPathfindInProgress()}";
 
     private void ResetTransitionTracking()
     {
